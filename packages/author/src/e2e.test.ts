@@ -265,8 +265,6 @@ describe('the whole chain', () => {
 	});
 
 	it('keeps generated effects registered through load, so their cues are not black', () => {
-		// The regression: ShowPlayer.load() used to clear the registry, wiping the effects the
-		// caller had just compiled into it. Every cue naming one rendered black.
 		const mixer = new Mixer(geometry);
 		const player = new ShowPlayer(mixer, registry);
 		player.load(analysis, show);

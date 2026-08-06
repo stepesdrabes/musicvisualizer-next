@@ -6,10 +6,6 @@ import { PulseEnv } from '../dsl/env.ts';
 import { stampOnStrip } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param, WallDrops } from './helpers.ts';
 
-/**
- * Droplets spawn at the room's corners on the grid and slide toward their wall's centre,
- * accelerating like a falling object and landing in a small pooled glow.
- */
 export const pixelRain: EffectDef = {
 	id: 'pixelRain',
 	name: 'Pixel Rain',

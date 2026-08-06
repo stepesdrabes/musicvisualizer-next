@@ -13,11 +13,8 @@ import type { RequestHandler } from './$types';
 
 /**
  * Server-sent events, because authoring takes minutes. Every tool call the agent makes is
- * forwarded as it happens: watching it fetch bar 40-56, then reject its own effect, then
+ * forwarded as it happens: watching it fetch bars 40-56, then reject its own effect, then
  * lint clean, is far more informative than a spinner.
- *
- * Takes an already-analysed track id, not a source. Passing an id to the ingest path made it
- * look like a relative file name.
  */
 export const GET: RequestHandler = async ({ url, request }) => {
 	const id = url.searchParams.get('id');

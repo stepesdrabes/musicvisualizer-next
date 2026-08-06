@@ -133,9 +133,8 @@ export class ShowPlayer {
 			this.buildSpans.push({ start: s.startTime, end: drop.startTime });
 		}
 
-		// The registry belongs to the caller, which has already compiled and registered this
-		// show's generated effects by the time load() runs. Clearing it here wiped them, and
-		// every cue referencing one silently rendered black.
+		// The registry belongs to the caller, which has already registered this show's
+		// generated effects by now. Clearing it here would render every cue naming one black.
 		const defaults = show.defaults;
 		const sorted = [...show.cues].sort((a, b) => a.bar - b.bar);
 		this.cues = sorted.map((cue, i) => {

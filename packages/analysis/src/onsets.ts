@@ -52,14 +52,6 @@ export interface Peak {
 }
 
 /**
- * Adaptive-threshold peak picking. The threshold is a local median times a factor, not a
- * fixed level: a fixed threshold either misses a quiet intro or fires continuously through
- * a loud drop.
- *
- * The running median uses a coarse histogram because exact sorting per frame would be
- * O(n*w log w) over a 20k-frame curve.
- */
-/**
  * Local max over ~1 s, via 0.25 s blocks. A median-only threshold is not enough on a sparse
  * curve: most frames between onsets are zero, so the median is zero and the threshold
  * collapses to its floor, which lets every weak eighth-note bass note through as a kick.
@@ -87,6 +79,12 @@ function localMaxCurve(curve: Float32Array, featureRate: number): Float32Array {
 	return out;
 }
 
+/**
+ * Adaptive-threshold peak picking: a local median times a factor rather than a fixed level,
+ * which would either miss a quiet intro or fire continuously through a loud drop. The
+ * running median uses a coarse histogram because exact sorting per frame would be
+ * O(n*w log w) over a 20k-frame curve.
+ */
 export function pickPeaks(
 	curve: Float32Array,
 	featureRate: number,

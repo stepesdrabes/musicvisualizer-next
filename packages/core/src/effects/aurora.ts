@@ -9,11 +9,9 @@ import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
- * Three palette waves at 8 / 16 / 32 beats per cycle with an interference highlight.
- *
  * Several simple layers at different musical rates beat one complex layer: the bright
- * seams appear where the waves constructively interfere, so they are emergent rather
- * than authored.
+ * seams appear where the 8, 16 and 32-beat waves constructively interfere, so they are
+ * emergent rather than authored.
  */
 export const aurora: EffectDef = {
 	id: 'aurora',

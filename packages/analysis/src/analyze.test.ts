@@ -44,7 +44,6 @@ function synth(bpm: number, stages: Stage[]): { mono: Float32Array; duration: nu
 				const t0 = barStart + beat * beatPeriod;
 				const i0 = Math.floor(t0 * SR);
 
-				// Kick: 55 Hz sine with a fast exponential decay.
 				if (stage.kick > 0) {
 					const len = Math.floor(0.14 * SR);
 					for (let i = 0; i < len && i0 + i < mono.length; i++) {
@@ -62,7 +61,6 @@ function synth(bpm: number, stages: Stage[]): { mono: Float32Array; duration: nu
 					}
 				}
 
-				// Hats on the offbeat 8ths.
 				if (stage.hat > 0) {
 					const hi = Math.floor((t0 + beatPeriod / 2) * SR);
 					const len = Math.floor(0.03 * SR);

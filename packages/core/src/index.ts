@@ -46,23 +46,7 @@ export {
 } from './grid.ts';
 export { Layer, Mixer } from './mixer.ts';
 export { ShowPlayer } from './player.ts';
-export {
-	BUILT_IN_EFFECTS,
-	EffectRegistry,
-	blackout,
-	chase,
-	comet,
-	pump,
-	riser,
-	shockwave,
-	slam,
-	sparkle,
-	splash,
-	strobe,
-	sweep,
-	wash
-} from './effects/index.ts';
-export { INTENSITY, param } from './effects/helpers.ts';
+export { BUILT_IN_EFFECTS, EffectRegistry } from './effects/index.ts';
 export { runGate, scriptFrames, type GateResult } from './effects/gate.ts';
 export {
 	SANDBOX_API,

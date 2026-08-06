@@ -53,13 +53,7 @@ function blockText(content: unknown): string {
 		.join('\n');
 }
 
-/**
- * Drive one query to completion, translating SDK messages into AuthorEvents.
- *
- * The tool traffic is the interesting part while this runs: "get_bars 40-56" then
- * "test_effect orbitTrio: REJECTED" tells you far more about what is happening than a
- * spinner does.
- */
+/** Drive one query to completion, translating SDK messages into AuthorEvents. */
 async function run(
 	stream: AsyncIterable<unknown>,
 	emit: OnAuthorEvent,

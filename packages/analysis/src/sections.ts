@@ -246,9 +246,8 @@ export interface StructureResult {
 	segments: Segment[];
 	/** The anchor actually used, which may differ from the one passed in. */
 	phraseAnchorBar: number;
-	/** Bar index of each detected drop, strongest first in score but sorted by time here. */
+	/** Bar index of each detected drop, in time order. */
 	dropBars: number[];
-	/** Per-bar event tags. */
 	events: EventTag[][];
 	/** 0..1 per bar, normalised across the track. */
 	energy: Float32Array;
@@ -289,12 +288,9 @@ export function detectStructure(bars: BarFeatures, phraseAnchorBar = 0): Structu
 	}
 
 	// --- plateaus ----------------------------------------------------------------------
-	// Sections are found as sustained levels rather than as onset events. A composite
-	// "dropness" score against an absolute threshold was the wrong shape: it fired on the
-	// first kick after an intro, missed the real drop when the track was uniformly loud, and
-	// merged a chorus and the verse after it into one 32-bar block because both cleared the
-	// bar. What separates a chorus from a verse is that it SITS higher for several bars, and
-	// that is a property of the track's own distribution.
+	// Sections are sustained levels, not onset events. What separates a chorus from a verse
+	// is that it SITS higher for several bars, and how much higher is a property of the
+	// track's own distribution rather than of any absolute threshold.
 	const peak = Math.max(...energy);
 	const hiEnter = Math.max(percentile(energy, 0.62), peak * 0.78);
 	const hiLeave = hiEnter * 0.88;
@@ -363,9 +359,9 @@ export function detectStructure(bars: BarFeatures, phraseAnchorBar = 0): Structu
 	}
 
 	// --- builds and voids --------------------------------------------------------------
-	// A build is bounded by EVIDENCE, not by "everything back to the previous label". Real
-	// builds run 4 to 8 bars; letting the walk-back run to its 16-bar cap turned every quiet
-	// passage before a drop into a build and left the track with no groove at all.
+	// A build is bounded by EVIDENCE, not by "everything back to the previous label": real
+	// builds run 4 to 8 bars, and walking back further turns every quiet passage before a
+	// drop into a build until the track has no groove left.
 	const MAX_BUILD = 8;
 	for (const d of dropBars) {
 		const airAhead = mean(air, Math.max(0, d - 16), d);

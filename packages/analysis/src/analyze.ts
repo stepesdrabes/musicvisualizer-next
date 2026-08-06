@@ -173,10 +173,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		};
 	});
 
-	// energyRank makes "which moment is the peak" a fact the author cannot misjudge. Ranked by
-	// MEAN, not peak: a long mid-energy verse containing one loud bar would otherwise outrank a
-	// short chorus that is loud the whole way through, which is the opposite of what the rank
-	// is asked to mean.
+	// Ranked by MEAN, not peak: a long mid-energy verse containing one loud bar would otherwise
+	// outrank a short chorus that is loud the whole way through.
 	[...sections]
 		.sort((a, b) => b.meanEnergy - a.meanEnergy || b.peakEnergy - a.peakEnergy)
 		.forEach((s, i) => {
