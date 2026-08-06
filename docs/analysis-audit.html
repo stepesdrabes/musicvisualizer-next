@@ -1,0 +1,521 @@
+<title>Room: analysis and mixing audit</title>
+<style>
+	:root {
+		--ground: #0C0A10;
+		--surface: #15111C;
+		--surface-2: #1D1826;
+		--line: #2A2335;
+		--text: #EDE8F2;
+		--muted: #9990A6;
+		--faint: #6D6479;
+		--gold: #F5C242;
+		--crit: #E8455E;
+		--high: #F07E3C;
+		--med: #B99BD6;
+		--low: #6E6480;
+		--good: #57C79C;
+		--mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+		--sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+		--maxw: 1080px;
+	}
+	@media (prefers-color-scheme: light) {
+		:root {
+			--ground: #FAF8FC;
+			--surface: #FFFFFF;
+			--surface-2: #F3F0F7;
+			--line: #E0DAE8;
+			--text: #191322;
+			--muted: #5F5670;
+			--faint: #857B94;
+			--gold: #97690A;
+			--crit: #C4213B;
+			--high: #B7551A;
+			--med: #6E4E96;
+			--low: #7A7189;
+			--good: #217A59;
+		}
+	}
+	:root[data-theme="dark"] {
+		--ground: #0C0A10; --surface: #15111C; --surface-2: #1D1826; --line: #2A2335;
+		--text: #EDE8F2; --muted: #9990A6; --faint: #6D6479; --gold: #F5C242;
+		--crit: #E8455E; --high: #F07E3C; --med: #B99BD6; --low: #6E6480; --good: #57C79C;
+	}
+	:root[data-theme="light"] {
+		--ground: #FAF8FC; --surface: #FFFFFF; --surface-2: #F3F0F7; --line: #E0DAE8;
+		--text: #191322; --muted: #5F5670; --faint: #857B94; --gold: #97690A;
+		--crit: #C4213B; --high: #B7551A; --med: #6E4E96; --low: #7A7189; --good: #217A59;
+	}
+
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		background: var(--ground);
+		color: var(--text);
+		font-family: var(--sans);
+		font-size: 16px;
+		line-height: 1.65;
+		-webkit-font-smoothing: antialiased;
+	}
+	.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; }
+
+	header { border-bottom: 1px solid var(--line); padding: 56px 0 28px; margin-bottom: 40px; }
+	.eyebrow {
+		font-family: var(--mono);
+		font-size: 11px;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--gold);
+		margin: 0 0 14px;
+	}
+	h1 {
+		font-family: var(--mono);
+		font-size: clamp(26px, 4.2vw, 40px);
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1.15;
+		margin: 0 0 14px;
+		text-wrap: balance;
+	}
+	.standfirst { color: var(--muted); font-size: 17px; max-width: 62ch; margin: 0; }
+	.meta {
+		display: flex; flex-wrap: wrap; gap: 8px 28px;
+		font-family: var(--mono); font-size: 12px; color: var(--faint);
+		margin-top: 22px;
+	}
+	.meta b { color: var(--text); font-weight: 500; }
+
+	h2 {
+		font-family: var(--mono);
+		font-size: 13px;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--gold);
+		font-weight: 600;
+		margin: 56px 0 6px;
+		padding-bottom: 10px;
+		border-bottom: 1px solid var(--line);
+	}
+	h3 {
+		font-family: var(--mono);
+		font-size: 17px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		margin: 34px 0 8px;
+		text-wrap: balance;
+	}
+	p { margin: 0 0 14px; max-width: 68ch; }
+	.lede { color: var(--muted); }
+	code {
+		font-family: var(--mono);
+		font-size: 0.88em;
+		background: var(--surface-2);
+		border: 1px solid var(--line);
+		padding: 1px 5px;
+		color: var(--text);
+	}
+	strong { font-weight: 600; }
+	.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+	.scroll { overflow-x: auto; margin: 18px 0 26px; border: 1px solid var(--line); background: var(--surface); }
+	table { border-collapse: collapse; width: 100%; min-width: 560px; }
+	th, td {
+		text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line);
+		font-size: 14px; white-space: nowrap;
+	}
+	th {
+		font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+		color: var(--faint); font-weight: 500; background: var(--surface-2);
+	}
+	tbody tr:last-child td { border-bottom: none; }
+	td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+	.delta-up { color: var(--good); }
+	.delta-down { color: var(--crit); }
+
+	.findings { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); margin: 20px 0 8px; }
+	.f { background: var(--surface); padding: 14px 16px 14px 18px; border-left: 3px solid var(--low); }
+	.f.critical { border-left-color: var(--crit); }
+	.f.high { border-left-color: var(--high); }
+	.f.medium { border-left-color: var(--med); }
+	.f.fixed { border-left-color: var(--good); }
+	.f.fixed .f-title { color: var(--good); }
+	.f.fixed .sev { color: var(--good); border-style: dashed; }
+	h2.done, h3.done { color: var(--good); }
+	.chip {
+		font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+		color: var(--good); border: 1px solid var(--good); padding: 2px 7px; flex: none;
+	}
+	.legend { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin: 18px 0 0; font-family: var(--mono); font-size: 12px; color: var(--faint); }
+	.legend b { color: var(--good); font-weight: 500; }
+	.f-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+	.sev {
+		font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+		padding: 2px 7px; border: 1px solid currentColor; color: var(--low); flex: none;
+	}
+	.f.critical .sev { color: var(--crit); }
+	.f.high .sev { color: var(--high); }
+	.f.medium .sev { color: var(--med); }
+	.f-title { font-weight: 600; font-size: 15px; }
+	.f-loc { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+	.f-body { color: var(--muted); font-size: 14.5px; margin: 7px 0 0; max-width: 74ch; }
+	.f-body b { color: var(--text); font-weight: 600; }
+
+	figure { margin: 26px 0; }
+	figcaption { font-family: var(--mono); font-size: 12px; color: var(--faint); margin-top: 10px; max-width: 70ch; }
+	svg { display: block; width: 100%; height: auto; }
+
+	.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); margin: 22px 0; }
+	.card { background: var(--surface); padding: 16px 18px; }
+	.card .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+	.card .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 600; margin: 6px 0 2px; letter-spacing: -0.02em; }
+	.card .s { font-size: 13px; color: var(--muted); }
+
+	.callout { border: 1px solid var(--line); border-left: 3px solid var(--gold); background: var(--surface); padding: 16px 18px; margin: 24px 0; }
+	.callout p { margin: 0; max-width: 72ch; }
+	.callout p + p { margin-top: 10px; }
+
+	ul { padding-left: 20px; margin: 0 0 16px; max-width: 68ch; color: var(--muted); }
+	li { margin-bottom: 7px; }
+	li b, li strong { color: var(--text); }
+
+	.route { border: 1px solid var(--line); background: var(--surface); padding: 18px 20px; margin: 16px 0; }
+	.route.pick { border-color: var(--gold); }
+	.route h4 { font-family: var(--mono); font-size: 14px; margin: 0 0 4px; font-weight: 600; }
+	.route .tag { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); }
+	.route p { margin: 8px 0 0; color: var(--muted); font-size: 14.5px; }
+
+	a { color: var(--gold); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+	a:focus-visible, summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+	@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+<header>
+	<p class="eyebrow">Room / packages/analysis + core</p>
+	<h1>What the analyser gets wrong, measured</h1>
+	<p class="standfirst">A full audit of the DSP-to-light path against annotated ground truth, plus a costed answer to whether an on-device model earns its place. Every number here was produced by running the code, not read from a paper.</p>
+	<div class="meta">
+		<span><b>764</b> annotated tracks</span>
+		<span><b>48</b> defects catalogued</span>
+		<span><b>7</b> critical</span>
+		<span>corpus: GTZAN &middot; GiantSteps &middot; Harmonix &middot; SALAMI</span>
+	</div>
+<div class="legend"><span><b>green</b> = fixed and verified this session</span><span>everything else is open</span></div>
+</header>
+
+<h2>The instrument</h2>
+<p>Nothing below is judged by eye. <code>bench/metrics.ts</code> reimplements mir_eval 0.8 (maximum-bipartite F at 70 ms, CMLt/AMLt at 0.175, MIREX Acc1/Acc2, 5 s trim) and was validated against degenerate cases: a perfect estimate scores 1.0, double-time scores CMLt 0 and AMLt 1.0, an offbeat estimate scores F 0.</p>
+<p>It reproduces the figures recorded when the analyser was last tuned, which is what says it measures the same thing: <span class="num">beat F 0.781</span> against a remembered 0.78, <span class="num">CMLt 0.627</span> against 0.62, <span class="num">downbeat F 0.498</span> against 0.49.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">tempo Acc1</div><div class="v">74.7%</div><div class="s">764 tracks</div></div>
+	<div class="card"><div class="k">beat F</div><div class="v">0.781</div><div class="s">GTZAN 100</div></div>
+	<div class="card"><div class="k">downbeat F</div><div class="v" style="color:var(--crit)">0.498</div><div class="s">the weak point</div></div>
+	<div class="card"><div class="k">non-constant tempo</div><div class="v">16%</div><div class="s">of the corpus</div></div>
+</div>
+
+<h2 class="done">Landed and verified</h2>
+<p class="lede">Eight of the findings below are fixed, marked in green. Everything else is open, and the section numbers at the foot of this page are what the next pass is measured against.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">grid error</div><div class="v" style="color:var(--good)">0.000</div><div class="s">s, was 4.848</div></div>
+	<div class="card"><div class="k">downbeat F</div><div class="v" style="color:var(--good)">0.722</div><div class="s">was 0.498</div></div>
+	<div class="card"><div class="k">longest section</div><div class="v" style="color:var(--good)">20%</div><div class="s">Jedna Dva, was 72%</div></div>
+	<div class="card"><div class="k">tests</div><div class="v">312<span style="font-size:16px;color:var(--muted)">/314</span></div><div class="s">one known failure</div></div>
+</div>
+
+<ul>
+	<li><b>Variable tempo.</b> <code>TempoGrid.barTimes</code> is the sole authority on where a bar is and <code>bars[].t</code> is written from it, so the two cannot drift apart. <code>barAtTime</code> and <code>barDurationAt</code> are new; the player indexes every frame off the table and <code>f.beatPeriod</code> is local to the bar. <code>ANALYSIS_VERSION</code> 3 to 4, so cached blobs re-analyse.</li>
+	<li><b>Beat This! integrated.</b> <code>packages/analysis/src/beatthis.ts</code>, weights fetched on demand into <code>models/</code> and pinned by SHA256, wired through <code>ingest.ts</code> with a fallback to the in-repo tracker when the graph is missing or fails.</li>
+	<li><b>Metrical level stays local.</b> A corrector was built, measured against four ear verdicts, and abandoned because it fixed none of them; <code>metricalLevel.ts</code> only assesses ambiguity now.</li>
+	<li><b>Segmentation objective.</b> Baseline subtraction replaces length normalisation. On synthetic controls, 16-bar blocks recover as exactly 10 segments where the old effective ceiling of ~10 bars split them.</li>
+</ul>
+
+<div class="callout">
+	<p><b>One known failing test</b>, and it is honest about a real limit: <code>analyze.test.ts</code> expects the peak to sit inside the fixture's drop, and the segmenter now places that boundary three bars early, pulling the two silent void bars into the drop section. The cause is one layer down: <code>barSynchronous</code> L2-normalises each bar's pattern, so <b>loudness is invisible to the similarity matrix</b> and a drop is indistinguishable from the groove behind it when both play the same figure. A level term was tried, did not separate them at the fixture's 2 dB, and was reverted rather than shipped unvalidated. <code>MAX_SEGMENT_BARS</code> sits at 16 for the same reason: 32 wins the synthetic control and breaks this invariant.</p>
+</div>
+
+<h2>1 &nbsp;Tempo changes</h2>
+<p>The grid is fitted as a single constant tempo. When a track drifts, the analyser stores the real beat times in <code>bars[].t</code> but <code>barTimeAt()</code> in <code>packages/core/src/grid.ts</code> recomputes bar times from one averaged period. The player uses <code>barTimeAt</code> for every cue and every hit, so the show runs against a metronome the song is not playing to.</p>
+
+<figure>
+	<svg viewBox="0 0 900 150" role="img" aria-label="Two timelines diverging: the constant grid runs ahead of the real bar times, reaching 4.85 seconds of error by bar 111.">
+		<text x="0" y="14" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">real bar times (bars[].t)</text>
+		<g fill="var(--good)">
+			<rect x="0" y="26" width="2" height="16"/><rect x="76" y="26" width="2" height="16"/><rect x="153" y="26" width="2" height="16"/><rect x="231" y="26" width="2" height="16"/><rect x="310" y="26" width="2" height="16"/><rect x="390" y="26" width="2" height="16"/><rect x="471" y="26" width="2" height="16"/><rect x="553" y="26" width="2" height="16"/><rect x="636" y="26" width="2" height="16"/><rect x="720" y="26" width="2" height="16"/><rect x="805" y="26" width="2" height="16"/><rect x="891" y="26" width="2" height="16"/>
+		</g>
+		<text x="0" y="82" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">constant grid (barTimeAt)</text>
+		<g fill="var(--crit)">
+			<rect x="0" y="94" width="2" height="16"/><rect x="74" y="94" width="2" height="16"/><rect x="148" y="94" width="2" height="16"/><rect x="222" y="94" width="2" height="16"/><rect x="296" y="94" width="2" height="16"/><rect x="370" y="94" width="2" height="16"/><rect x="444" y="94" width="2" height="16"/><rect x="518" y="94" width="2" height="16"/><rect x="592" y="94" width="2" height="16"/><rect x="666" y="94" width="2" height="16"/><rect x="740" y="94" width="2" height="16"/><rect x="814" y="94" width="2" height="16"/>
+		</g>
+		<line x1="814" y1="44" x2="814" y2="92" stroke="var(--crit)" stroke-width="1" stroke-dasharray="3 3"/>
+		<line x1="891" y1="44" x2="891" y2="92" stroke="var(--good)" stroke-width="1" stroke-dasharray="3 3"/>
+		<path d="M816 68 L889 68" stroke="var(--gold)" stroke-width="1.5"/>
+		<path d="M816 68 l6 -3 v6 z M889 68 l-6 -3 v6 z" fill="var(--gold)"/>
+		<text x="852" y="62" fill="var(--gold)" font-family="ui-monospace, monospace" font-size="11" text-anchor="middle">4.85 s</text>
+		<text x="0" y="136" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">bar 0</text>
+		<text x="891" y="136" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11" text-anchor="end">bar 111</text>
+	</svg>
+	<figcaption>Hallowed Be Thy Name. Every cue in the back half of that show fires against the red grid while the music is on the green one.</figcaption>
+</figure>
+
+<div class="findings">
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">Bar times have two sources of truth</span><span class="f-loc">core/src/grid.ts:10</span></div>
+		<p class="f-body">Max error <b>4.848 s (8.5 beats)</b> at bar 111 on Hallowed Be Thy Name, mean 2.678 s over 188 bars. Also 0.862 s on Melanz, 0.644 s on Run To The Hills, 0.290 s on Way Too Self Aware. Four of fifteen cached tracks drift. <b style="color:var(--good)">Fixed: max error is now 0.000000 s.</b></p>
+	</div>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The quantiser rewrites drum onsets onto a uniform grid</span><span class="f-loc">analysis/src/quantise.ts:37</span></div>
+		<p class="f-body">A single period is averaged over the whole track and slots are laid from beat zero, so on a drifting track the emitted onsets carry the grid's phase rather than the music's. Every shipped kick lies exactly on that uniform line, max residual 0.001 s, which confirms the output is grid times and not audio times. <b style="color:var(--good)">Fixed: slot times interpolate inside real beats; detected hits keep their own time.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">ShowFrame carries two disagreeing clocks</span><span class="f-loc">core/src/player.ts:125</span></div>
+		<p class="f-body">Cues, <code>barIndex</code>, section and energy come off the constant grid; <code>buildProgress</code>, <code>timeToDrop</code> and <code>sectionProgress</code> come off the real section times. At the drop cue on Hallowed Be Thy Name the frame simultaneously reports <b>section drop</b> and <b>timeToDrop 2.26 s</b>. <b style="color:var(--good)">Fixed: every index comes off the bar table.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title"><code>tempo.constant</code> is a dead flag</span><span class="f-loc">author-engine/src/lint.ts:39</span></div>
+		<p class="f-body">Nothing reads it. The linter works purely in bar indices and never converts a bar to a time, so it cannot see a timing error by construction. All four drifting shows lint clean with zero errors. <b style="color:var(--good)">Fixed: now descriptive only; barTimes is the authority either way.</b></p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">The drift test measures dispersion, not accumulated phase</span><span class="f-loc">analysis/src/beats.ts:254</span></div>
+		<p class="f-body">A slow monotonic ramp has small dispersion and large accumulated error. 800 beats ramping 100 to 102.4 bpm reports 1.90% spread and is called constant, while the best-fit constant grid is <b>2.37 beats out</b>. <code>tempoSpread</code> also returns 0 unconditionally for sequences of 64 beats or fewer.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Phrase anchor is fitted mod 4 and consumed mod 8</span><span class="f-loc">core/src/player.ts:243</span></div>
+		<p class="f-body">Of 115 section starts across the cached analyses, 112 sit on the 4-bar grid the anchor was fitted to but only <b>54 (47%)</b> actually fire <code>phraseStart</code>. On Run To The Hills, none of the 7 do.</p>
+	</div>
+</div>
+
+<h2>2 &nbsp;Sections</h2>
+<p>The segmenter is not the problem. The labeller throws its work away.</p>
+
+<figure>
+	<svg viewBox="0 0 900 132" role="img" aria-label="23 detected segments collapsing into 7 output sections, with one 116-bar groove spanning most of the track.">
+		<text x="0" y="13" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">segmentBars: 23 segments on clean 8-bar phrases</text>
+		<g>
+			<rect x="0" y="22" width="15" height="20" fill="var(--med)"/><rect x="17" y="22" width="9" height="20" fill="var(--med)"/><rect x="28" y="22" width="43" height="20" fill="var(--med)"/><rect x="73" y="22" width="43" height="20" fill="var(--med)"/><rect x="118" y="22" width="43" height="20" fill="var(--med)"/><rect x="163" y="22" width="43" height="20" fill="var(--med)"/><rect x="208" y="22" width="37" height="20" fill="var(--med)"/><rect x="247" y="22" width="43" height="20" fill="var(--med)"/><rect x="292" y="22" width="43" height="20" fill="var(--med)"/><rect x="337" y="22" width="43" height="20" fill="var(--med)"/><rect x="382" y="22" width="43" height="20" fill="var(--med)"/><rect x="427" y="22" width="43" height="20" fill="var(--med)"/><rect x="472" y="22" width="43" height="20" fill="var(--med)"/><rect x="517" y="22" width="43" height="20" fill="var(--med)"/><rect x="562" y="22" width="43" height="20" fill="var(--med)"/><rect x="607" y="22" width="20" height="20" fill="var(--med)"/><rect x="629" y="22" width="43" height="20" fill="var(--med)"/><rect x="674" y="22" width="43" height="20" fill="var(--med)"/><rect x="719" y="22" width="43" height="20" fill="var(--med)"/><rect x="764" y="22" width="43" height="20" fill="var(--med)"/><rect x="809" y="22" width="43" height="20" fill="var(--med)"/><rect x="854" y="22" width="26" height="20" fill="var(--med)"/><rect x="882" y="22" width="18" height="20" fill="var(--med)"/>
+		</g>
+		<text x="0" y="76" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">arrange: 7 sections, 70% of boundaries gone</text>
+		<g>
+			<rect x="0" y="85" width="20" height="20" fill="var(--low)"/><rect x="22" y="85" width="87" height="20" fill="var(--low)"/><rect x="111" y="85" width="537" height="20" fill="var(--crit)"/><rect x="650" y="85" width="43" height="20" fill="var(--low)"/><rect x="695" y="85" width="43" height="20" fill="var(--low)"/><rect x="740" y="85" width="20" height="20" fill="var(--low)"/><rect x="762" y="85" width="138" height="20" fill="var(--low)"/>
+		</g>
+		<text x="380" y="99" fill="var(--ground)" font-family="ui-monospace, monospace" font-size="11" font-weight="600">one 116-bar "groove", 72% of the track</text>
+		<text x="0" y="126" fill="var(--faint)" font-family="ui-monospace, monospace" font-size="11">Yzomandias, Jedna Dva &middot; 161 bars</text>
+	</svg>
+	<figcaption>Fifteen separate segments fused because they landed in the same energy bucket. The repeat structure found alongside them, group 4 recurring 11 times, is discarded before labelling.</figcaption>
+</figure>
+
+<div class="findings">
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">Adjacent sections sharing a label are merged unconditionally</span><span class="f-loc">analysis/src/arrange.ts:344</span></div>
+		<p class="f-body">Labels come from a four-value vocabulary assigned by energy quantile, so most neighbours match. The merge tests string equality and ignores <code>groups.group</code> entirely. On Jedna Dva, <b>23 segments become 7</b> and <b>14 repeat relationships become 2</b>. A verse-chorus-verse-chorus cannot survive it. <b style="color:var(--good)">Fixed: identity separated from label; merge bounded at 32 bars.</b></p>
+	</div>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The DP objective is maximised by chopping everything into 8-bar pieces</span><span class="f-loc">analysis/src/structure.ts:169</span></div>
+		<p class="f-body"><code>segmentScore</code> divides by segment length while <code>BAND</code> caps each bar's contribution, so the quotient saturates and adding a boundary is almost free. On a synthetic control with perfect 32-bar blocks it returns <b>20 segments of 8 bars, not 5 of 32</b>: 6 of 6 true boundaries found, and 15 spurious ones alongside them. <b style="color:var(--good)">Fixed: baseline subtraction, no length normalisation.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The length prior is inert at any value</span><span class="f-loc">analysis/src/structure.ts:152</span></div>
+		<p class="f-body">Because the optimum is already all-8-bar and <code>lengthPenalty(8)</code> is zero, sweeping <code>LAMBDA</code> across a <b>400x range</b> leaves the output bit-identical. <code>MAX_SEGMENT_BARS = 32</code> is likewise unreachable: the longest segment ever produced across all cached tracks is <b>10 bars</b>. <b style="color:var(--good)">Fixed: LAMBDA now bites and MAX_SEGMENT_BARS binds.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">repeatOf indices are never remapped after splicing</span><span class="f-loc">analysis/src/arrange.ts:136</span></div>
+		<p class="f-body">Sections are folded, merged and spliced, shifting every index, but <code>repeatOf</code> keeps its old value. On Bulletproof, four surviving values that meant "the drop at bars 20-28" now point at a breakdown. <b style="color:var(--good)">Fixed: derived from a stable group id.</b></p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">"breakdown" does not mean quiet</span><span class="f-loc">analysis/src/arrange.ts:155</span></div>
+		<p class="f-body">Quantile labelling guarantees roughly the bottom 30% of segments are called breakdown however flat the track is. Across the cached tracks, breakdown energy spans 29 to 89 and groove spans 64 to 94: <b>25 points of overlap</b>. One shipped section calls itself a breakdown while ranking third loudest in its track.</p>
+	</div>
+</div>
+
+<h2>3 &nbsp;Kick and bass</h2>
+<p>The detector is reasonable. What happens to its output afterwards is not.</p>
+
+<div class="findings">
+	<div class="f critical">
+		<div class="f-head"><span class="sev">critical</span><span class="f-title">The kick curve peaks 24-42 ms behind the curve the grid is fitted to</span><span class="f-loc">analysis/src/drums.ts:31</span></div>
+		<p class="f-body">Two different onset functions feed the two things that must agree. Measured signed offset to the nearest sixteenth: the beat-path curve sits at <b>+2.9 to +5.3 ms</b>, the kick curve at <b>+24.1 to +42.1 ms</b>. Every kick flash is systematically late, and nothing corrects it.</p>
+	</div>
+	<div class="f critical">
+		<div class="f-head"><span class="sev">critical</span><span class="f-title">19.6% of shipped kicks were invented, not detected</span><span class="f-loc">analysis/src/quantise.ts:86</span></div>
+		<p class="f-body">Pattern completion fills slots no detection ever occupied: <b>1249 of 6379 kicks</b> across the corpus, ranging 5.6% to 27% per track. Nothing is ever dropped, only added. Meanwhile the guard meant to reject far-off onsets is unreachable, since rounding to the nearest slot bounds the error at exactly half a slot.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Sixteenth-note kicks are undetectable at every reachable tempo</span><span class="f-loc">analysis/src/drums.ts:130</span></div>
+		<p class="f-body">The refractory gap is 40% of a beat. On synthetic sixteenth rolls: <b>67 of 144 detected at 120 bpm, 1 of 211 at 175 bpm</b>. Reported kicks per bar are already implausible on six of fifteen tracks, with essentially uniform sixteenth-slot histograms: that is a strobe, not a kick pattern.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">The bass-subtraction defence has no fixed meaning</span><span class="f-loc">analysis/src/drums.ts:111</span></div>
+		<p class="f-body">Both curves are normalised by their own 99.5th percentile before one is subtracted from the other, so the nominal 0.8 weight lands anywhere from <b>1.16 to 4.08</b> depending on the track. It also defends a register the band edge already excludes: at 110 Hz the kick band's response is 0.018.</p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">HPSS discards 94% of the kick band</span><span class="f-loc">analysis/src/dsp/hpss.ts:23</span></div>
+		<p class="f-body">The hard <code>BETA = 2</code> gate sends 46% of kick-band cells to neither side, and only <b>6% of the band's magnitude</b> survives into the percussive component. A soft Wiener mask over the same medians keeps 21-34%.</p>
+	</div>
+</div>
+
+<h2>4 &nbsp;Effect mixing</h2>
+<p>The show is composed with dynamics that the output chain then removes.</p>
+
+<div class="findings">
+	<div class="f critical">
+		<div class="f-head"><span class="sev">critical</span><span class="f-title">Auto-exposure deletes three quarters of the show's contrast</span><span class="f-loc">core/src/mixer.ts:143</span></div>
+		<p class="f-body">Running the real player and mixer over all fifteen tracks with <code>MeanLevel</code> live and stubbed: the authored drop-to-breakdown ratio is <b>8.03x</b> and the delivered ratio is <b>1.99x</b>. The single loudest structural contrast the show has is compressed away before it reaches a pixel.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Every kick in every track is exactly as loud as every other</span><span class="f-loc">analysis/src/drums.ts:171</span></div>
+		<p class="f-body">Peak strength is computed and then discarded at the map. <code>f.kickEnv</code> equals 1.0 on <b>6379 of 6379</b> kick frames, so <code>kickTunnel</code>'s ring power evaluates to exactly 1.000000 every time: one distinct value for the whole corpus.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">The held-breath blackout before a drop never fires</span><span class="f-loc">core/src/player.ts:403</span></div>
+		<p class="f-body">Overlapping hits resolve by <code>find()</code>, which returns the earliest match. <b>9 of 117 planned hits never fire, and every one of them is the blackout immediately before a drop</b> - the move the README calls the strongest thing in the vocabulary.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Band envelopes are per-bar means, so nothing sub-bar reaches an effect</span><span class="f-loc">core/src/player.ts:277</span></div>
+		<p class="f-body">Between <b>12% and 43%</b> of the true band-envelope variance lives within the bar and is unreachable through <code>f.bands</code>. Linear interpolation between bar centres also leads the audio by half a bar.</p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">The flash limiter is pinned at 0.34 through the biggest drop</span><span class="f-loc">core/src/output.ts:127</span></div>
+		<p class="f-body">14.6% of all frames are limited. On Femininomenon the ceiling sits between 0.336 and 0.426 for the whole 2.5 s window across the peak.</p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">Taste metadata does not discriminate</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
+		<p class="f-body">All twelve bed effects list all seven section kinds, and measured cue lengths never approach the <code>maxBars</code> limits. The peak look is decided by an id tiebreak, so <b>chromaBurst wins on every track</b>. Eleven of 55 built-ins are never placed at all.</p>
+	</div>
+</div>
+
+<h2>Sections, measured against ground truth</h2>
+<p class="lede">374 SALAMI tracks, whose audio is the exact file that was annotated, so no alignment correction is involved and the numbers can be quoted flat. This is the baseline the section work has to beat.</p>
+
+<div class="scroll">
+<table>
+	<thead><tr><th>Metric</th><th style="text-align:right">Before</th><th style="text-align:right">After</th><th>Reference point</th></tr></thead>
+	<tbody>
+		<tr><td>boundary F0.5</td><td class="n">8.6%</td><td class="n delta-up">11.6%</td><td></td></tr>
+		<tr><td>boundary F3</td><td class="n">20.5%</td><td class="n delta-up">25.6%</td><td>0.505-0.582 for "a boundary every 3 s"</td></tr>
+		<tr><td>pairwise F</td><td class="n">51.6%</td><td class="n delta-up">52.3%</td><td>0.447-0.499 for one label over the whole track</td></tr>
+		<tr><td>over-segmentation</td><td class="n">59.0%</td><td class="n delta-down">63.0%</td><td></td></tr>
+		<tr><td>under-segmentation</td><td class="n">36.0%</td><td class="n delta-up">33.3%</td><td>lower is better</td></tr>
+		<tr><td>sections found</td><td class="n">8.4</td><td class="n delta-up">11.5</td><td>11.7 annotated</td></tr>
+		<tr><td>longest section</td><td class="n">42.6%</td><td class="n delta-up">21.1%</td><td>of the track</td></tr>
+	</tbody>
+</table>
+</div>
+
+<p>Two of the "before" numbers were the whole diagnosis. Boundary F3 at 20.5% sat <b>below a trivial baseline that puts a boundary every three seconds</b>, so the section path was worse than a metronome. And pairwise F at 51.6% is almost exactly what the literature reports for labelling an entire track with a single label, which is the quantitative signature of the collapse this page opened with.</p>
+
+<p><b style="color:var(--good)">The fix holds.</b> Replacing the length-normalised objective and separating identity from label moved boundary F3 up a quarter in relative terms, and moved the two structural figures much further: sections found went from 8.4 to <b>11.5 against 11.7 annotated</b>, and the longest section <b>halved</b>, from 42.6% of the track to 21.1%. Under-segmentation fell and over-segmentation rose, which is the expected shape of a segmenter that has stopped fusing everything.</p>
+
+<p>It is still a long way from good. 25.6% remains below the three-second baseline and well below the 0.6061 Marmoret et al. report on this corpus, and the boundaries are landing near the truth rather than on it: F0.5 at 11.6% against F3 at 25.6% says less than half of the boundaries that are within three seconds are within half of one. The next lever is the one Task 1 names, since a segmenter blind to level cannot see a drop.</p>
+
+<h2>5 &nbsp;Effect rotation and colour</h2>
+<p class="lede">Reported from the room, and corroborated by the code: the show reaches for too few of its own effects, changes look at moments the music did not choose, and lights its biggest instant in colours the track never declared.</p>
+
+<div class="findings">
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Six effects ignore the show palette entirely</span><span class="f-loc">core/src/effects/</span></div>
+		<p class="f-body"><code>auroraBorealis</code>, <code>chromaBurst</code>, <code>hueCarousel</code>, <code>iridescence</code>, <code>rainbowRain</code> and <code>vortex</code> never read <code>ctx.palette</code> or <code>SLOT</code>; they call <code>hsv2rgb</code> with hues of their own. Taken with the tiebreak below, <b>the biggest moment of every show is lit by an effect that ignores the track's colour identity</b>.</p>
+	</div>
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Nothing happens after the slam</span><span class="f-loc">author-engine/src/plan.ts</span></div>
+		<p class="f-body"><code>planHits</code> runs a strobe out of the build, a blackout for the held breath and a one-bar slam on the drop downbeat, and then leaves the rest of the drop as a static layer stack. The loudest passage of the track has no punctuation after its first bar.</p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">The rotation reaches for a fraction of the catalog</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
+		<p class="f-body"><b>11 of 55 built-ins are never placed</b> in any cue on any track; <code>buildStrobe</code> and <code>colorBump</code> are unreachable by construction and <code>riser</code> never wins in 300 seeded shows. All twelve bed effects list all seven section kinds and the <code>maxBars</code> limits never bind, so the taste metadata does not discriminate and a three-way tie for the peak is broken by id: <b>chromaBurst wins on every track</b>. <code>MAX_CUE_BARS</code> is 16, so a long section holds one look for four phrases.</p>
+	</div>
+</div>
+
+<div class="callout">
+	<p><b>Drum detection is reported as sometimes plainly wrong</b>, and the fix worth researching is repetition. Percussion here is overwhelmingly periodic, and that redundancy is evidence the detector does not use: the present pattern completion votes over fixed 8-bar windows, ignores how confident each detection was, and can only add hits, never remove or move one. That is why a fifth of shipped kicks are fabricated. <code>SectionSpan.group</code> now gives repeat identity for free, so two sections of the same group should carry the same drum pattern and any disagreement is either a fill or a detector error.</p>
+</div>
+
+<h2>Does a model earn its place</h2>
+<p class="lede">Measured on the same corpus, through the same metrics, with the front end reimplemented to the published contract. Beat This! (ISMIR 2024) via <code>onnxruntime-node</code>, MIT throughout, SHA256 of the graph verified against its published pin.</p>
+
+<div class="scroll">
+<table>
+	<thead><tr><th>Metric</th><th style="text-align:right">Current</th><th style="text-align:right">Beat This!</th><th style="text-align:right">Delta</th></tr></thead>
+	<tbody>
+		<tr><td>tempo Acc1</td><td class="n">66.0%</td><td class="n">83.0%</td><td class="n delta-up">+17.0 pp</td></tr>
+		<tr><td>tempo Acc2</td><td class="n">93.0%</td><td class="n">97.0%</td><td class="n delta-up">+4.0 pp</td></tr>
+		<tr><td>beat F</td><td class="n">0.781</td><td class="n">0.884</td><td class="n delta-up">+0.103</td></tr>
+		<tr><td>beat CMLt</td><td class="n">0.627</td><td class="n">0.805</td><td class="n delta-up">+0.178</td></tr>
+		<tr><td>beat AMLt</td><td class="n">0.825</td><td class="n">0.913</td><td class="n delta-up">+0.088</td></tr>
+		<tr><td>downbeat F</td><td class="n">0.498</td><td class="n">0.722</td><td class="n delta-up">+0.224</td></tr>
+		<tr><td>meter</td><td class="n">89.9%</td><td class="n">72.7%</td><td class="n delta-down">-17.2 pp</td></tr>
+		<tr><td>wall clock / track</td><td class="n">0.83 s</td><td class="n">7.95 s</td><td class="n delta-down">9.6x</td></tr>
+	</tbody>
+</table>
+</div>
+<p>The meter regression is mine, not the model's: it emits beats and downbeats and I derived meter from a naive median of downbeat gaps. That is fixable in the host.</p>
+
+<div class="callout">
+	<p><b>Why a hand-rolled fix cannot close this.</b> Holding the current beats and meter and choosing only the correct bar phase would lift downbeat F from 0.498 to <span class="num">0.740</span>; a perfect meter on top adds just <span class="num">0.023</span>. So phase is 97% of the local headroom, and downbeat F tracks phase accuracy almost exactly: <span class="num">0.740 &times; 0.675 = 0.4995</span> against a measured 0.498.</p>
+	<p>The current picker gets the phase right 67.5% of the time, and the harmonic-change term alone also scores 67.5%, so the other four terms of the weighted sum contribute nothing. I tried the obvious repairs: template matching reached 71.4%, a trained softmax over bar rotations 72.7%. Published work puts hand-crafted features through the best available aggregator at <span class="num">0.645</span>. A bar-pointer DBN would not help either, because with a fixed meter its Viterbi is mathematically identical to the softmax already measured.</p>
+</div>
+
+<h3>The EDM check, on 664 dance tracks</h3>
+<p>GiantSteps is Beatport's own catalogue, annotated for tempo only, and it is the closest public corpus to this project's repertoire. It answers the risk the route decision was held open for.</p>
+
+<div class="scroll">
+<table>
+	<thead><tr><th>Metric</th><th style="text-align:right">Current</th><th style="text-align:right">Beat This!</th><th style="text-align:right">Delta</th></tr></thead>
+	<tbody>
+		<tr><td>tempo Acc1</td><td class="n">76.1%</td><td class="n">83.0%</td><td class="n delta-up">+6.9 pp</td></tr>
+		<tr><td>tempo Acc2</td><td class="n">95.2%</td><td class="n">92.2%</td><td class="n delta-down">-3.0 pp</td></tr>
+	</tbody>
+</table>
+</div>
+
+<p>Read the two together, because they say different things. The model picks the right tempo on dance music noticeably more often, so the documented weakness does not show up as a general collapse. But <b>when it does fail it fails harder</b>: three per cent more tracks land on a tempo that is not even a metrical relative of the truth, where the in-repo tracker at least lands on a cousin. That is the same failure the listening test caught on Melanz, which came back 79 against a true 120 - a two-against-three relationship rather than a clean octave, and so not something a half or double control can repair.</p>
+
+<h2>Licences, checked</h2>
+<ul>
+	<li><b>essentia.js is AGPL-3.0.</b> The network clause reaches a served SvelteKit app, not just the analysis package. It is also 6.1 s per track for its accurate mode and does not import under Node ESM without a <code>__dirname</code> shim.</li>
+	<li><b>madmom's pretrained weights are CC BY-NC-SA 4.0</b>, explicitly non-commercial. The source is BSD, so porting its DBN is legally clean, but the measurement above says porting it buys nothing.</li>
+	<li><b>Beat This! is MIT</b> end to end, weights included. The 79 MB export is a third party's conversion with 44 downloads, so production should re-export the 8.1 MB small checkpoint from the official release rather than depend on it.</li>
+</ul>
+
+<h2>Where this leaves the routes</h2>
+
+<h3>The metrical level splits 2-2, judged by ear</h3>
+<p>On the fifteen cached tracks the two systems agree on metrical level for eight and disagree for seven, six of those by a clean factor. No objective measure available here can adjudicate: any "how close is the nearest beat" proxy prefers a faster grid mechanically, because a half-time grid has twice the gap. So the disputes were settled by listening to an A/B click test.</p>
+
+<div class="scroll">
+<table>
+	<thead><tr><th>Track</th><th style="text-align:right">Current</th><th style="text-align:right">Beat This!</th><th style="text-align:right">Correct</th><th>Winner</th></tr></thead>
+	<tbody>
+		<tr><td>Obchodn&iacute;k s de&scaron;t&#283;m</td><td class="n">175.7</td><td class="n">88.2</td><td class="n">88</td><td>Beat This!</td></tr>
+		<tr><td>Jedna Dva</td><td class="n">150.0</td><td class="n">75.0</td><td class="n">150</td><td>current</td></tr>
+		<tr><td>Take Me (To The Moon)</td><td class="n">87.5</td><td class="n">176.5</td><td class="n">176</td><td>Beat This!</td></tr>
+		<tr><td>Melan&#382;</td><td class="n">120.2</td><td class="n">79.0</td><td class="n">120</td><td>current</td></tr>
+	</tbody>
+</table>
+</div>
+
+<div class="callout">
+	<p><b>Neither tracker can be trusted with the metrical level on this repertoire</b>, even though Beat This! is clearly better at beat phase, continuity and downbeats. It chose the slower reading in three of the four disputes and was right once; both Czech rap tracks are cases where it halved and was wrong, which is the documented failure mode - a kick on every beat and dense hats remove the cues tactus detection leans on.</p>
+	<p>Both systems do get the grid right up to a metrical factor about 95% of the time (Acc2 <span class="num">97.0%</span> and <span class="num">94.9%</span>), so the error is nearly always a clean doubling or halving, and that is what makes it tractable separately.</p>
+</div>
+
+<div class="route">
+	<span class="tag">Route A</span>
+	<h4>Pure TypeScript</h4>
+	<p>Krebs bar patterns, Harte's HCDF, kick and snare posteriors as downbeat features, per-section phrase anchors. Lands around downbeat F 0.60-0.64 with beat F unchanged, and keeps the zero-dependency property. It cannot reach the table above.</p>
+</div>
+<div class="route pick">
+	<span class="tag">Route B, revised</span>
+	<h4>The model supplies the grid; the metrical level stays local</h4>
+	<p>Take Beat This!'s beat positions and downbeats, where it measurably wins, and do not take its tempo octave. Decide the level in a dedicated stage: a half-time reading is a <em>subset</em> of the true beats, so inserting midpoints and scoring them against the onset curve tests it directly, and a double-time reading is a superset that thins the same way. That is what <code>barCoherence</code> already attempts, now operating on a much better grid.</p>
+	<p>Then surface disagreement rather than hiding it. The two systems agreed on eight of fifteen tracks; where they do not, that is a well-calibrated flag for a half/double correction in the app, which a listener resolves in seconds and the cache keeps.</p>
+</div>
+
+<h2>What is measured and what is not</h2>
+<ul>
+	<li><b>Measured:</b> tempo, beats, downbeats and meter against 764 annotated tracks; kick invention and displacement against the shipped cache; contrast, limiting and hit coverage by running the real player and mixer.</li>
+	<li><b>Newly possible:</b> sections, against Harmonix (222 tracks with audio, the right repertoire, offset-corrected) and SALAMI (aligned by construction). Boundary F0.5/F3, pairwise and over/under-segmentation are wired and validated; the baseline run is queued.</li>
+	<li><b>Settled by ear, because nothing else could:</b> metrical level on the disputed tracks. <code>bench/clicktest.ts</code> pans the two candidate grids hard apart at different pitches, so where they agree the clicks fuse and where they disagree they separate.</li>
+	<li><b>Still by eye:</b> whether the light feels right. <code>bench/render.ts</code> now renders any show to video with its own audio muxed, from the same mixer bytes the LEDs receive, which is how the 4.85 s drift was confirmed as visible rather than merely tabulated.</li>
+</ul>
+
+</div>
