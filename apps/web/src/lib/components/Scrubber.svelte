@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import { barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
 
 	let {
 		analysis,
@@ -100,11 +100,7 @@
 		</div>
 
 		{#each show?.hits ?? [] as h, i (i)}
-			{@const t = analysis
-				? analysis.tempo.firstBeat +
-					(analysis.tempo.downbeatPhase + h.bar * analysis.tempo.beatsPerBar) *
-						analysis.tempo.beatPeriod
-				: 0}
+			{@const t = analysis ? barTimeAt(analysis.tempo, h.bar) : 0}
 			<div
 				class="hit {h.kind}"
 				style:left={`${duration > 0 ? ((t / duration) * 100).toFixed(3) : 0}%`}

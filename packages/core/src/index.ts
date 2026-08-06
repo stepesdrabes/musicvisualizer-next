@@ -37,8 +37,15 @@ export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
 export { hsv2rgb } from './color/hsv.ts';
 export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
+export {
+	PHRASE_BARS,
+	barTimeAt,
+	nearestPhraseBar,
+	onPhraseGrid,
+	phraseOffset
+} from './grid.ts';
 export { Layer, Mixer } from './mixer.ts';
-export { ShowPlayer, barTimeAt } from './player.ts';
+export { ShowPlayer } from './player.ts';
 export {
 	BUILT_IN_EFFECTS,
 	EffectRegistry,

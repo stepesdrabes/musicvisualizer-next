@@ -41,6 +41,14 @@
 		load = { phase, message, progress };
 	}
 
+	function postJson(url: string, body: unknown) {
+		return fetch(url, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body)
+		});
+	}
+
 	$effect(() => {
 		const v = new Viz();
 		v.onReadout = (r) => (readout = r);
@@ -58,14 +66,10 @@
 	$effect(() => {
 		if (!ddpRunning) return;
 		const send = () =>
-			fetch('/api/output', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					action: 'sync',
-					position: readout.position,
-					playing: readout.playing
-				})
+			postJson('/api/output', {
+				action: 'sync',
+				position: readout.position,
+				playing: readout.playing
 			}).catch(() => {});
 		void send();
 		const timer = setInterval(send, 500);
@@ -80,11 +84,7 @@
 		note(`load ${source}`);
 
 		try {
-			const res = await fetch('/api/ingest', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ source })
-			});
+			const res = await postJson('/api/ingest', { source });
 			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
 
 			const data = (await res.json()) as {
@@ -253,27 +253,19 @@
 
 	async function toggleOutput() {
 		if (ddpRunning) {
-			await fetch('/api/output', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ action: 'stop' })
-			});
+			await postJson('/api/output', { action: 'stop' });
 			ddpRunning = false;
 			note('DDP output stopped');
 			return;
 		}
 		if (!trackId || !ddpHost.trim()) return;
-		const res = await fetch('/api/output', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				action: 'start',
-				trackId,
-				hosts: ddpHost
-					.split(',')
-					.map((h) => h.trim())
-					.filter(Boolean)
-			})
+		const res = await postJson('/api/output', {
+			action: 'start',
+			trackId,
+			hosts: ddpHost
+				.split(',')
+				.map((h) => h.trim())
+				.filter(Boolean)
 		});
 		if (res.ok) {
 			ddpRunning = true;

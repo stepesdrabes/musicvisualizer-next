@@ -32,6 +32,16 @@ export function setPixel(buf: Float32Array, i: number, r: number, g: number, b: 
 	buf[o + 2] = b;
 }
 
+/** Every pixel to one colour. The whole-room flash, written once. */
+export function fillSolid(buf: Float32Array, count: number, rgb: readonly number[]): void {
+	for (let i = 0; i < count; i++) {
+		const o = i * 3;
+		buf[o] = rgb[0];
+		buf[o + 1] = rgb[1];
+		buf[o + 2] = rgb[2];
+	}
+}
+
 /** Sub-pixel additive dot. Anti-aliases motion that would otherwise step LED to LED. */
 export function addPixelF(
 	buf: Float32Array,

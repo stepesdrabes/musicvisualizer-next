@@ -1,5 +1,14 @@
-import type { Geometry } from '../contracts/room.ts';
+import type { Geometry, StripSpec } from '../contracts/room.ts';
+import { stampGaussian } from './buffer.ts';
 import { clamp, frac } from './math.ts';
+
+/**
+ * One LED's position along the perimeter ring, falling back to its own strip for the beam.
+ * The default coordinate for anything that should read as travelling around the room.
+ */
+export function ringU(g: Geometry, i: number): number {
+	return g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+}
 
 /**
  * A 1-D topology over the room, so a stateful effect (shift register, trail, chase) can
@@ -110,6 +119,23 @@ export function scatterMirrored(
 /** Convert a world speed into ring positions per second. */
 export function pxPerSecond(ring: Ring, metresPerSecond: number): number {
 	return (metresPerSecond / ring.metres) * ring.length;
+}
+
+/**
+ * Gaussian blob at a sub-pixel position on one strip, clipped to that strip. Strips are
+ * concatenated in the global buffer, so an unclipped blob near the west wall's end lands
+ * on the ceiling beam, which is nowhere near it in the room.
+ */
+export function stampOnStrip(
+	buf: Float32Array,
+	count: number,
+	strip: StripSpec,
+	pos: number,
+	sigma: number,
+	rgb: readonly [number, number, number]
+): void {
+	const lo = strip.offset;
+	stampGaussian(buf, count, lo + pos, sigma, rgb[0], rgb[1], rgb[2], false, lo, lo + strip.count);
 }
 
 /**

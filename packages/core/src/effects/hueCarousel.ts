@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { hsv2rgb } from '../color/hsv.ts';
 import { clamp, frac } from '../dsl/math.ts';
+import { setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -39,10 +40,7 @@ export const hueCarousel: EffectDef = {
 					// dwells dark rather than reading as a flat band of colour.
 					const w = 0.25 + 0.75 * Math.pow(sinewave(u * 3 - f.barPhase), 2);
 					hsv2rgb(frac(u - spin + hueShift), 0.92, w * gain, rgb);
-					const o = i * 3;
-					out[o] = rgb[0];
-					out[o + 1] = rgb[1];
-					out[o + 2] = rgb[2];
+					setPixel(out, i, rgb[0], rgb[1], rgb[2]);
 				}
 			}
 		};

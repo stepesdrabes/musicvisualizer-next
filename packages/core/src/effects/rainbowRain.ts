@@ -1,19 +1,10 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { hsv2rgb } from '../color/hsv.ts';
 import { frac } from '../dsl/math.ts';
-import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { fadeToBlack } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
-import { INTENSITY, param } from './helpers.ts';
-
-const MAX_DROPS = 24;
-
-interface RainDrop {
-	alive: boolean;
-	wall: number;
-	fromEnd: number;
-	t0: number;
-	hue: number;
-}
+import { stampOnStrip } from '../dsl/space.ts';
+import { beatRelease, INTENSITY, param, WallDrops } from './helpers.ts';
 
 /**
  * Successive droplets walk the hue wheel in golden-angle steps, the trick sunflowers
@@ -37,93 +28,44 @@ export const rainbowRain: EffectDef = {
 		param('fallBeats', 'Beats to land', 3, 1, 8, 0.5)
 	],
 	create(g) {
-		const walls = g.strips.filter((s) => s.inPerimeter);
-		const drops: RainDrop[] = [];
-		for (let i = 0; i < MAX_DROPS; i++) {
-			drops.push({ alive: false, wall: 0, fromEnd: 0, t0: 0, hue: 0 });
-		}
-		const landGlow = walls.map(() => new PulseEnv());
-		const landHue = new Float32Array(walls.length);
+		const rain = new WallDrops(g);
+		const landGlow = rain.walls.map(() => new PulseEnv());
+		const landHue = new Float32Array(rain.walls.length);
 		const rgb: [number, number, number] = [0, 0, 0];
-		let next = 0;
-		let lastStep = -1;
-		let spawnCount = 0;
 
 		return {
 			reset() {
-				for (const d of drops) d.alive = false;
+				rain.reset();
 				for (const l of landGlow) l.reset();
 				landHue.fill(0);
-				next = 0;
-				lastStep = -1;
-				spawnCount = 0;
 			},
 			render(out, ctx) {
 				const { f, p, hueShift } = ctx;
-				fadeToBlack(out, f.dt, Math.max(0.05, f.beatPeriod * 0.3));
-				if (walls.length === 0) return;
+				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.3));
 
-				const step = Math.floor((f.beatIndex + f.beatPhase) * Math.max(0.5, p.perBeat));
-				if (step !== lastStep) {
-					lastStep = step;
-					spawnCount++;
-					const d = drops[next];
-					next = (next + 1) % MAX_DROPS;
-					d.alive = true;
-					d.wall = spawnCount % walls.length;
-					d.fromEnd = (spawnCount >> 2) % 2;
-					d.t0 = f.t;
-					d.hue = frac(spawnCount * 0.381966);
-				}
-
-				const fallTime = Math.max(0.3, p.fallBeats * f.beatPeriod);
 				const gain = 0.6 + p.intensity * 1.4;
+				const spawned = rain.spawn(f, p.perBeat);
+				if (spawned) spawned.tint = frac(spawned.seq * 0.381966);
 
-				for (const d of drops) {
-					if (!d.alive) continue;
-					const u = (f.t - d.t0) / fallTime;
-					if (u >= 1) {
-						d.alive = false;
-						landGlow[d.wall].fire(0.85);
-						landHue[d.wall] = d.hue;
-						continue;
+				rain.fall(
+					f,
+					p.fallBeats,
+					(drop, u, pos, wall) => {
+						hsv2rgb(frac(drop.tint + hueShift), 0.92, gain * (0.5 + 0.5 * u), rgb);
+						stampOnStrip(out, g.count, wall, pos, 1.1, rgb);
+					},
+					(drop) => {
+						landGlow[drop.wall].fire(0.85);
+						landHue[drop.wall] = drop.tint;
 					}
-					const wall = walls[d.wall];
-					const half = wall.count / 2;
-					const dist = Math.pow(u, 1.8) * half;
-					const pos = d.fromEnd === 0 ? dist : wall.count - 1 - dist;
-					hsv2rgb(frac(d.hue + hueShift), 0.92, gain * (0.5 + 0.5 * u), rgb);
-					stampGaussian(
-						out,
-						g.count,
-						wall.offset + pos,
-						1.1,
-						rgb[0],
-						rgb[1],
-						rgb[2],
-						false,
-						wall.offset,
-						wall.offset + wall.count
-					);
-				}
+				);
 
-				for (let w = 0; w < walls.length; w++) {
+				for (let w = 0; w < rain.walls.length; w++) {
 					const v = landGlow[w].decay(f.dt, f.beatPeriod, 3);
 					if (v < 0.02) continue;
-					const wall = walls[w];
+					const wall = rain.walls[w];
 					hsv2rgb(frac(landHue[w] + hueShift), 0.7, v * gain * 0.8, rgb);
-					stampGaussian(
-						out,
-						g.count,
-						wall.offset + wall.count / 2,
-						3.2,
-						rgb[0],
-						rgb[1],
-						rgb[2],
-						false,
-						wall.offset,
-						wall.offset + wall.count
-					);
+					stampOnStrip(out, g.count, wall, wall.count / 2, 3.2, rgb);
 				}
 			}
 		};

@@ -3,6 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
 import { PulseEnv } from '../dsl/env.ts';
+import { setPixel } from '../dsl/buffer.ts';
 import { INTENSITY } from './helpers.ts';
 
 /**
@@ -54,11 +55,8 @@ export const doubleKickGatling: EffectDef = {
 				const gain = 0.5 + p.intensity * 1.4;
 				for (let i = 0; i < g.count; i++) {
 					const v = g.x[i] < 0 ? vl : vr;
-					const o = i * 3;
 					if (v < 0.004) {
-						out[o] = 0;
-						out[o + 1] = 0;
-						out[o + 2] = 0;
+						setPixel(out, i, 0, 0, 0);
 						continue;
 					}
 					// Hot core out at the side walls, falling toward the centre line.

@@ -3,6 +3,7 @@ import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, envelope, lerp } from '../dsl/math.ts';
+import { setPixel } from '../dsl/buffer.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 /**
@@ -44,11 +45,8 @@ export const subSwell: EffectDef = {
 
 				for (let i = 0; i < g.count; i++) {
 					const d = g.dist[i];
-					const o = i * 3;
 					if (d > reach || reach < 0.02) {
-						out[o] = 0;
-						out[o + 1] = 0;
-						out[o + 2] = 0;
+						setPixel(out, i, 0, 0, 0);
 						continue;
 					}
 					const v = 1 - d / reach;

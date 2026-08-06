@@ -125,7 +125,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	);
 
 	const phraseAnchorBar = fitPhraseAnchor(footeNovelty(bars), BARS_PER_PHRASE);
-	const structure = detectStructure(bars, BARS_PER_PHRASE, phraseAnchorBar);
+	const structure = detectStructure(bars, phraseAnchorBar);
 
 	const barRows: BarRow[] = [];
 	for (let b = 0; b < bars.count; b++) {
@@ -185,7 +185,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 
 	markRepeats(sections, bars);
 
-	const moments = buildMoments(barRows, sections, bars, beatPeriod);
+	const moments = buildMoments(barRows, sections);
 
 	return {
 		version: ANALYSIS_VERSION,
@@ -252,12 +252,7 @@ function markRepeats(sections: SectionSpan[], bars: ReturnType<typeof extractBar
 	}
 }
 
-function buildMoments(
-	rows: BarRow[],
-	sections: SectionSpan[],
-	bars: ReturnType<typeof extractBarFeatures>,
-	beatPeriod: number
-): Moment[] {
+function buildMoments(rows: BarRow[], sections: SectionSpan[]): Moment[] {
 	const out: Moment[] = [];
 
 	for (const s of sections) {
@@ -286,8 +281,6 @@ function buildMoments(
 	}
 
 	out.sort((a, b) => a.t - b.t || a.bar - b.bar);
-	void bars;
-	void beatPeriod;
 	return out;
 }
 

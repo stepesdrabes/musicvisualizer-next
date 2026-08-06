@@ -3,6 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -37,7 +38,7 @@ export const sineRoll: EffectDef = {
 				const gain = (0.4 + p.intensity) * clamp(0.3 + f.energy * 0.9);
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					// Squared, so the wave dwells near dark and the crests punch.
 					const w = Math.pow(sinewave(u * waves - phase), 2);
 					const slot = lerp(SLOT.deep, SLOT.glow, w);

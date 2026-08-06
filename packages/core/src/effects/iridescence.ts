@@ -1,8 +1,8 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { hsv2rgb } from '../color/hsv.ts';
-import { clamp, envelope, frac } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, envelope, frac } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { noise3 } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -49,13 +49,10 @@ export const iridescence: EffectDef = {
 					const n1 = noise3(g.nx[i] * scale + t, g.ny[i] * scale - t * 0.6, g.nz[i] + t * 0.3);
 					const n2 = noise3(g.nx[i] * scale * 1.9 + 17, g.ny[i] * scale * 1.9 - t, 5.1);
 					hsv2rgb(frac(n1 * 1.6 + hueShift), 0.75, (0.15 + 0.85 * n2 * n2) * bright, rgb);
-					const o = i * 3;
-					buf[o] = rgb[0];
-					buf[o + 1] = rgb[1];
-					buf[o + 2] = rgb[2];
+					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.09));
+				nblend(out, buf, alphaFor(f.dt, 0.09));
 			}
 		};
 	}

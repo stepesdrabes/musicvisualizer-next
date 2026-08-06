@@ -2,9 +2,10 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
-import { clamp, envelope } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, envelope } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -55,7 +56,7 @@ export const aurora: EffectDef = {
 				const threshold = 0.62 - airEnv * 0.2;
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					let r = 0;
 					let gr = 0;
 					let b = 0;
@@ -74,13 +75,10 @@ export const aurora: EffectDef = {
 						gr += w[1];
 						b += w[2];
 					}
-					const o = i * 3;
-					buf[o] = r;
-					buf[o + 1] = gr;
-					buf[o + 2] = b;
+					setPixel(buf, i, r, gr, b);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.1));
+				nblend(out, buf, alphaFor(f.dt, 0.1));
 			}
 		};
 	}

@@ -3,6 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { frac, lerp } from '../dsl/math.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -34,7 +35,7 @@ export const ambientDrift: EffectDef = {
 				const gain = 0.15 + p.intensity * 0.3;
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					const v = 0.35 + 0.65 * sinewave(u * 0.7 + phase);
 					const slot = lerp(SLOT.deep, SLOT.base, v);
 					setSample(out, i, palette, slot + frac(phase * 0.3) * 0.06 + hueShift, v * gain);

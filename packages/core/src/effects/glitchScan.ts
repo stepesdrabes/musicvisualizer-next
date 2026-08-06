@@ -1,7 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { addSample } from '../color/palette.ts';
+import { hash01 } from '../dsl/rng.ts';
 import { clamp } from '../dsl/math.ts';
 import { ringsFor } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';

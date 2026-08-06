@@ -1,4 +1,4 @@
-import { clamp01, dbAt } from './features.ts';
+import { clamp01, dbAt, normalise01 } from './features.ts';
 
 export const MIN_BPM = 84;
 export const MAX_BPM = 200;
@@ -296,15 +296,6 @@ export function refineGrid(
 	return { bpm, firstBeat };
 }
 
-function normalizeInPlace(a: Float32Array): void {
-	if (a.length === 0) return;
-	const sorted = Float32Array.from(a).sort();
-	const lo = sorted[Math.floor(sorted.length * 0.05)];
-	const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
-	const span = Math.max(hi - lo, 1e-9);
-	for (let i = 0; i < a.length; i++) a[i] = clamp01((a[i] - lo) / span);
-}
-
 /**
  * Which beat of four is the downbeat. Folds three evidence streams over the four candidate
  * phases: onset novelty and bass change say "1", snare flux says "2 and 4".
@@ -349,8 +340,8 @@ export function detectDownbeat(
 		sub[k] = g1 > g0 ? sb / (g1 - g0) : 0;
 	}
 
-	normalizeInPlace(nov);
-	normalizeInPlace(snare);
+	normalise01(nov, nov);
+	normalise01(snare, snare);
 
 	const bassChange = new Float32Array(beatCount);
 	for (let k = 1; k < beatCount; k++) {
@@ -358,7 +349,7 @@ export function detectDownbeat(
 		const b = 20 * Math.log10(sub[k] + 1e-9);
 		bassChange[k] = Math.abs(b - a);
 	}
-	normalizeInPlace(bassChange);
+	normalise01(bassChange, bassChange);
 
 	const score = new Float32Array(4);
 	const counts = new Int32Array(4);

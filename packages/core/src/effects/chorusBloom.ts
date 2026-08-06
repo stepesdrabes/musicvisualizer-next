@@ -1,9 +1,10 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, lerp } from '../dsl/math.ts';
+import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY } from './helpers.ts';
 
 /**
@@ -46,14 +47,14 @@ export const chorusBloom: EffectDef = {
 				const gain = (0.35 + p.intensity * 0.85) * (0.3 + bloom * 0.9);
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					// Petal lobes that widen as the bloom opens.
 					const petal = 0.7 + 0.3 * sinewave(u * (5 - bloom * 2) + bloom * 0.5);
 					const slot = lerp(SLOT.deep, SLOT.glow, clamp(bloom * 1.15));
 					setSample(buf, i, palette, slot + hueShift, gain * petal);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.09));
+				nblend(out, buf, alphaFor(f.dt, 0.09));
 			}
 		};
 	}

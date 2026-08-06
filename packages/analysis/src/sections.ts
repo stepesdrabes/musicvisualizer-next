@@ -1,6 +1,6 @@
-import { NUM_BANDS, type SectionKind } from '@mv/core';
+import { NUM_BANDS, nearestPhraseBar, onPhraseGrid, phraseOffset, type SectionKind } from '@mv/core';
 import type { EventTag } from '@mv/core';
-import { clamp01, dbAt } from './features.ts';
+import { clamp01, dbAt, normalise01 } from './features.ts';
 import type { Features } from './features.ts';
 
 export interface BarFeatures {
@@ -128,18 +128,6 @@ export function extractBarFeatures(
 	};
 }
 
-/** Percentile-normalise so thresholds mean the same thing on any master. */
-function normalise(a: Float32Array | Int32Array): Float32Array {
-	const out = new Float32Array(a.length);
-	if (a.length === 0) return out;
-	const sorted = Float32Array.from(a).sort();
-	const lo = sorted[Math.floor(sorted.length * 0.05)];
-	const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
-	const span = Math.max(hi - lo, 1e-9);
-	for (let i = 0; i < a.length; i++) out[i] = clamp01((a[i] - lo) / span);
-	return out;
-}
-
 /**
  * Foote 2000 checkerboard novelty over z-normalised bar feature vectors. Section
  * boundaries show up as corners where two homogeneous blocks meet.
@@ -198,7 +186,7 @@ export function footeNovelty(bars: BarFeatures, kernel = 4): Float32Array {
 		out[b] = Math.max(0, same / wSame - cross / wCross);
 	}
 
-	return normalise(out);
+	return normalise01(out);
 }
 
 /** Shortest run that counts as a sustained level rather than a passing bar. */
@@ -271,23 +259,17 @@ export interface StructureResult {
  * Label the arrangement. Drops are found first because everything else is defined
  * relative to them: a build is what leads into one, a void is the silence at its edge.
  */
-export function detectStructure(
-	bars: BarFeatures,
-	barsPerPhrase: number,
-	phraseAnchorBar = 0
-): StructureResult {
+export function detectStructure(bars: BarFeatures, phraseAnchorBar = 0): StructureResult {
 	const n = bars.count;
 	const kind = new Array<SectionKind | null>(n).fill(null);
 	const events: EventTag[][] = Array.from({ length: n }, () => []);
 
-	const sub = normalise(sliceBand(bars, 0));
-	const low = normalise(sliceBand(bars, 1));
-	const mid = normalise(sliceBand(bars, 2));
-	const air = normalise(sliceBand(bars, 3));
-	const loud = normalise(bars.rms);
-	const bright = normalise(bars.centroid);
-	const density = normalise(bars.kicks);
-	const novelty = footeNovelty(bars);
+	const sub = normalise01(sliceBand(bars, 0));
+	const low = normalise01(sliceBand(bars, 1));
+	const mid = normalise01(sliceBand(bars, 2));
+	const air = normalise01(sliceBand(bars, 3));
+	const loud = normalise01(bars.rms);
+	const density = normalise01(bars.kicks);
 
 	// Weighted toward the bottom end rather than broadband loudness: a noise riser is loud
 	// but is not the peak of the track, and weighting rms highly lets it outrank the drop.
@@ -357,16 +339,12 @@ export function detectStructure(
 	const loudEnd = new Map<number, number>();
 	for (const run of loudRuns) loudEnd.set(run.start, run.end);
 	for (const run of grooveRuns) for (let b = run.start; b < run.end; b++) kind[b] = 'groove';
-	void novelty;
-	void bright;
-	void loud;
-	void barsPerPhrase;
 
 	// Take the phrase anchor from the first drop rather than from boundary novelty. In this
 	// genre the drop IS a phrase boundary, so anchoring to it makes the biggest structural
 	// event on-grid by construction, instead of leaving every boundary one bar out and the
 	// void to be mangled by the snapping that follows.
-	const anchor = dropBars.length > 0 ? ((dropBars[0] % 4) + 4) % 4 : ((phraseAnchorBar % 4) + 4) % 4;
+	const anchor = phraseOffset(dropBars.length > 0 ? dropBars[0] : phraseAnchorBar, 0);
 
 	// --- drop extents ------------------------------------------------------------------
 	for (const d of dropBars) {
@@ -500,14 +478,7 @@ const MAX_VOID_BARS = 2;
  * would be much simpler and is wrong: it deleted the drop.
  */
 function enforceInvariants(segments: Segment[], barCount: number, anchor: number): void {
-	const onGrid = (bar: number) => (((bar - anchor) % 4) + 4) % 4 === 0;
 	const len = (s: Segment) => s.endBar - s.startBar;
-
-	const nearest = (bar: number): number => {
-		const offset = (((bar - anchor) % 4) + 4) % 4;
-		const down = bar - offset;
-		return bar - down <= down + 4 - bar ? down : down + 4;
-	};
 
 	// A void that runs longer than two bars is not a held breath, it is a quiet passage.
 	for (const s of segments) {
@@ -525,8 +496,8 @@ function enforceInvariants(segments: Segment[], barCount: number, anchor: number
 			// Boundary alignment. Segment 0 starts at bar 0 by definition; that is the track
 			// beginning, not a section change, so the grid does not apply to it. A void is
 			// phrase-terminal, so its start follows its drop rather than the grid.
-			if (i > 0 && seg.kind !== 'void' && !onGrid(seg.startBar)) {
-				const target = nearest(seg.startBar);
+			if (i > 0 && seg.kind !== 'void' && !onPhraseGrid(seg.startBar, anchor)) {
+				const target = nearestPhraseBar(seg.startBar, anchor);
 				if (target > prev.startBar && target < seg.endBar) {
 					prev.endBar = target;
 					seg.startBar = target;
@@ -591,19 +562,12 @@ function enforceInvariants(segments: Segment[], barCount: number, anchor: number
  * only that drop's start gets snapped.
  */
 function snapToPhrases(segments: Segment[], barCount: number, anchor: number): void {
-	const nearestOnGrid = (bar: number): number => {
-		const offset = (((bar - anchor) % 4) + 4) % 4;
-		const down = bar - offset;
-		const up = down + 4;
-		return bar - down <= up - bar ? down : up;
-	};
-
 	for (let i = 1; i < segments.length; i++) {
 		const seg = segments[i];
 		if (seg.kind === 'void') continue;
 
 		const prev = segments[i - 1];
-		const target = nearestOnGrid(seg.startBar);
+		const target = nearestPhraseBar(seg.startBar, anchor);
 		if (target === seg.startBar || Math.abs(target - seg.startBar) > 2) continue;
 		// Never collapse a neighbour to nothing; a shifted boundary is worth less than a
 		// section disappearing.

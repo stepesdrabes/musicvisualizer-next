@@ -48,10 +48,11 @@ Envelopes
 
 Buffers (out is length g.count*3, RGB interleaved, persistent across frames)
   fadeToBlack(buf, dt, tau) - never clear, always decay
-  nblend(dst, src, amount) · scaleBuf(buf, k)
+  nblend(dst, src, amount) · scaleBuf(buf, k) · fillSolid(buf, count, [r,g,b])
   setPixel/addPixel(buf, i, r, g, b) · addPixelF(buf, pos, n, r, g, b, wrap) - sub-pixel
   stampGaussian(buf, n, centre, sigma, r, g, b, wrap, lo, hi) - PASS lo/hi when stamping
     into the global buffer, or a blob near one strip's end bleeds onto an unrelated strip
+  stampOnStrip(buf, count, strip, pos, sigma, [r,g,b]) - the same, already clipped
   blur1d(buf, n, amount, wrap)
 
 Colour (address by slot, never by hue)
@@ -62,6 +63,7 @@ Colour (address by slot, never by hue)
   addSample(buf, i, palette, u, brightness)
 
 Space
+  ringU(g, i) - one LED's position around the perimeter, or along the beam
   ringsFor(g) -> { perimeter, perimeterHalf, beam, all }; each has .map, .length, .metres
   scatter(ring, src, dst) · scatterAdd · scatterMirrored(full, half, src, dst)
   pxPerSecond(ring, metresPerSecond)

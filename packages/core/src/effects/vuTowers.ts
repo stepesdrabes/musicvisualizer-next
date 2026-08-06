@@ -1,8 +1,8 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { addSample, sample } from '../color/palette.ts';
+import { hash01 } from '../dsl/rng.ts';
 import { clamp, envelope, lerp } from '../dsl/math.ts';
 import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';

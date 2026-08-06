@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
+import { fillSolid } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
 import { INTENSITY } from './helpers.ts';
 
@@ -55,13 +56,7 @@ export const buildStrobe: EffectDef = {
 					out.fill(0);
 					return;
 				}
-				const c = sample(palette, SLOT.white + hueShift, gain);
-				for (let i = 0; i < g.count; i++) {
-					const o = i * 3;
-					out[o] = c[0];
-					out[o + 1] = c[1];
-					out[o + 2] = c[2];
-				}
+				fillSolid(out, g.count, sample(palette, SLOT.white + hueShift, gain));
 			}
 		};
 	}

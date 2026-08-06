@@ -1,7 +1,8 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
-import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { fadeToBlack } from '../dsl/buffer.ts';
+import { stampOnStrip } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 const MAX_FLICKS = 6;
@@ -63,8 +64,6 @@ export const beamFlick: EffectDef = {
 				const travel = Math.max(0.1, p.travelBeats * f.beatPeriod);
 				const gain = 0.6 + p.intensity * 1.4;
 				const half = beam.count / 2;
-				const lo = beam.offset;
-				const hi = beam.offset + beam.count;
 
 				for (const fl of flicks) {
 					if (!fl.alive) continue;
@@ -77,8 +76,8 @@ export const beamFlick: EffectDef = {
 					const posA = fl.outward ? half + dist : dist;
 					const posB = fl.outward ? half - dist : beam.count - 1 - dist;
 					const c = sample(palette, fl.slot + hueShift, gain * (1 - u * 0.6));
-					stampGaussian(out, g.count, lo + posA, 1.3, c[0], c[1], c[2], false, lo, hi);
-					stampGaussian(out, g.count, lo + posB, 1.3, c[0], c[1], c[2], false, lo, hi);
+					stampOnStrip(out, g.count, beam, posA, 1.3, c);
+					stampOnStrip(out, g.count, beam, posB, 1.3, c);
 				}
 			}
 		};

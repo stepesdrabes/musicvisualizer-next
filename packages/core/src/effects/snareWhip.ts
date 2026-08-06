@@ -2,7 +2,8 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
-import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { fadeToBlack } from '../dsl/buffer.ts';
+import { stampOnStrip } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 /**
@@ -51,15 +52,11 @@ export const snareWhip: EffectDef = {
 				if (u > 1.2) return;
 
 				const gain = (0.6 + p.intensity * 1.5) * power;
-				const lo = beam.offset;
-				const hi = beam.offset + beam.count;
 
 				if (u <= 1) {
-					const pos = lo + (dir > 0 ? u : 1 - u) * (beam.count - 1);
-					const c = sample(palette, SLOT.accent + hueShift, gain);
-					stampGaussian(out, g.count, pos, 2.2, c[0], c[1], c[2], false, lo, hi);
-					const w = sample(palette, SLOT.white + hueShift, gain * 0.7);
-					stampGaussian(out, g.count, pos, 0.8, w[0], w[1], w[2], false, lo, hi);
+					const pos = (dir > 0 ? u : 1 - u) * (beam.count - 1);
+					stampOnStrip(out, g.count, beam, pos, 2.2, sample(palette, SLOT.accent + hueShift, gain));
+					stampOnStrip(out, g.count, beam, pos, 0.8, sample(palette, SLOT.white + hueShift, gain * 0.7));
 				}
 
 				// The answering shiver on the side walls, a hair later and dimmer.
@@ -67,18 +64,7 @@ export const snareWhip: EffectDef = {
 				if (echo > 0.02) {
 					for (const wall of sides) {
 						const c = sample(palette, SLOT.accent + hueShift, echo * (1.2 - u));
-						stampGaussian(
-							out,
-							g.count,
-							wall.offset + wall.count / 2,
-							wall.count * 0.18,
-							c[0],
-							c[1],
-							c[2],
-							false,
-							wall.offset,
-							wall.offset + wall.count
-						);
+						stampOnStrip(out, g.count, wall, wall.count / 2, wall.count * 0.18, c);
 					}
 				}
 			}

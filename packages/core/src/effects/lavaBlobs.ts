@@ -1,8 +1,9 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, frac, lerp } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, envelope, frac, lerp } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -47,7 +48,7 @@ export const lavaBlobs: EffectDef = {
 				const c2 = frac(0.78 + 0.26 * Math.sin(clock * 2.9 + 4) + 0.1 * Math.sin(clock * 3.7));
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					// Unrolled over the three blobs: no array literal inside the pixel loop.
 					let d0 = Math.abs(u - c0);
 					if (d0 > 0.5) d0 = 1 - d0;
@@ -56,18 +57,15 @@ export const lavaBlobs: EffectDef = {
 					let d2 = Math.abs(u - c2);
 					if (d2 > 0.5) d2 = 1 - d2;
 					const m = Math.exp(-d0 * d0 * inv) + Math.exp(-d1 * d1 * inv) + Math.exp(-d2 * d2 * inv);
-					const o = i * 3;
 					if (m < 0.02) {
-						buf[o] = 0;
-						buf[o + 1] = 0;
-						buf[o + 2] = 0;
+						setPixel(buf, i, 0, 0, 0);
 						continue;
 					}
 					const slot = lerp(SLOT.deep, SLOT.glow, clamp(m * 0.7));
 					setSample(buf, i, palette, slot + hueShift, Math.min(m, 1.4) * gain);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.12));
+				nblend(out, buf, alphaFor(f.dt, 0.12));
 			}
 		};
 	}

@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
+import { fillSolid } from '../dsl/buffer.ts';
 import { Edge, INTENSITY, param } from './helpers.ts';
 
 /**
@@ -39,13 +40,8 @@ export const colorBump: EffectDef = {
 					return;
 				}
 
-				const c = sample(palette, SLOT.accent + hueShift, level * (0.6 + p.intensity * 1.4));
-				for (let i = 0; i < g.count; i++) {
-					const o = i * 3;
-					out[o] = c[0];
-					out[o + 1] = c[1];
-					out[o + 2] = c[2];
-				}
+				const bright = level * (0.6 + p.intensity * 1.4);
+				fillSolid(out, g.count, sample(palette, SLOT.accent + hueShift, bright));
 			}
 		};
 	}

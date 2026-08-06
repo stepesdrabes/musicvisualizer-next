@@ -184,6 +184,20 @@ export function clamp01(v: number): number {
 	return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/**
+ * Rescale to 0..1 between the 5th and 95th percentile, so a threshold means the same thing
+ * on a squashed master as on a dynamic one and one outlier bar cannot set the top.
+ */
+export function normalise01(a: Float32Array | Int32Array, out = new Float32Array(a.length)): Float32Array {
+	if (a.length === 0) return out;
+	const sorted = Float32Array.from(a).sort();
+	const lo = sorted[Math.floor(sorted.length * 0.05)];
+	const hi = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+	const span = Math.max(hi - lo, 1e-9);
+	for (let i = 0; i < a.length; i++) out[i] = clamp01((a[i] - lo) / span);
+	return out;
+}
+
 export function dbAt(bandDb: Float32Array, frame: number, band: number): number {
 	return bandDb[frame * NUM_BANDS + band];
 }

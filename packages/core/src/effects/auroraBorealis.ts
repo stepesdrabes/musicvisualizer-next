@@ -1,9 +1,10 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
 import { hsv2rgb } from '../color/hsv.ts';
-import { clamp, envelope, frac, lerp } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { hash01 } from '../dsl/rng.ts';
+import { alphaFor, clamp, envelope, frac, lerp } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /** Aurora range in the rainbow hue ramp: green through aqua to violet. */
@@ -48,15 +49,12 @@ export const auroraBorealis: EffectDef = {
 				const clock = (f.barIndex + f.barPhase) * (0.02 + p.drift * 0.03);
 
 				for (let i = 0; i < g.count; i++) {
-					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const u = ringU(g, i);
 					const d1 = frac(u - clock + 0.5) - 0.5;
 					const d2 = frac(u + clock * 0.6 + 0.23 + 0.5) - 0.5;
 					const curtain = Math.min(1, Math.exp(-d1 * d1 * 55) + Math.exp(-d2 * d2 * 90) * 0.7);
-					const o = i * 3;
 					if (curtain < 0.02) {
-						buf[o] = 0;
-						buf[o + 1] = 0.004;
-						buf[o + 2] = 0.006;
+						setPixel(buf, i, 0, 0.004, 0.006);
 						continue;
 					}
 					// Solar-wind shimmer: a fixed spatial texture scanned, never re-rolled -
@@ -64,12 +62,10 @@ export const auroraBorealis: EffectDef = {
 					const shimmer = 0.75 + 0.25 * sinewave(shimmerPhase[i] + clock * 30);
 					const hue = lerp(HUE_LO, HUE_HI, 1 - curtain);
 					hsv2rgb(frac(hue + hueShift), 0.88, curtain * shimmer * gain, rgb);
-					buf[o] = rgb[0];
-					buf[o + 1] = rgb[1];
-					buf[o + 2] = rgb[2];
+					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.11));
+				nblend(out, buf, alphaFor(f.dt, 0.11));
 			}
 		};
 	}

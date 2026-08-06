@@ -1,37 +1,11 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import type { Palette } from '../contracts/palette.ts';
-import type { StripSpec } from '../contracts/room.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
-import { addSample } from '../color/palette.ts';
+import { sample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
+import { stampOnStrip } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
-
-/** Additive gaussian confined to one strip, so a blob never bleeds onto a distant wall. */
-function splat(
-	out: Float32Array,
-	wall: StripSpec,
-	centre: number,
-	sigma: number,
-	palette: Palette,
-	slot: number,
-	amp: number
-): void {
-	const lo = wall.offset;
-	const hi = wall.offset + wall.count;
-	const reach = Math.ceil(sigma * 3);
-	const inv = 1 / (2 * sigma * sigma);
-	const c0 = Math.round(centre);
-	for (let k = -reach; k <= reach; k++) {
-		const i = c0 + k;
-		if (i < lo || i >= hi) continue;
-		const d = i - centre;
-		const w = Math.exp(-d * d * inv);
-		if (w < 0.01) continue;
-		addSample(out, i, palette, slot, w * amp);
-	}
-}
 
 export const splash: EffectDef = {
 	id: 'splash',
@@ -72,14 +46,14 @@ export const splash: EffectDef = {
 					const u = (kickCount * 0.618034) % 1;
 					kickCount++;
 					const strength = clamp(0.5 + 0.5 * f.bands[Band.Sub]) * p.intensity;
-					splat(
+					const c = sample(palette, SLOT.base + ctx.hueShift, strength);
+					stampOnStrip(
 						out,
+						g.count,
 						wall,
-						wall.offset + u * (wall.count - 1),
+						u * (wall.count - 1),
 						sigma * (0.7 + 0.6 * strength),
-						palette,
-						SLOT.base + ctx.hueShift,
-						strength
+						c
 					);
 				}
 
@@ -88,15 +62,8 @@ export const splash: EffectDef = {
 					const u = (snareCount * 0.618034 + 0.5) % 1;
 					snareCount++;
 					const strength = clamp(0.45 + 0.55 * f.snareEnv) * p.intensity;
-					splat(
-						out,
-						wall,
-						wall.offset + u * (wall.count - 1),
-						sigma * 0.7,
-						palette,
-						SLOT.accent + ctx.hueShift,
-						strength
-					);
+					const c = sample(palette, SLOT.accent + ctx.hueShift, strength);
+					stampOnStrip(out, g.count, wall, u * (wall.count - 1), sigma * 0.7, c);
 				}
 			}
 		};

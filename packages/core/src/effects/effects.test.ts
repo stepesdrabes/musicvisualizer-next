@@ -1,8 +1,8 @@
+import { makePalette } from '../color/palette.ts';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROOM, buildGeometry } from '../geometry.ts';
 import { BUILT_IN_EFFECTS } from './index.ts';
 import { runGate, scriptFrames } from './gate.ts';
-import { makePalette } from '../color/palette.ts';
 
 const g = buildGeometry(DEFAULT_ROOM);
 

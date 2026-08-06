@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, lerp } from '../dsl/math.ts';
+import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
 import { noise3 } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -69,7 +69,7 @@ export const nebula: EffectDef = {
 					setSample(buf, i, palette, slot + hueShift, (0.2 + 0.8 * field * field) * bright);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.07));
+				nblend(out, buf, alphaFor(f.dt, 0.07));
 			}
 		};
 	}

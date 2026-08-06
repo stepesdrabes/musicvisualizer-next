@@ -1,7 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, frac, lerp } from '../dsl/math.ts';
+import { alphaFor, clamp, frac, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -55,7 +55,7 @@ export const gradientSpin: EffectDef = {
 					setSample(buf, i, palette, slot + hueShift, gain);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.05));
+				nblend(out, buf, alphaFor(f.dt, 0.05));
 			}
 		};
 	}

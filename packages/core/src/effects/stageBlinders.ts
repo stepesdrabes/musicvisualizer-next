@@ -2,6 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { lerp } from '../dsl/math.ts';
+import { fillSolid } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -41,13 +42,7 @@ export const stageBlinders: EffectDef = {
 				}
 
 				const slot = lerp(SLOT.white, SLOT.glow, (1 - v) * 0.8);
-				const c = sample(palette, slot + hueShift, v * (0.5 + p.intensity * 1.3));
-				for (let i = 0; i < g.count; i++) {
-					const o = i * 3;
-					out[o] = c[0];
-					out[o + 1] = c[1];
-					out[o + 2] = c[2];
-				}
+				fillSolid(out, g.count, sample(palette, slot + hueShift, v * (0.5 + p.intensity * 1.3)));
 			}
 		};
 	}

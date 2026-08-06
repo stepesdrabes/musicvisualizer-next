@@ -3,6 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, envelope, frac, lerp } from '../dsl/math.ts';
 import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 export const wash: EffectDef = {
@@ -34,7 +35,7 @@ export const wash: EffectDef = {
 				const phase = (f.barIndex + f.barPhase) * p.drift * ctx.motion;
 
 				for (let i = 0; i < g.count; i++) {
-					const along = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					const along = ringU(g, i);
 					const grad = sinewave(frac(along * 0.5 - phase));
 					const u = lerp(SLOT.deep, SLOT.glow, 0.3 + 0.55 * grad) + ctx.hueShift;
 					setSample(out, i, palette, u, bright);

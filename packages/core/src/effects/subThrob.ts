@@ -2,8 +2,8 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, lerp } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { INTENSITY } from './helpers.ts';
 
@@ -49,11 +49,8 @@ export const subThrob: EffectDef = {
 				for (let i = 0; i < g.count; i++) {
 					const onRing = g.perim[i] >= 0;
 					const reach = onRing ? 1 : clamp(env * 1.6 - 0.35);
-					const o = i * 3;
 					if (reach <= 0.01) {
-						buf[o] = 0;
-						buf[o + 1] = 0;
-						buf[o + 2] = 0;
+						setPixel(buf, i, 0, 0, 0);
 						continue;
 					}
 					const slot = lerp(SLOT.deep, SLOT.base, clamp(env * 1.25));
@@ -61,7 +58,7 @@ export const subThrob: EffectDef = {
 					setSample(buf, i, palette, slot + hueShift, gain * reach * wave);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.07));
+				nblend(out, buf, alphaFor(f.dt, 0.07));
 			}
 		};
 	}

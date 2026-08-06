@@ -7,14 +7,9 @@ import { NUM_BANDS, createShowFrame } from './contracts/frame.ts';
 import { blendPalettes, makePalette, swapped } from './color/palette.ts';
 import { FlashEnvelope } from './dsl/env.ts';
 import { clamp, frac } from './dsl/math.ts';
+import { barTimeAt } from './grid.ts';
 import type { Mixer } from './mixer.ts';
 import type { EffectRegistry } from './effects/index.ts';
-
-export function barTimeAt(tempo: TempoGrid, bar: number): number {
-	return (
-		tempo.firstBeat + (tempo.downbeatPhase + bar * tempo.beatsPerBar) * tempo.beatPeriod
-	);
-}
 
 interface CompiledCue {
 	start: number;

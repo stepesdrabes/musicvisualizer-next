@@ -1,9 +1,10 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
+import { hash01 } from '../dsl/rng.ts';
 import { frac } from '../dsl/math.ts';
-import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { fadeToBlack } from '../dsl/buffer.ts';
+import { stampOnStrip } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 const SLOTS = [SLOT.base, SLOT.third, SLOT.accent, SLOT.white];
@@ -51,18 +52,7 @@ export const confetti: EffectDef = {
 					const strip = g.strips[g.strip[Math.min(g.count - 1, Math.floor(pos))]];
 					const slot = SLOTS[seq % SLOTS.length];
 					const c = sample(palette, slot + hueShift, gain * (0.6 + hash01(seq) * 0.4));
-					stampGaussian(
-						out,
-						g.count,
-						pos,
-						1,
-						c[0],
-						c[1],
-						c[2],
-						false,
-						strip.offset,
-						strip.offset + strip.count
-					);
+					stampOnStrip(out, g.count, strip, pos - strip.offset, 1, c);
 				}
 			}
 		};

@@ -1,7 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { hsv2rgb } from '../color/hsv.ts';
-import { clamp, frac } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, frac } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -53,13 +53,10 @@ export const vortex: EffectDef = {
 					// Near the axis, brightness lifts toward white-hot: the eye of the vortex.
 					const eye = Math.max(0, 1 - g.r[i] * 3.2);
 					hsv2rgb(frac(s + hueShift), 0.92 - eye * 0.5, (0.2 + 0.8 * w + eye * 0.6) * gain, rgb);
-					const o = i * 3;
-					buf[o] = rgb[0];
-					buf[o + 1] = rgb[1];
-					buf[o + 2] = rgb[2];
+					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.05));
+				nblend(out, buf, alphaFor(f.dt, 0.05));
 			}
 		};
 	}

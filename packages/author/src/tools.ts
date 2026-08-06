@@ -1,7 +1,7 @@
 import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { EffectDef, GeneratedEffect, Geometry, Show, TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS, compileGenerated } from '@mv/core';
+import { BUILT_IN_EFFECTS, barTimeAt, compileGenerated } from '@mv/core';
 import { analyzeTrack, decodeAudio } from '@mv/analysis';
 import { renderArrangementChart, renderBarTable, renderCatalog } from './catalog.ts';
 import { formatFindings, lintShow } from './lint.ts';
@@ -33,11 +33,6 @@ export function createSession(
 		submitted: null,
 		log: []
 	};
-}
-
-function barTimeOf(a: TrackAnalysis, bar: number): number {
-	const t = a.tempo;
-	return t.firstBeat + (t.downbeatPhase + bar * t.beatsPerBar) * t.beatPeriod;
 }
 
 function effectMap(session: AuthorSession): Map<string, EffectDef> {
@@ -77,8 +72,8 @@ export function buildTools(session: AuthorSession) {
 		},
 		async ({ fromBar, toBar, instrument }) => {
 			const { tempo, onsets } = session.analysis;
-			const from = barTimeOf(session.analysis, fromBar);
-			const to = barTimeOf(session.analysis, toBar + 1);
+			const from = barTimeAt(session.analysis.tempo, fromBar);
+			const to = barTimeAt(session.analysis.tempo, toBar + 1);
 			const hits = onsets[instrument].filter((t) => t >= from && t < to);
 			if (hits.length === 0) return text(`No ${instrument} onsets in bars ${fromBar}-${toBar}.`);
 			const lines = hits.map((t) => {
@@ -125,8 +120,8 @@ export function buildTools(session: AuthorSession) {
 		async ({ fromBar, toBar }) => {
 			const rows = session.analysis.bars.filter((b) => b.bar >= fromBar && b.bar <= toBar);
 			if (rows.length === 0) return text('No such bars.');
-			const from = barTimeOf(session.analysis, fromBar);
-			const to = barTimeOf(session.analysis, toBar + 1);
+			const from = barTimeAt(session.analysis.tempo, fromBar);
+			const to = barTimeAt(session.analysis.tempo, toBar + 1);
 			const mean = (k: 'energy' | 'sub' | 'low' | 'mid' | 'air') =>
 				Math.round(rows.reduce((n, b) => n + b[k], 0) / rows.length);
 			const sum = (k: 'kicks' | 'snares' | 'hats') => rows.reduce((n, b) => n + b[k], 0);

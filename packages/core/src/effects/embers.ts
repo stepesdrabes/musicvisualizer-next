@@ -1,8 +1,8 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, frac, lerp } from '../dsl/math.ts';
+import { hash01 } from '../dsl/rng.ts';
+import { alphaFor, clamp, envelope, frac, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -61,7 +61,7 @@ export const embers: EffectDef = {
 					setSample(buf, i, palette, slot + hueShift, v * gain * (0.3 + 0.7 * h1[i]));
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.09));
+				nblend(out, buf, alphaFor(f.dt, 0.09));
 			}
 		};
 	}

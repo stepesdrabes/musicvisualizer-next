@@ -1,5 +1,5 @@
 import type { EffectDef, LayerRole, Show, TrackAnalysis } from '@mv/core';
-import { LAYER_ROLES } from '@mv/core';
+import { LAYER_ROLES, PHRASE_BARS, onPhraseGrid, phraseOffset } from '@mv/core';
 
 export type Severity = 'error' | 'warning';
 
@@ -80,9 +80,9 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// the audience cannot say why.
 	//
 	// A void is the exception, and necessarily so: it is phrase-TERMINAL, occupying the last
-	// bar or two before a drop, so its start is never on a 4-bar multiple. What has to be
+	// bar or two before a drop, so its start is never on a phrase multiple. What has to be
 	// on-grid is where it ends, which is the drop cue that follows it.
-	const onPhrase = (bar: number) => (((bar - tempo.phraseAnchorBar) % 4) + 4) % 4 === 0;
+	const onPhrase = (bar: number) => onPhraseGrid(bar, tempo.phraseAnchorBar);
 
 	for (let i = 1; i < cues.length; i++) {
 		const cue = cues[i];
@@ -93,7 +93,7 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			if (next && !onPhrase(next.bar)) {
 				err(
 					'off-phrase-change',
-					`the void at bar ${cue.bar} resolves at bar ${next.bar}, which is off the 4-bar grid`,
+					`the void at bar ${cue.bar} resolves at bar ${next.bar}, which is off the ${PHRASE_BARS}-bar grid`,
 					next.bar
 				);
 			}
@@ -109,10 +109,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 		}
 
 		if (!onPhrase(cue.bar)) {
-			const offset = (((cue.bar - tempo.phraseAnchorBar) % 4) + 4) % 4;
+			const down = cue.bar - phraseOffset(cue.bar, tempo.phraseAnchorBar);
 			err(
 				'off-phrase-change',
-				`section change to ${cue.section} at bar ${cue.bar} is off the 4-bar grid; use ${cue.bar - offset} or ${cue.bar - offset + 4}`,
+				`section change to ${cue.section} at bar ${cue.bar} is off the ${PHRASE_BARS}-bar grid; use ${down} or ${down + PHRASE_BARS}`,
 				cue.bar
 			);
 		}

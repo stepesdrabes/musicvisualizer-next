@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { hsv2rgb } from '../color/hsv.ts';
 import { frac } from '../dsl/math.ts';
+import { setPixel } from '../dsl/buffer.ts';
 import { Edge, INTENSITY, param } from './helpers.ts';
 
 /**
@@ -72,10 +73,7 @@ export const chromaBurst: EffectDef = {
 						gr += rgb[1];
 						b += rgb[2];
 					}
-					const o = i * 3;
-					out[o] = r;
-					out[o + 1] = gr;
-					out[o + 2] = b;
+					setPixel(out, i, r, gr, b);
 				}
 			}
 		};

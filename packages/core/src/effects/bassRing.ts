@@ -2,8 +2,8 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
-import { clamp, envelope, lerp } from '../dsl/math.ts';
-import { nblend } from '../dsl/buffer.ts';
+import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
+import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { INTENSITY } from './helpers.ts';
 
@@ -46,11 +46,8 @@ export const bassRing: EffectDef = {
 				const bright = env * (0.4 + p.intensity * 0.9);
 
 				for (let i = 0; i < g.count; i++) {
-					const o = i * 3;
 					if (g.perim[i] < 0) {
-						buf[o] = 0;
-						buf[o + 1] = 0;
-						buf[o + 2] = 0;
+						setPixel(buf, i, 0, 0, 0);
 						continue;
 					}
 					// Slow undulation so the glow reads as a liquid, not a tube light.
@@ -59,7 +56,7 @@ export const bassRing: EffectDef = {
 					setSample(buf, i, palette, slot + hueShift, bright * wave);
 				}
 
-				nblend(out, buf, 1 - Math.exp(-f.dt / 0.06));
+				nblend(out, buf, alphaFor(f.dt, 0.06));
 			}
 		};
 	}
