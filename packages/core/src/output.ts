@@ -164,21 +164,29 @@ export class FlashLimiter {
 
 // 8-entry bit-reversal sequence, static across frames. Temporal dither reads as sparkle
 // in peripheral vision, which is worse than the banding it fixes.
-const DITHER = new Float32Array([0, 4, 2, 6, 1, 5, 3, 7]).map((v) => (v / 8 - 0.5) / 255);
+// In code units, not fractions of full scale, and added after the scale to 0..255. Folding
+// it in beforehand costs a float32 rounding that lands a full-scale pixel on 254.
+const DITHER = [0, 4, 2, 6, 1, 5, 3, 7].map((v) => v / 8 - 0.5);
 
 /**
- * Gamma-encode and quantize to bytes. Applied exactly once, here.
+ * Authoring domain to 8-bit PWM, with gamma and ordered dither. Applied exactly once, here.
  *
- * 2.2 rather than Adafruit's 2.8: at 2.8 every input from 1 to 27 maps to byte 0, so
- * deep shades vanish entirely. WLED's realtime path disables its own gamma by default
- * precisely so the host can own this step.
+ * The exponent is `gamma`, not `1/gamma`. An LED's output is close to linear in its PWM duty
+ * while the eye's response is close to a power law, so a value that is meant to read as half
+ * as bright has to be driven at 0.5^2.2, about 22 per cent duty. Encoding it the other way
+ * round - the sRGB direction, which is what a monitor wants - drives that same value at 73 per
+ * cent, and the whole show comes out washed out and pale with nothing left at the top.
+ *
+ * 2.2 rather than Adafruit's 2.8: at 2.8 every input from 1 to 27 maps to byte 0, so deep
+ * shades vanish entirely, and that dead zone is exactly where slow fades live. WLED's realtime
+ * path disables its own gamma by default precisely so the host can own this step.
  */
 export function quantize(buf: Float32Array, out: Uint8Array, gamma = 2.2): void {
-	const inv = 1 / gamma;
 	for (let i = 0; i < buf.length; i++) {
 		const v = buf[i] <= 0 ? 0 : buf[i] >= 1 ? 1 : buf[i];
-		const encoded = Math.pow(v, inv) + DITHER[i & 7];
-		const byte = Math.floor(encoded * 255 + 0.5);
+		// An explicit floor with a half-code bias: without it a full-scale pixel lands on 254
+		// for half the dither positions and white visibly shimmers.
+		const byte = Math.floor(Math.pow(v, gamma) * 255 + DITHER[i & 7] + 0.5);
 		out[i] = byte < 0 ? 0 : byte > 255 ? 255 : byte;
 	}
 }
