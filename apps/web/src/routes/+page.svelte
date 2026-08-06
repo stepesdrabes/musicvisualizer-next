@@ -1,9 +1,11 @@
 <script lang="ts">
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import type { EffectDef, Show, TrackAnalysis } from '@mv/core';
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
 	import type { AuthorEvent, LoadState, Step, TrackMeta } from '$lib/types.ts';
 	import Inspector from '$components/Inspector.svelte';
 	import PlayerBar from '$components/PlayerBar.svelte';
+	import ShowStrip from '$components/ShowStrip.svelte';
+	import LedBands from '$components/LedBands.svelte';
 	import Stage from '$components/Stage.svelte';
 	import TopBar from '$components/TopBar.svelte';
 
@@ -29,6 +31,29 @@
 	let log = $state<string[]>([]);
 	let steps = $state<Step[]>([]);
 	let warnings = $state<string[]>([]);
+	let previewing = $state<string | null>(null);
+	let previewParams = $state<Record<string, number>>({});
+
+	// Whatever this show wrote for itself, so the gallery shows the full deck rather than only
+	// the built-ins. Compilation already happened when the show loaded; this reads the registry.
+	const generatedDefs = $derived(
+		(show?.generatedEffects ?? [])
+			.map((g) => viz?.registry.get(g.id) ?? null)
+			.filter((d): d is EffectDef => d !== null)
+	);
+
+	function preview(def: EffectDef | null) {
+		if (!viz) return;
+		viz.setPreview(def);
+		previewing = def?.id ?? null;
+		previewParams = { ...viz.previewValues };
+	}
+
+	function previewParam(key: string, value: number) {
+		if (!viz) return;
+		viz.setPreviewParam(key, value);
+		previewParams = { ...viz.previewValues };
+	}
 	let volume = $state(0.8);
 	let ddpHost = $state('');
 	let ddpRunning = $state(false);
@@ -91,6 +116,7 @@
 				id: string;
 				analysis: TrackAnalysis;
 				meta: TrackMeta;
+				show: Show | null;
 				fromCache: boolean;
 			};
 			trackId = data.id;
@@ -105,12 +131,12 @@
 			if (!audio.ok) throw new Error('audio not cached');
 			await viz.loadAudio(await audio.arrayBuffer());
 
-			const existing = await fetch(`/api/track/${data.id}/show`);
-			if (existing.ok) {
-				const found = (await existing.json()) as Show;
-				show = found;
-				viz.loadShow(data.analysis, found);
-				note(`show loaded: ${found.cues.length} cues, ${found.hits.length} hits`);
+			// Ingest composes a show from the analysis before it returns, so the room is lit as
+			// soon as the audio is, without waiting on anybody's decision to spend a model.
+			if (data.show) {
+				show = data.show;
+				viz.loadShow(data.analysis, data.show);
+				note(`show loaded: ${data.show.cues.length} cues, ${data.show.hits.length} hits`);
 			} else {
 				note('no show yet');
 			}
@@ -299,7 +325,7 @@
 		onauthor={author} />
 
 	<div class="body">
-		<Stage {viz} {readout} {load} {steps} hasShow={!!show} />
+		<Stage {viz} {readout} {load} {steps} hasShow={!!show} {previewing} />
 		<Inspector
 			{analysis}
 			{show}
@@ -309,7 +335,12 @@
 			{warnings}
 			bind:ddpHost
 			{ddpRunning}
-			ontoggleOutput={toggleOutput} />
+			ontoggleOutput={toggleOutput}
+			generatedEffects={generatedDefs}
+			{previewing}
+			{previewParams}
+			onpreview={preview}
+			onparam={previewParam} />
 	</div>
 
 	<PlayerBar
@@ -321,6 +352,15 @@
 		ontoggle={() => void viz?.toggle()}
 		onseek={(t) => viz?.seek(t)}
 		onstep={step} />
+
+	<LedBands {viz} />
+
+	<ShowStrip
+		{analysis}
+		{show}
+		position={readout.position}
+		duration={readout.duration}
+		onseek={(t) => viz?.seek(t)} />
 </div>
 
 <style>

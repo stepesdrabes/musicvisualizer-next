@@ -1,8 +1,9 @@
 <script lang="ts">
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import type { EffectDef, Show, TrackAnalysis } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import type { Step } from '$lib/types.ts';
 	import Activity from './Activity.svelte';
+	import Gallery from './Gallery.svelte';
 
 	let {
 		analysis,
@@ -13,7 +14,12 @@
 		warnings,
 		ddpHost = $bindable(''),
 		ddpRunning,
-		ontoggleOutput
+		ontoggleOutput,
+		generatedEffects = [],
+		previewing = null,
+		previewParams = {},
+		onpreview,
+		onparam
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
@@ -24,9 +30,14 @@
 		ddpHost?: string;
 		ddpRunning: boolean;
 		ontoggleOutput: () => void;
+		generatedEffects?: EffectDef[];
+		previewing?: string | null;
+		previewParams?: Record<string, number>;
+		onpreview: (def: EffectDef | null) => void;
+		onparam: (key: string, value: number) => void;
 	} = $props();
 
-	let tab = $state<'show' | 'cues' | 'design' | 'log'>('show');
+	let tab = $state<'show' | 'cues' | 'effects' | 'design' | 'log'>('show');
 
 	// Follow the agent automatically while it works, then hand the view back.
 	let followed = $state(false);
@@ -58,7 +69,7 @@
 
 <aside>
 	<nav>
-		{#each ['show', 'cues', 'design', 'log'] as const as t (t)}
+		{#each ['show', 'cues', 'effects', 'design', 'log'] as const as t (t)}
 			<button class:on={tab === t} onclick={() => (tab = t)}>
 				{t}
 				{#if t === 'design' && steps.some((s) => s.state === 'pending')}
@@ -166,11 +177,20 @@
 					<span class="mono faint">Sends the same bytes as the preview, over DDP.</span>
 				{/if}
 			</section>
+		{:else if tab === 'effects'}
+			<section class="gallery">
+				<Gallery
+					generated={generatedEffects}
+					{previewing}
+					params={previewParams}
+					{onpreview}
+					{onparam} />
+			</section>
 		{:else if tab === 'design'}
 			{#if steps.length > 0}
 				<div class="design"><Activity {steps} /></div>
 			{:else}
-				<p class="empty faint">Nothing yet. Press Generate show.</p>
+				<p class="empty faint">Nothing yet. Press Design with Claude.</p>
 			{/if}
 		{:else if tab === 'cues'}
 			{#if show}
@@ -241,6 +261,9 @@
 	section {
 		padding: 11px 12px;
 		border-bottom: 1px solid var(--line-soft);
+	}
+	section.gallery {
+		border-bottom: none;
 	}
 	h2 {
 		margin: 0 0 7px;

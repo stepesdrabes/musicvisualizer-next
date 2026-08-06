@@ -53,7 +53,7 @@
 	{/if}
 
 	<button class="btn solid" onclick={onauthor} disabled={busy || !canAuthor}>
-		{hasShow ? 'Re-generate show' : 'Generate show'}
+		{hasShow ? 'Revise with Claude' : 'Design with Claude'}
 	</button>
 </header>
 

@@ -1,11 +1,16 @@
 import {
 	DEFAULT_ROOM,
+	LAYER_ROLES,
 	compileGenerated,
 	EffectRegistry,
 	Mixer,
 	ShowPlayer,
 	buildGeometry,
+	makePalette,
+	scriptFrames,
+	type EffectDef,
 	type Geometry,
+	type Params,
 	type Show,
 	type ShowFrame,
 	type TrackAnalysis
@@ -46,6 +51,11 @@ export class Viz {
 
 	/** Positive values render ahead, compensating for output latency. */
 	previewOffsetMs = 0;
+
+	private preview: EffectDef | null = null;
+	private previewFrames: ShowFrame[] = [];
+	private previewIndex = 0;
+	private previewParams: Params = {};
 
 	private ctx: AudioContext | null = null;
 	private buffer: AudioBuffer | null = null;
@@ -169,17 +179,99 @@ export class Viz {
 		void this.ctx?.close();
 	}
 
+	/**
+	 * Show one effect on its own, in the room.
+	 *
+	 * Against the track when there is one: the effect gets the real beat grid, the real drums
+	 * and the show's own palette, because an effect judged against a synthetic journey is an
+	 * effect judged on the wrong material. Only when nothing is loaded does it fall back to the
+	 * scripted groove/build/void/drop the admission gate uses.
+	 */
+	setPreview(def: EffectDef | null): void {
+		this.preview = def;
+		this.previewIndex = 0;
+		this.previewParams = {};
+		if (def) for (const spec of def.params) this.previewParams[spec.key] = spec.default;
+		// A master effect idles until the player pulls its trigger, and nothing is going to.
+		if (def && 'trigger' in this.previewParams) this.previewParams.trigger = 1;
+
+		if (!def) {
+			this.mixer.reset();
+			// Reloading is what puts the show's own layers back; the cue cursor has to re-apply.
+			if (this.analysis && this.show) this.player.load(this.analysis, this.show);
+		}
+	}
+
+	setPreviewParam(key: string, value: number): void {
+		this.previewParams[key] = value;
+	}
+
+	get previewing(): string | null {
+		return this.preview?.id ?? null;
+	}
+
+	get previewValues(): Params {
+		return this.previewParams;
+	}
+
 	private frame(dt: number): void {
+		const def = this.preview;
+		if (!def) {
+			this.frameFromShow(dt);
+			return;
+		}
+
+		let f: ShowFrame;
+		if (this.analysis && this.show) {
+			f = this.player.update(Math.max(0, this.heardPosition()), dt);
+		} else {
+			if (this.previewFrames.length === 0) this.previewFrames = scriptFrames(128);
+			f = this.previewFrames[this.previewIndex % this.previewFrames.length];
+			this.previewIndex++;
+			// The journey is scripted at 60 fps; a display that is not sees it slightly fast or
+			// slow, which for a preview beats resampling the drum flags.
+			f.dt = dt;
+			this.mixer.palette = makePalette({ base: 320, accent: 175, third: 44 });
+			this.mixer.intensity = 1;
+			this.mixer.motion = 1;
+		}
+
+		// After the player, not before: it installs the show's layers on every cue boundary, so
+		// the preview has to be the last word on what the room is running. Both calls are free
+		// when nothing changed.
+		for (const role of LAYER_ROLES) {
+			if (role !== def.role) this.mixer.layers[role].setEffect(null, this.geometry);
+		}
+		const layer = this.mixer.layers[def.role];
+		layer.setEffect(def, this.geometry);
+		layer.opacity = 1;
+		for (const key of Object.keys(this.previewParams)) layer.params[key] = this.previewParams[key];
+
+		this.mixer.render(f);
+		this.roomRenderer?.render(this.mixer.bytes, dt);
+		this.publishReadout(dt, f);
+	}
+
+	private frameFromShow(dt: number): void {
+		const frame: ShowFrame = this.player.update(Math.max(0, this.heardPosition()), dt);
+		this.mixer.render(frame);
+		this.roomRenderer?.render(this.mixer.bytes, dt);
+		this.publishReadout(dt, frame);
+	}
+
+	/**
+	 * Where the listener actually is, which is behind where the audio clock has been scheduled
+	 * to by however long the output path takes.
+	 */
+	private heardPosition(): number {
 		const latency =
 			(this.ctx as (AudioContext & { outputLatency?: number }) | null)?.outputLatency ??
 			this.ctx?.baseLatency ??
 			0.02;
-		const t = this.position - latency + this.previewOffsetMs / 1000;
+		return this.position - latency + this.previewOffsetMs / 1000;
+	}
 
-		const frame: ShowFrame = this.player.update(Math.max(0, t), dt);
-		this.mixer.render(frame);
-		this.roomRenderer?.render(this.mixer.bytes, dt);
-
+	private publishReadout(dt: number, frame?: ShowFrame): void {
 		this.fpsAcc += dt;
 		this.fpsFrames++;
 		if (this.fpsAcc >= 0.5) {
@@ -189,20 +281,20 @@ export class Viz {
 		}
 
 		this.readoutAcc += dt;
-		if (this.readoutAcc >= 0.05) {
-			this.readoutAcc = 0;
-			this.onReadout?.({
-				fps: Math.round(this.fps),
-				position: this.position,
-				duration: this.duration,
-				playing: this.playing,
-				bar: frame.barIndex,
-				section: frame.section,
-				energy: frame.energy,
-				bpm: frame.bpm,
-				cueBar: this.player.currentCue?.bar ?? -1,
-				headroom: this.mixer.meanHeadroom
-			});
-		}
+		if (this.readoutAcc < 0.05) return;
+		this.readoutAcc = 0;
+		const f = frame ?? this.player.frame;
+		this.onReadout?.({
+			fps: Math.round(this.fps),
+			position: this.position,
+			duration: this.duration,
+			playing: this.playing,
+			bar: f.barIndex,
+			section: f.section,
+			energy: f.energy,
+			bpm: f.bpm,
+			cueBar: this.player.currentCue?.bar ?? -1,
+			headroom: this.mixer.meanHeadroom
+		});
 	}
 }

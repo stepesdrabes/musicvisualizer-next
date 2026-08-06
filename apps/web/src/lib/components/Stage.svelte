@@ -9,13 +9,15 @@
 		readout,
 		load,
 		steps,
-		hasShow
+		hasShow,
+		previewing = null
 	}: {
 		viz: Viz | null;
 		readout: Readout;
 		load: LoadState;
 		steps: Step[];
 		hasShow: boolean;
+		previewing?: string | null;
 	} = $props();
 
 	let renderer: RoomRenderer | null = $state(null);
@@ -103,7 +105,9 @@
 		<span class="mono faint">{readout.fps} fps</span>
 	</div>
 
-	{#if !hasShow}
+	<!-- Nothing covers a preview. Being told the room is dark while an effect is running in it
+	     is the panel calling the user a liar. -->
+	{#if !hasShow && !previewing}
 		<div class="empty">
 			{#if busy}
 				<div class="big-spinner"></div>
@@ -122,7 +126,7 @@
 				{/if}
 			{:else if readout.duration > 0}
 				<h1>Track ready</h1>
-				<p class="dim">Press Generate show to have Claude design the lighting.</p>
+				<p class="dim">Paste a link to light the room. Claude can revise it afterwards.</p>
 			{:else}
 				<h1>The room is dark</h1>
 				<p class="dim">Paste a YouTube link to begin.</p>
