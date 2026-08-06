@@ -22,7 +22,7 @@ export const emberStorm: EffectDef = {
 	blurb: 'Drifting embers whose wind rises with the build - a storm by the drop.',
 	taste: {
 		energy: 3,
-		sections: ['build', 'groove', 'breakdown'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

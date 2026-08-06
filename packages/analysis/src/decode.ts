@@ -3,14 +3,23 @@ import { createHash } from 'node:crypto';
 
 export interface DecodedAudio {
 	mono: Float32Array;
+	/** Interleaved is avoided on purpose: every consumer wants one side at a time. */
+	left: Float32Array;
+	right: Float32Array;
 	sampleRate: number;
 	duration: number;
-	/** Of the raw PCM, before normalisation, so the same file always hashes the same. */
+	/** Of the decoded PCM, so the same file always hashes the same. */
 	hash: string;
-	integratedLufs: number;
 }
 
-const TARGET_LUFS = -14;
+/**
+ * 22.05 kHz. Halving the rate halves every spectral pass and, at a fixed window length,
+ * doubles the frequency resolution where it is scarce: a 2048-point window puts bins 10.8 Hz
+ * apart rather than 21.5, which is the difference between four and eight of them between
+ * 20 and 100 Hz. What is lost is everything above 11 kHz, which is cymbal shimmer rather
+ * than cymbal attack, and which a lossy source has usually thrown away already.
+ */
+export const ANALYSIS_RATE = 22050;
 
 function run(cmd: string, args: string[]): Promise<{ stdout: Buffer; stderr: string }> {
 	return new Promise((resolve, reject) => {
@@ -29,33 +38,21 @@ function run(cmd: string, args: string[]): Promise<{ stdout: Buffer; stderr: str
 	});
 }
 
-/** ffmpeg's own two-pass loudnorm measurement, which is exact and free. */
-async function measureLoudness(path: string): Promise<number> {
-	const { stderr } = await run('ffmpeg', [
-		'-nostdin',
-		'-hide_banner',
-		'-i',
-		path,
-		'-af',
-		'loudnorm=print_format=json',
-		'-f',
-		'null',
-		'-'
-	]);
-	const match = stderr.match(/"input_i"\s*:\s*"(-?[\d.]+)"/);
-	return match ? Number.parseFloat(match[1]) : TARGET_LUFS;
-}
-
 /**
- * Decode to mono f32 and apply a constant gain to hit -14 LUFS.
+ * Decode to f32 at the analysis rate, keeping both channels.
  *
- * Constant gain, not ffmpeg's dynamic loudnorm: the filter would compress the very
- * dynamics the analysis is trying to measure, and a breakdown would stop reading as
- * quieter than the drop.
+ * Stereo is kept because where a sound sits across the room is a thing the show can use, and
+ * it is the one property that a mono downmix destroys rather than merely blurs. The mono sum
+ * every other stage works from is derived here rather than asked of ffmpeg, so the two can
+ * never disagree.
+ *
+ * Deliberately does not ask for soxr. It resamples better, but it is a separate library that
+ * a stock Homebrew ffmpeg is not built with, and naming an unavailable engine is a hard error
+ * rather than a fallback. The built-in resampler is what every accuracy figure in this package
+ * was measured through; `filter_size` buys a longer kernel from it for nothing.
+ *
  */
-export async function decodeAudio(path: string, sampleRate = 44100): Promise<DecodedAudio> {
-	const integratedLufs = await measureLoudness(path);
-
+export async function decodeAudio(path: string, sampleRate = ANALYSIS_RATE): Promise<DecodedAudio> {
 	const { stdout } = await run('ffmpeg', [
 		'-nostdin',
 		'-hide_banner',
@@ -63,34 +60,31 @@ export async function decodeAudio(path: string, sampleRate = 44100): Promise<Dec
 		'error',
 		'-i',
 		path,
+		'-af',
+		`aresample=${sampleRate}:filter_size=64:cutoff=0.98`,
 		'-ac',
-		'1',
-		'-ar',
-		String(sampleRate),
+		'2',
 		'-f',
 		'f32le',
 		'-'
 	]);
 
 	const hash = createHash('sha256').update(stdout).digest('hex').slice(0, 16);
-	const mono = new Float32Array(
-		stdout.buffer,
-		stdout.byteOffset,
-		Math.floor(stdout.byteLength / 4)
-	);
-
-	const gain = Math.pow(10, (TARGET_LUFS - integratedLufs) / 20);
-	if (Number.isFinite(gain) && Math.abs(gain - 1) > 0.01) {
-		for (let i = 0; i < mono.length; i++) mono[i] *= gain;
+	// Buffer.concat can land on any byte offset, and a Float32Array view demands a multiple
+	// of four, so the copy is not optional.
+	const frames = Math.floor(stdout.byteLength / 8);
+	const left = new Float32Array(frames);
+	const right = new Float32Array(frames);
+	const mono = new Float32Array(frames);
+	for (let i = 0; i < frames; i++) {
+		const l = stdout.readFloatLE(i * 8);
+		const r = stdout.readFloatLE(i * 8 + 4);
+		left[i] = l;
+		right[i] = r;
+		mono[i] = (l + r) * 0.5;
 	}
 
-	return {
-		mono: Float32Array.from(mono),
-		sampleRate,
-		duration: mono.length / sampleRate,
-		hash,
-		integratedLufs
-	};
+	return { mono, left, right, sampleRate, duration: frames / sampleRate, hash };
 }
 
 export interface ProbeResult {

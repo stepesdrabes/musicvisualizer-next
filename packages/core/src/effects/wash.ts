@@ -13,7 +13,7 @@ export const wash: EffectDef = {
 	blurb: 'The room in its home colour, breathing once per bar, gradient drifting around the ring.',
 	taste: {
 		energy: 2,
-		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false

@@ -28,7 +28,7 @@ export const kickTunnel: EffectDef = {
 	blurb: 'Converging rings pulled into the room centre on every kick - the inhale.',
 	taste: {
 		energy: 4,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

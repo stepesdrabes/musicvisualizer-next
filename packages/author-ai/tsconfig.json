@@ -1,0 +1,19 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"types": ["node"],
+		"lib": ["ES2023"]
+	},
+	"include": ["src/**/*.ts"],
+	"references": [
+		{ "path": "../core" },
+		{ "path": "../analysis" },
+		{ "path": "../author-engine" }
+	]
+}

@@ -16,7 +16,7 @@ export const headbang: EffectDef = {
 	blurb: 'A nod-wave slamming front to back on every downbeat, crossing in half a bar.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

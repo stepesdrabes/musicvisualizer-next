@@ -170,10 +170,11 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	log('analysing');
 	const analysis = analyzeTrack({
 		mono: decoded.mono,
+		left: decoded.left,
+		right: decoded.right,
 		sampleRate: decoded.sampleRate,
 		duration: decoded.duration,
 		hash: decoded.hash,
-		integratedLufs: decoded.integratedLufs,
 		trackId: id,
 		title
 	});

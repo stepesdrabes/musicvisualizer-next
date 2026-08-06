@@ -15,7 +15,7 @@ export const shockwave: EffectDef = {
 	blurb: 'Expanding 3-D shells from the room centre and wall midpoints, one per kick.',
 	taste: {
 		energy: 4,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 32,
 		peakReserved: false

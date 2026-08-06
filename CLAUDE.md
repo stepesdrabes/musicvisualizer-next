@@ -18,10 +18,11 @@ before committing.
 ## Layering
 
 ```
-apps/web -> preview3d, transport-ddp, author, analysis, core
-author   -> analysis, core
-analysis -> core
-core     -> nothing
+apps/web      -> preview3d, transport-ddp, author-ai, author-engine, analysis, core
+author-ai     -> author-engine, analysis, core
+author-engine -> core
+analysis      -> core
+core          -> nothing
 ```
 
 `core` imports nothing at all: no `node:`, no `three`, no framework. That is what lets the

@@ -17,8 +17,8 @@ export const ambientDrift: EffectDef = {
 	blurb: 'Calm idle wash. Very slow, very dim, ignores the music.',
 	taste: {
 		energy: 1,
-		sections: ['intro', 'outro', 'breakdown', 'void'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

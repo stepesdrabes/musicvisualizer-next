@@ -7,22 +7,9 @@
 		"noUnusedParameters": true,
 		"allowImportingTsExtensions": true,
 		"rewriteRelativeImportExtensions": true,
-		"types": [
-			"node"
-		],
-		"lib": [
-			"ES2023"
-		]
+		"types": ["node"],
+		"lib": ["ES2023"]
 	},
-	"include": [
-		"src/**/*.ts"
-	],
-	"references": [
-		{
-			"path": "../core"
-		},
-		{
-			"path": "../analysis"
-		}
-	]
+	"include": ["src/**/*.ts"],
+	"references": [{ "path": "../core" }]
 }

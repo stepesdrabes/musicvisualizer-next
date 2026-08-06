@@ -27,7 +27,7 @@ export const pyroBursts: EffectDef = {
 	blurb: 'Flame columns erupting at the corners on chorus slams and drop phrases.',
 	taste: {
 		energy: 5,
-		sections: ['drop'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
 		peakReserved: false

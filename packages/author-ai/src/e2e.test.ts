@@ -12,7 +12,7 @@ import {
 	type TrackAnalysis
 } from '@mv/core';
 import { analyzeTrack } from '@mv/analysis';
-import { lintShow } from './lint.ts';
+import { lintShow } from '@mv/author-engine';
 
 const SR = 22050;
 
@@ -73,7 +73,6 @@ const analysis: TrackAnalysis = analyzeTrack({
 	sampleRate: SR,
 	duration: track.duration,
 	hash: 'e2ehash',
-	integratedLufs: -14,
 	trackId: 'file-0123456789ab',
 	title: 'E2E'
 });

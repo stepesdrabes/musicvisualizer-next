@@ -1,196 +1,167 @@
-import { clamp01 } from './features.ts';
+import type { Spectrogram } from './dsp/spectrogram.ts';
+import { maxFilter, quantile, smooth } from './dsp/stats.ts';
 
 /**
- * Ellis-2007 recipe: light smoothing, subtract a slow zero-phase moving average so the
- * curve is locally zero-mean, half-wave rectify, divide by its own standard deviation.
- * After this, "0.5" means the same thing in a quiet intro and a loud drop.
+ * SuperFlux (Böck & Widmer, DAFx 2013): spectral flux on a log-magnitude log-frequency
+ * spectrogram, where the frame being subtracted is first passed through a maximum filter
+ * across frequency. That one filter is the whole trick: vibrato and any slow glide move a
+ * partial by a fraction of a band per frame and would otherwise read as a fresh onset in the
+ * band it moves into, which is why plain spectral flux fires continuously on sustained
+ * strings and on a detuned supersaw lead.
  */
-export function conditionNovelty(raw: Float32Array, featureRate: number): Float32Array {
-	const n = raw.length;
+export interface OnsetCurves {
+	fps: number;
+	frames: number;
+	/** Broadband SuperFlux, the curve tempo and beat tracking run on. */
+	flux: Float32Array;
+	/** The same flux restricted to a band range, for drums and downbeats. */
+	low: Float32Array;
+	mid: Float32Array;
+	high: Float32Array;
+}
+
+const MAX_FILTER_BANDS = 1;
+/**
+ * Half the analysis window, in frames. Differencing against the immediately preceding frame
+ * measures mostly the window overlap rather than the music; half a window back is the
+ * shortest lag at which the two frames see genuinely different audio.
+ */
+const DIFF_FRAMES = 2;
+
+function bandRange(spec: Spectrogram, loHz: number, hiHz: number): [number, number] {
+	let lo = 0;
+	let hi = spec.bands;
+	while (lo < spec.bands && spec.centreHz[lo] < loHz) lo++;
+	while (hi > lo && spec.centreHz[hi - 1] > hiHz) hi--;
+	return [lo, Math.max(hi, lo + 1)];
+}
+
+export function onsetStrength(spec: Spectrogram): OnsetCurves {
+	const { frames, bands } = spec;
+
+	// log10(1 + mag): compression, so an onset in a quiet intro is the same size as one in a
+	// loud drop and a single threshold can serve both.
+	const logMag = new Float32Array(frames * bands);
+	for (let i = 0; i < logMag.length; i++) logMag[i] = Math.log10(1 + spec.mag[i]);
+
+	const maxed = new Float32Array(frames * bands);
+	for (let f = 0; f < frames; f++) {
+		const o = f * bands;
+		for (let b = 0; b < bands; b++) {
+			let m = 0;
+			const from = Math.max(0, b - MAX_FILTER_BANDS);
+			const to = Math.min(bands - 1, b + MAX_FILTER_BANDS);
+			for (let k = from; k <= to; k++) if (logMag[o + k] > m) m = logMag[o + k];
+			maxed[o + b] = m;
+		}
+	}
+
+	const ranges: [number, number][] = [
+		bandRange(spec, 0, 22050),
+		bandRange(spec, 0, 160),
+		bandRange(spec, 160, 2000),
+		bandRange(spec, 2000, 22050)
+	];
+	const out = ranges.map(() => new Float32Array(frames));
+
+	for (let f = DIFF_FRAMES; f < frames; f++) {
+		const cur = f * bands;
+		const prev = (f - DIFF_FRAMES) * bands;
+		for (let r = 0; r < ranges.length; r++) {
+			const [lo, hi] = ranges[r];
+			let acc = 0;
+			for (let b = lo; b < hi; b++) {
+				const d = logMag[cur + b] - maxed[prev + b];
+				if (d > 0) acc += d;
+			}
+			out[r][f] = acc;
+		}
+	}
+
+	return { fps: spec.fps, frames, flux: out[0], low: out[1], mid: out[2], high: out[3] };
+}
+
+/**
+ * Subtract a slow local mean and divide by the curve's own spread, so "0.5" means the same
+ * thing in a sparse intro and in a wall-of-sound drop. Everything downstream thresholds
+ * against this rather than against absolute flux.
+ */
+export function conditionCurve(curve: Float32Array, fps: number, windowSec = 1.5): Float32Array {
+	const n = curve.length;
 	const out = new Float32Array(n);
+	const radius = Math.max(1, Math.round(windowSec * fps));
+	const trend = smooth(curve, radius);
 
-	for (let i = 0; i < n; i++) {
-		const a = raw[Math.max(0, i - 1)];
-		const b = raw[i];
-		const c = raw[Math.min(n - 1, i + 1)];
-		out[i] = a * 0.27 + b * 0.46 + c * 0.27;
-	}
+	for (let i = 0; i < n; i++) out[i] = Math.max(0, curve[i] - trend[i]);
 
-	// Single-pole run forwards then backwards, averaged, to keep the trend zero-phase.
-	const tau = 0.35 * featureRate;
-	const k = 1 - Math.exp(-1 / tau);
-	const trend = new Float32Array(n);
-	let acc = out[0];
-	for (let i = 0; i < n; i++) {
-		acc += (out[i] - acc) * k;
-		trend[i] = acc;
-	}
-	acc = out[n - 1];
-	for (let i = n - 1; i >= 0; i--) {
-		acc += (out[i] - acc) * k;
-		trend[i] = (trend[i] + acc) * 0.5;
-	}
-
-	let sumSq = 0;
-	for (let i = 0; i < n; i++) {
-		const v = Math.max(0, out[i] - trend[i]);
-		out[i] = v;
-		sumSq += v * v;
-	}
-
-	const std = Math.sqrt(sumSq / Math.max(1, n));
-	if (std > 1e-9) {
-		const inv = 1 / std;
-		for (let i = 0; i < n; i++) out[i] *= inv;
-	}
+	// Scale by a high quantile rather than by the maximum: one cymbal crash should not push
+	// the entire track's curve into the floor.
+	const top = quantile(out, 0.98);
+	if (top > 1e-9) for (let i = 0; i < n; i++) out[i] /= top;
 	return out;
+}
+
+export interface PeakOptions {
+	/** A peak must be the maximum over this radius, in seconds. */
+	localMaxSec: number;
+	/** ... and exceed the moving mean over this radius by `delta`. */
+	movingMeanSec: number;
+	delta: number;
+	/** Minimum gap between reported peaks, in seconds. */
+	refractorySec: number;
 }
 
 export interface Peak {
 	frame: number;
+	time: number;
 	strength: number;
 }
 
 /**
- * Local max over ~1 s, via 0.25 s blocks. A median-only threshold is not enough on a sparse
- * curve: most frames between onsets are zero, so the median is zero and the threshold
- * collapses to its floor, which lets every weak eighth-note bass note through as a kick.
+ * The standard onset peak picker: a local maximum that also clears an adaptive floor, with a
+ * refractory gap. Reported strength is how far above the floor the peak reached, which is
+ * what lets a caller keep only the confident ones later.
  */
-function localMaxCurve(curve: Float32Array, featureRate: number): Float32Array {
-	const block = Math.max(1, Math.round(0.25 * featureRate));
-	const blocks = Math.ceil(curve.length / block);
-	const blockMax = new Float32Array(blocks);
-	for (let i = 0; i < curve.length; i++) {
-		const b = (i / block) | 0;
-		if (curve[i] > blockMax[b]) blockMax[b] = curve[i];
-	}
-	const out = new Float32Array(curve.length);
-	// +-1 s rather than +-0.5 s. On a heavily limited master the flux never really rests, so a
-	// short window's own maximum is modest and the gate it sets is too low to reject anything.
-	const reach = 4;
-	for (let i = 0; i < curve.length; i++) {
-		const b = (i / block) | 0;
-		let m = 0;
-		for (let k = Math.max(0, b - reach); k <= Math.min(blocks - 1, b + reach); k++) {
-			if (blockMax[k] > m) m = blockMax[k];
-		}
-		out[i] = m;
-	}
-	return out;
-}
-
-/**
- * Adaptive-threshold peak picking: a local median times a factor rather than a fixed level,
- * which would either miss a quiet intro or fire continuously through a loud drop. The
- * running median uses a coarse histogram because exact sorting per frame would be
- * O(n*w log w) over a 20k-frame curve.
- */
-export function pickPeaks(
-	curve: Float32Array,
-	featureRate: number,
-	refractorySec: number,
-	/** A peak must also reach this fraction of the local maximum. */
-	localMaxRatio = 0.3
-): Peak[] {
+export function pickPeaks(curve: Float32Array, fps: number, opts: PeakOptions): Peak[] {
 	const n = curve.length;
-	const win = Math.max(4, Math.round(featureRate * 0.5));
-	const refractory = Math.max(1, Math.round(refractorySec * featureRate));
+	if (n === 0) return [];
+
+	const maxRadius = Math.max(1, Math.round(opts.localMaxSec * fps));
+	const meanRadius = Math.max(1, Math.round(opts.movingMeanSec * fps));
+	const refractory = Math.max(1, Math.round(opts.refractorySec * fps));
+
+	const local = maxFilter(curve, maxRadius);
+	const floor = smooth(curve, meanRadius);
+
 	const peaks: Peak[] = [];
-	const localMax = localMaxCurve(curve, featureRate);
-
-	let maxV = 1e-9;
-	for (let i = 0; i < n; i++) if (curve[i] > maxV) maxV = curve[i];
-
-	const BINS = 256;
-	const hist = new Int32Array(BINS);
-	const binOf = (v: number) =>
-		Math.min(BINS - 1, Math.max(0, Math.floor((v / maxV) * (BINS - 1))));
-
-	let count = 0;
-	let lastPeak = -refractory * 2;
-
-	for (let k = 0; k <= Math.min(win, n - 1); k++) {
-		hist[binOf(curve[k])]++;
-		count++;
-	}
-
+	let last = -refractory - 1;
 	for (let i = 0; i < n; i++) {
-		let acc = 0;
-		let medBin = 0;
-		const half = count >> 1;
-		for (let b = 0; b < BINS; b++) {
-			acc += hist[b];
-			if (acc >= half) {
-				medBin = b;
-				break;
-			}
-		}
-		const med = (medBin / (BINS - 1)) * maxV;
-		const threshold = Math.max(med * 1.6 + maxV * 0.012, localMax[i] * localMaxRatio);
-
 		const v = curve[i];
-		if (
-			v > threshold &&
-			i - lastPeak >= refractory &&
-			(i === 0 || v >= curve[i - 1]) &&
-			(i === n - 1 || v >= curve[i + 1])
-		) {
-			lastPeak = i;
-			peaks.push({ frame: i, strength: clamp01(v / (threshold * 2)) });
+		if (v < local[i] || v < floor[i] + opts.delta || v <= 0) continue;
+		if (i - last < refractory) {
+			// Keep the stronger of two peaks inside one refractory window rather than the first,
+			// so a soft pre-hit cannot mask the beat behind it.
+			const prev = peaks[peaks.length - 1];
+			if (prev && v > prev.strength + floor[prev.frame] - floor[i]) {
+				peaks[peaks.length - 1] = { frame: i, time: i / fps, strength: v - floor[i] };
+				last = i;
+			}
+			continue;
 		}
-
-		if (i - win >= 0) {
-			hist[binOf(curve[i - win])]--;
-			count--;
-		}
-		if (i + 1 + win < n) {
-			hist[binOf(curve[i + 1 + win])]++;
-			count++;
-		}
+		peaks.push({ frame: i, time: i / fps, strength: v - floor[i] });
+		last = i;
 	}
-
 	return peaks;
 }
 
-export function peakTimes(peaks: Peak[], featureRate: number): number[] {
-	return peaks.map((p) => p.frame / featureRate);
+/** Peaks refined to sub-frame accuracy by a parabola through the three samples at the top. */
+export function refinePeakTime(curve: Float32Array, frame: number, fps: number): number {
+	if (frame <= 0 || frame >= curve.length - 1) return frame / fps;
+	const a = curve[frame - 1];
+	const b = curve[frame];
+	const c = curve[frame + 1];
+	const denom = a - 2 * b + c;
+	const shift = Math.abs(denom) < 1e-12 ? 0 : (0.5 * (a - c)) / denom;
+	return (frame + Math.max(-0.5, Math.min(0.5, shift))) / fps;
 }
 
-/** Merge two onset streams into time-sorted parallel arrays. */
-export function mergeOnsets(
-	streams: { peaks: Peak[]; weight: number }[],
-	featureRate: number
-): { times: Float32Array; weights: Float32Array } {
-	const total = streams.reduce((n, s) => n + s.peaks.length, 0);
-	const pairs: { t: number; w: number }[] = new Array(total);
-	let i = 0;
-	for (const s of streams) {
-		for (const p of s.peaks) {
-			pairs[i++] = { t: p.frame / featureRate, w: p.strength * s.weight };
-		}
-	}
-	pairs.sort((a, b) => a.t - b.t);
-	return {
-		times: Float32Array.from(pairs, (p) => p.t),
-		weights: Float32Array.from(pairs, (p) => p.w)
-	};
-}
-
-/** Drop hats within 30 ms of a kick: distorted kicks have huge high-frequency content. */
-export function suppressNear(
-	candidates: Peak[],
-	suppressors: Peak[],
-	featureRate: number,
-	windowSec: number
-): Peak[] {
-	if (suppressors.length === 0) return candidates;
-	const win = windowSec * featureRate;
-	let j = 0;
-	return candidates.filter((c) => {
-		while (j < suppressors.length && suppressors[j].frame < c.frame - win) j++;
-		for (let k = j; k < suppressors.length && suppressors[k].frame <= c.frame + win; k++) {
-			if (Math.abs(suppressors[k].frame - c.frame) <= win) return false;
-		}
-		return true;
-	});
-}

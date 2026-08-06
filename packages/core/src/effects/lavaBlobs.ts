@@ -18,8 +18,8 @@ export const lavaBlobs: EffectDef = {
 	blurb: 'Molten blobs drifting the ring, fusing where they touch. Slow and heavy.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'intro', 'outro'],
-		minBars: 8,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

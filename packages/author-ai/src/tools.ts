@@ -4,7 +4,7 @@ import type { EffectDef, GeneratedEffect, Geometry, Show, TrackAnalysis } from '
 import { BUILT_IN_EFFECTS, barTimeAt, compileGenerated } from '@mv/core';
 import { analyzeTrack, decodeAudio } from '@mv/analysis';
 import { renderArrangementChart, renderBarTable, renderCatalog } from './catalog.ts';
-import { formatFindings, lintShow } from './lint.ts';
+import { formatFindings, lintShow } from '@mv/author-engine';
 import { coerceShow, showSchema } from './showSchema.ts';
 
 /** Mutated by the tools as the author works; read afterwards by the caller. */
@@ -12,6 +12,8 @@ export interface AuthorSession {
 	analysis: TrackAnalysis;
 	geometry: Geometry;
 	audioPath?: string;
+	/** The engine's show, when the agent is revising one rather than starting from nothing. */
+	draft?: Show;
 	generated: Map<string, GeneratedEffect>;
 	compiled: Map<string, EffectDef>;
 	submitted: Show | null;
@@ -22,12 +24,14 @@ export interface AuthorSession {
 export function createSession(
 	analysis: TrackAnalysis,
 	geometry: Geometry,
-	audioPath?: string
+	audioPath?: string,
+	draft?: Show
 ): AuthorSession {
 	return {
 		analysis,
 		geometry,
 		audioPath,
+		draft,
 		generated: new Map(),
 		compiled: new Map(),
 		submitted: null,
@@ -46,7 +50,16 @@ function text(body: string) {
 	return { content: [{ type: 'text' as const, text: body }] };
 }
 
-export function buildTools(session: AuthorSession) {
+/**
+ * Which half of the job the agent is on.
+ *
+ * `research` withholds everything that can write, and it has to: given `submit_show` while
+ * being asked for a plan, the model writes the effects, lints and submits a whole show in the
+ * first pass, and the second pass then starts over on work that is already done.
+ */
+export type ToolPhase = 'research' | 'build';
+
+export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 	const getBars = tool(
 		'get_bars',
 		'Bar-level analysis rows for a range of bars. Use this to zoom into a build, a void or a drop rather than working from the overview.',
@@ -83,6 +96,17 @@ export function buildTools(session: AuthorSession) {
 				return `${t.toFixed(3)}s  bar ${bar} beat ${beatInBar.toFixed(2)}`;
 			});
 			return text(`${hits.length} ${instrument} onsets:\n${lines.join('\n')}`);
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const getDraft = tool(
+		'get_draft',
+		'The show that already exists for this track, as JSON. Revise it rather than starting over: it already covers every bar and lints clean.',
+		{},
+		async () => {
+			if (!session.draft) return text('No draft exists; write the show from scratch.');
+			return text(JSON.stringify(session.draft, null, '\t'));
 		},
 		{ annotations: { readOnlyHint: true } }
 	);
@@ -157,7 +181,6 @@ export function buildTools(session: AuthorSession) {
 				sampleRate: decoded.sampleRate,
 				duration: decoded.duration,
 				hash: decoded.hash,
-				integratedLufs: decoded.integratedLufs,
 				trackId: session.analysis.trackId,
 				title: session.analysis.title,
 				bpmHint: bpm
@@ -297,16 +320,20 @@ export function buildTools(session: AuthorSession) {
 		version: '1.0.0',
 		instructions:
 			'Tools for authoring a lighting show against a pre-analysed track. All timing is by bar index.',
-		tools: [
-			getBars,
-			getOnsets,
-			audioFile,
-			audioStats,
-			reanalyse,
-			listEffects,
-			testEffect,
-			lint,
-			submit
-		]
+		tools:
+			phase === 'research'
+				? [getBars, getOnsets, getDraft, audioFile, audioStats, reanalyse, listEffects]
+				: [
+						getBars,
+						getOnsets,
+						getDraft,
+						audioFile,
+						audioStats,
+						reanalyse,
+						listEffects,
+						testEffect,
+						lint,
+						submit
+					]
 	});
 }

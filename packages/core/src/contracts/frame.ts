@@ -66,6 +66,17 @@ export interface ShowFrame {
 	/** Length NUM_BANDS. Index with `Band`. */
 	bands: Float32Array;
 
+	/**
+	 * Where the music is sitting across the room right now: -1 hard left, +1 hard right, and
+	 * `panWidth` 0 for mono through 1 for fully decorrelated.
+	 *
+	 * Use it to bias a position rather than to set one. It is a property of the mix, not of the
+	 * room, so an effect that maps it straight onto a wall gets a lighting rig that lurches
+	 * whenever a synth pad happens to be wide.
+	 */
+	pan: number;
+	panWidth: number;
+
 	kick: boolean;
 	snare: boolean;
 	hat: boolean;
@@ -101,6 +112,8 @@ export function createShowFrame(): ShowFrame {
 		timeSinceDrop: Infinity,
 		energy: 0,
 		bands: new Float32Array(NUM_BANDS),
+		pan: 0,
+		panWidth: 0,
 		kick: false,
 		snare: false,
 		hat: false,

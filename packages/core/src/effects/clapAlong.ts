@@ -17,7 +17,7 @@ export const clapAlong: EffectDef = {
 	blurb: 'Mirrored double-flashes on the side walls with every clap.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

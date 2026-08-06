@@ -1,5 +1,5 @@
 {
-	"name": "@mv/author",
+	"name": "@mv/author-ai",
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
@@ -8,11 +8,12 @@
 	},
 	"dependencies": {
 		"@mv/core": "*",
+		"@mv/analysis": "*",
+		"@mv/author-engine": "*",
 		"@anthropic-ai/claude-agent-sdk": "^0.3.222",
 		"@anthropic-ai/sdk": "^0.93.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
-		"zod": "^4.4.3",
-		"@mv/analysis": "*"
+		"zod": "^4.4.3"
 	},
 	"scripts": {
 		"check": "tsc --build"

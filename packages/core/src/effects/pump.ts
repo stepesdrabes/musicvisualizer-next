@@ -13,7 +13,7 @@ export const pump: EffectDef = {
 	blurb: 'The room pulses on the downbeat, or ducks on every kick. Duck mode is the EDM signature.',
 	taste: {
 		energy: 4,
-		sections: ['groove', 'drop'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

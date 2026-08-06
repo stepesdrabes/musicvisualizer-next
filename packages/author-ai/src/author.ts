@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { Geometry, Show, TrackAnalysis } from '@mv/core';
-import { buildBriefPrompt, buildShowPrompt, buildSystemPrompt } from './prompt.ts';
+import { buildBriefPrompt, buildRevisePrompt, buildShowPrompt, buildSystemPrompt } from './prompt.ts';
 import { buildTools, createSession, type AuthorSession } from './tools.ts';
 import {
 	describeToolCall,
@@ -21,6 +21,12 @@ export interface AuthorOptions {
 	/** Called after `reanalyse`, so the caller can persist the corrected grid. */
 	onAnalysis?: (analysis: TrackAnalysis, reason: string) => void;
 	onEvent?: OnAuthorEvent;
+	/**
+	 * A show to revise rather than replace. The engine's draft already covers every bar and
+	 * lints clean, so handing it over spends the model on interpretation instead of on
+	 * bookkeeping it is worse at.
+	 */
+	draft?: Show;
 }
 
 export interface AuthorResult {
@@ -112,7 +118,7 @@ export async function authorShow(
 	opts: AuthorOptions = {}
 ): Promise<AuthorResult> {
 	const emit: OnAuthorEvent = opts.onEvent ?? (() => {});
-	const session: AuthorSession = createSession(analysis, geometry, opts.audioPath);
+	const session: AuthorSession = createSession(analysis, geometry, opts.audioPath, opts.draft);
 	session.onAnalysis = (next, reason) => {
 		opts.onAnalysis?.(next, reason);
 		emit({ type: 'analysis', analysis: next, reason });
@@ -121,7 +127,8 @@ export async function authorShow(
 	const systemPrompt = buildSystemPrompt();
 	const model = opts.model ?? 'claude-opus-5';
 	const names = new Map<string, string>();
-	const tools = buildTools(session);
+	const researchTools = buildTools(session, 'research');
+	const writeTools = buildTools(session, 'build');
 
 	emit({ type: 'phase', phase: 'research', label: 'Researching the track' });
 
@@ -132,7 +139,7 @@ export async function authorShow(
 				model,
 				systemPrompt,
 				effort: opts.briefEffort ?? 'high',
-				mcpServers: { lightdesk: tools },
+				mcpServers: { lightdesk: researchTools },
 				allowedTools: INVESTIGATION_TOOLS,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
@@ -153,16 +160,22 @@ export async function authorShow(
 	if (!brief) throw new Error('the author returned an empty brief');
 	emit({ type: 'brief', brief });
 
-	emit({ type: 'phase', phase: 'build', label: 'Building the cue list' });
+	emit({
+		type: 'phase',
+		phase: 'build',
+		label: opts.draft ? 'Revising the cue list' : 'Building the cue list'
+	});
 
 	await run(
 		query({
-			prompt: buildShowPrompt(session.analysis, brief),
+			prompt: opts.draft
+				? buildRevisePrompt(session.analysis, brief)
+				: buildShowPrompt(session.analysis, brief),
 			options: {
 				model,
 				systemPrompt,
 				effort: opts.showEffort ?? 'high',
-				mcpServers: { lightdesk: tools },
+				mcpServers: { lightdesk: writeTools },
 				allowedTools: INVESTIGATION_TOOLS,
 				permissionMode: 'bypassPermissions',
 				allowDangerouslySkipPermissions: true,
@@ -185,6 +198,16 @@ export async function authorShow(
 		analysis: session.analysis,
 		log: session.log
 	};
+}
+
+/** Hand the agent a finished show to revise. The engine writes that show; this improves it. */
+export function reviseShow(
+	analysis: TrackAnalysis,
+	geometry: Geometry,
+	draft: Show,
+	opts: Omit<AuthorOptions, 'draft'> = {}
+): Promise<AuthorResult> {
+	return authorShow(analysis, geometry, { ...opts, draft });
 }
 
 export type { AuthorEvent };

@@ -10,7 +10,7 @@ export const blackout: EffectDef = {
 	blurb: 'Everything off but a faint keep-alive on the beam. The void, held.',
 	taste: {
 		energy: 1,
-		sections: ['void', 'breakdown', 'intro', 'outro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 1,
 		maxBars: 4,
 		peakReserved: false

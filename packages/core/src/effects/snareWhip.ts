@@ -17,7 +17,7 @@ export const snareWhip: EffectDef = {
 	blurb: 'A whip-crack streak down the beam on every snare. The backbeat, visible.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

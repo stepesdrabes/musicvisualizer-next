@@ -18,7 +18,7 @@ export const vuTowers: EffectDef = {
 	blurb: 'Centre-out gravity meters on every strip, bass-driven, white peak dots.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

@@ -16,7 +16,7 @@ export const hueCarousel: EffectDef = {
 	blurb: 'The spectrum around the ring, clicking around in 8th-note steps, one rev per phrase.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

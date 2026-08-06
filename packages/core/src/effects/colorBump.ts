@@ -15,7 +15,7 @@ export const colorBump: EffectDef = {
 	blurb: 'Manual one-shot accent-colour flood.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove', 'breakdown', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 1,
 		peakReserved: false

@@ -13,7 +13,7 @@ export const sparkle: EffectDef = {
 	blurb: 'Micro-sparks scattered on the hats, at an absolute rate rather than one per frame.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'build', 'drop', 'intro', 'outro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false

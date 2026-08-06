@@ -17,7 +17,7 @@ export const rainbowRain: EffectDef = {
 	blurb: 'Falling droplets stepping the hue wheel by the golden angle - every drop unique.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'breakdown'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 16,
 		peakReserved: false

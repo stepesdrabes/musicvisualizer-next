@@ -24,8 +24,10 @@ export { PALETTE_ANCHORS, SLOT } from './contracts/palette.ts';
 export type {
 	BarRow,
 	EventTag,
+	KeyEstimate,
 	Moment,
 	SectionSpan,
+	StereoImage,
 	TempoGrid,
 	TrackAnalysis
 } from './contracts/analysis.ts';
@@ -44,6 +46,7 @@ export {
 	onPhraseGrid,
 	phraseOffset
 } from './grid.ts';
+export { Rng, hash01 } from './dsl/rng.ts';
 export { Layer, Mixer } from './mixer.ts';
 export { ShowPlayer } from './player.ts';
 export { BUILT_IN_EFFECTS, EffectRegistry } from './effects/index.ts';

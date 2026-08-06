@@ -220,3 +220,35 @@ bar table, then lint and submit.
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
 Keep notes short.`;
 }
+
+/**
+ * Pass 2, when a draft already exists.
+ *
+ * The engine has already covered every bar, kept the effects inside their taste metadata,
+ * reserved the peak and satisfied the linter. None of that is worth spending a model on
+ * again. What it cannot do is know what the song is, so the instruction is to change what the
+ * brief asks for and leave the rest - a rewrite from scratch would mostly reproduce the draft
+ * with fresh opportunities to get the bookkeeping wrong.
+ */
+export function buildRevisePrompt(analysis: TrackAnalysis, brief: string): string {
+	return `Your plan for "${analysis.title}":
+
+${brief}
+
+---
+
+A complete show already exists. It was generated from the analysis alone, with no idea what
+this song is: it covers every bar, respects every effect's taste metadata, holds the biggest
+look for the peak, and lints clean. Call get_draft to read it.
+
+Revise it into your plan. Change what carries meaning and leave what merely works:
+
+- the palette, if the track wants different colour from what the arrangement alone implied
+- the cues that matter - the peak, the drops, the moment you named in the brief
+- effects you write yourself, which is where this stops being a generic show
+
+Keep the draft's coverage. A bar the draft lights and yours does not is a bar that goes dark.
+
+analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
+Lint and submit when it says what your brief says. Keep notes short.`;
+}

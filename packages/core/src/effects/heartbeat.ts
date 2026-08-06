@@ -16,7 +16,7 @@ export const heartbeat: EffectDef = {
 	blurb: 'A radial ba-BUM double pulse once per bar - the half-time chest.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'breakdown', 'drop'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

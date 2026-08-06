@@ -18,8 +18,8 @@ export const chorusBloom: EffectDef = {
 	blurb: 'The bed blooms brighter through the chorus, lifting a step every phrase.',
 	taste: {
 		energy: 3,
-		sections: ['drop', 'groove', 'build'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 32,
 		peakReserved: false
 	},

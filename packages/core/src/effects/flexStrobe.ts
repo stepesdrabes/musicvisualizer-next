@@ -19,7 +19,7 @@ export const flexStrobe: EffectDef = {
 	blurb: 'A gold constellation shimmering once per snare. Darkness is the flex.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'drop'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

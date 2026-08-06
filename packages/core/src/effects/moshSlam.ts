@@ -17,7 +17,7 @@ export const moshSlam: EffectDef = {
 	blurb: 'Unison slams on the chug grid, near-black between. The room is a fist.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

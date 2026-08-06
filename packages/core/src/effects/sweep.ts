@@ -12,7 +12,7 @@ export const sweep: EffectDef = {
 	blurb: 'A wavefront crossing the room in world space; the axis turns a quarter every 4 bars.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'build', 'drop', 'breakdown'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

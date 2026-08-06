@@ -20,7 +20,7 @@ export const discoBall: EffectDef = {
 	blurb: 'A fixed constellation of glints swept once per 4 bars, like an unseen mirror ball.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'intro', 'drop'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

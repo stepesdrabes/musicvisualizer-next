@@ -5,10 +5,12 @@ import {
 	DEFAULT_ROOM,
 	buildGeometry,
 	compileGenerated,
+	type Show,
 	type TrackAnalysis
 } from '@mv/core';
 import { analysisPath, findAudioFile, isValidId, showPath } from '@mv/analysis';
-import { authorShow, formatFindings, lintShow, type AuthorEvent } from '@mv/author';
+import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
+import { reviseShow, type AuthorEvent } from '@mv/author-ai';
 import type { RequestHandler } from './$types';
 
 /**
@@ -29,6 +31,17 @@ export const GET: RequestHandler = async ({ url, request }) => {
 
 	const audioPath = (await findAudioFile(id)) ?? undefined;
 	const geometry = buildGeometry(DEFAULT_ROOM);
+
+	// The engine's show is the starting point. Handing the agent a draft that already covers
+	// every bar and lints clean spends it on interpretation rather than on bookkeeping, and
+	// leaves a working show behind if it fails.
+	let draft: Show;
+	try {
+		const existing = JSON.parse(await readFile(showPath(id), 'utf8')) as Show;
+		draft = existing.analysisHash === analysis.hash ? existing : composeShow(analysis);
+	} catch {
+		draft = composeShow(analysis);
+	}
 	const encoder = new TextEncoder();
 
 	const stream = new ReadableStream({
@@ -51,7 +64,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
 			try {
 				send('event', { type: 'note', text: `authoring ${analysis.title}` } satisfies AuthorEvent);
 
-				const result = await authorShow(grid, geometry, {
+				const result = await reviseShow(grid, geometry, draft, {
 					audioPath,
 					onAnalysis: (next) => (grid = next),
 					onEvent: (e) => send('event', e)

@@ -14,7 +14,7 @@ export const splash: EffectDef = {
 	blurb: 'Kicks splash the front and back walls, snares answer on the sides. Size codes velocity.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'breakdown', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 32,
 		peakReserved: false

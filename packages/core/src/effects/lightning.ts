@@ -18,7 +18,7 @@ export const lightning: EffectDef = {
 	blurb: 'Deterministic white arcs on the 16th grid. For drops only.',
 	taste: {
 		energy: 5,
-		sections: ['drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 8,
 		peakReserved: false

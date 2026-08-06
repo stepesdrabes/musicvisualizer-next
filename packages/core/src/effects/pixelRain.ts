@@ -13,7 +13,7 @@ export const pixelRain: EffectDef = {
 	blurb: 'Droplets from the corners sliding to each wall centre on the 8th-note grid.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'breakdown', 'drop', 'intro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

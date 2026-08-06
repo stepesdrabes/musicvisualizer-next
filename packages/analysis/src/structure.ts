@@ -1,0 +1,292 @@
+import type { BeatFeatures } from './beatsync.ts';
+import { PITCH_CLASSES } from './chroma.ts';
+import { mean, quantile, stdev } from './dsp/stats.ts';
+
+/**
+ * How many sub-frames each bar is resampled to. Keeping a time axis inside the bar is what
+ * separates "these two bars have the same average spectrum" from "these two bars play the
+ * same pattern", and in this repertoire the pattern is the identity of the section. Sixteen
+ * is a sixteenth note in four, which is as fine as a placement ever needs to be read.
+ */
+const SUB_FRAMES = 16;
+/** Timbre needs roughly a third of an octave; finer only adds pitch, which chroma covers. */
+const TIMBRE_BANDS = 32;
+
+export interface BarFeatures {
+	count: number;
+	/** Bar start times; `time[count]` is the end of the last bar. */
+	time: Float64Array;
+	/** count * (SUB_FRAMES * TIMBRE_BANDS), L2-normalised per bar. */
+	pattern: Float32Array;
+	patternDim: number;
+	/** count * 12, mean chroma over the bar, L2-normalised. */
+	chroma: Float32Array;
+	/** Mean level over the bar, linear. */
+	rms: Float32Array;
+	/** Mean onset strength over the bar's beats, by band group. */
+	low: Float32Array;
+	mid: Float32Array;
+	high: Float32Array;
+	/** Quietest beat in the bar, relative to the track; finds a collapse before a drop. */
+	floor: Float32Array;
+}
+
+/**
+ * Bars built from beats, keeping the within-bar time axis.
+ *
+ * Aggregating to bars rather than beats is the single largest accuracy lever in structure
+ * analysis: published boundary F-measures rise by around a third for the same algorithm,
+ * because Western popular structure changes on bar lines by construction.
+ */
+export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: number): BarFeatures {
+	const count = Math.max(0, Math.floor((bf.count - phase) / beatsPerBar));
+	const patternDim = SUB_FRAMES * TIMBRE_BANDS;
+
+	const time = new Float64Array(count + 1);
+	const pattern = new Float32Array(count * patternDim);
+	const chroma = new Float32Array(count * PITCH_CLASSES);
+	const rms = new Float32Array(count);
+	const low = new Float32Array(count);
+	const mid = new Float32Array(count);
+	const high = new Float32Array(count);
+	const floor = new Float32Array(count);
+
+	const group = Math.max(1, Math.floor(bf.bands / TIMBRE_BANDS));
+
+	for (let b = 0; b < count; b++) {
+		const first = phase + b * beatsPerBar;
+		time[b] = bf.time[first];
+		time[b + 1] = bf.time[Math.min(first + beatsPerBar, bf.count)];
+
+		let norm = 0;
+		for (let s = 0; s < SUB_FRAMES; s++) {
+			// Sub-frame s of the bar maps onto a beat and a fraction of it; sampling the beat's
+			// spectrum is enough because a beat is already the finest row we kept.
+			const u = (s / SUB_FRAMES) * beatsPerBar;
+			const beat = Math.min(bf.count - 1, first + Math.floor(u));
+			for (let k = 0; k < TIMBRE_BANDS; k++) {
+				let acc = 0;
+				const from = k * group;
+				const to = Math.min(bf.bands, from + group);
+				for (let j = from; j < to; j++) acc += bf.spectral[beat * bf.bands + j];
+				const v = acc / Math.max(1, to - from);
+				pattern[b * patternDim + s * TIMBRE_BANDS + k] = v;
+				norm += v * v;
+			}
+		}
+		norm = Math.sqrt(norm);
+		if (norm > 1e-9) {
+			for (let i = 0; i < patternDim; i++) pattern[b * patternDim + i] /= norm;
+		}
+
+		let cn = 0;
+		for (let p = 0; p < PITCH_CLASSES; p++) {
+			let acc = 0;
+			for (let k = 0; k < beatsPerBar; k++) {
+				const beat = Math.min(bf.count - 1, first + k);
+				acc += bf.chroma[beat * PITCH_CLASSES + p];
+			}
+			const v = acc / beatsPerBar;
+			chroma[b * PITCH_CLASSES + p] = v;
+			cn += v * v;
+		}
+		cn = Math.sqrt(cn);
+		if (cn > 1e-9) for (let p = 0; p < PITCH_CLASSES; p++) chroma[b * PITCH_CLASSES + p] /= cn;
+
+		let accRms = 0;
+		let accLow = 0;
+		let accMid = 0;
+		let accHigh = 0;
+		let quietest = Infinity;
+		for (let k = 0; k < beatsPerBar; k++) {
+			const beat = Math.min(bf.count - 1, first + k);
+			accRms += bf.rms[beat];
+			accLow += bf.low[beat];
+			accMid += bf.mid[beat];
+			accHigh += bf.high[beat];
+			if (bf.rms[beat] < quietest) quietest = bf.rms[beat];
+		}
+		rms[b] = accRms / beatsPerBar;
+		low[b] = accLow / beatsPerBar;
+		mid[b] = accMid / beatsPerBar;
+		high[b] = accHigh / beatsPerBar;
+		floor[b] = Number.isFinite(quietest) ? quietest : rms[b];
+	}
+
+	return { count, time, pattern, patternDim, chroma, rms, low, mid, high, floor };
+}
+
+/** Cosine similarity matrix over bars, count * count, values in 0..1. */
+export function similarityMatrix(bars: BarFeatures): Float32Array {
+	const n = bars.count;
+	const dim = bars.patternDim;
+	const sim = new Float32Array(n * n);
+	for (let i = 0; i < n; i++) {
+		sim[i * n + i] = 1;
+		for (let j = i + 1; j < n; j++) {
+			let dot = 0;
+			for (let k = 0; k < dim; k++) dot += bars.pattern[i * dim + k] * bars.pattern[j * dim + k];
+			// Chroma agreement carries the harmony, which timbre alone misses when a verse and a
+			// chorus share a drum kit.
+			let cdot = 0;
+			for (let k = 0; k < PITCH_CLASSES; k++) {
+				cdot += bars.chroma[i * PITCH_CLASSES + k] * bars.chroma[j * PITCH_CLASSES + k];
+			}
+			const v = Math.max(0, 0.75 * dot + 0.25 * cdot);
+			sim[i * n + j] = v;
+			sim[j * n + i] = v;
+		}
+	}
+	return sim;
+}
+
+/**
+ * Only bars within `BAND` of each other are compared inside a candidate segment. A section
+ * is a place where nearby bars resemble each other; requiring bar 1 to resemble bar 16
+ * would reject any section that develops, which is most of them.
+ */
+const BAND = 7;
+const MAX_SEGMENT_BARS = 32;
+const MIN_SEGMENT_BARS = 2;
+/** Weight of the length prior against the similarity score. */
+const LAMBDA = 0.04;
+
+/** 0 for eight bars, then progressively worse for four, two and anything else. */
+function lengthPenalty(bars: number): number {
+	if (bars === 8) return 0;
+	if (bars % 8 === 0) return 0.125;
+	if (bars % 4 === 0) return 0.25;
+	if (bars % 2 === 0) return 0.5;
+	return 1;
+}
+
+function segmentScore(sim: Float32Array, n: number, from: number, to: number): number {
+	let acc = 0;
+	for (let i = from; i < to; i++) {
+		const hi = Math.min(to, i + BAND + 1);
+		for (let j = i + 1; j < hi; j++) acc += sim[i * n + j];
+	}
+	return (2 * acc) / (to - from);
+}
+
+/**
+ * Convolutive block matching (Marmoret et al.): choose the segmentation maximising total
+ * within-segment similarity minus a cost for lengths that are not phrase multiples.
+ *
+ * The length term is the point. Every published alternative either snaps boundaries onto a
+ * phrase grid afterwards, which throws away every genuine off-grid change, or ignores phrase
+ * structure entirely. Expressing it as a cost lets the evidence overrule it when the music
+ * really does move at seven bars, and lets it win when the evidence is a coin toss.
+ */
+export function segmentBars(sim: Float32Array, n: number): number[] {
+	if (n < MIN_SEGMENT_BARS * 2) return [0, n];
+
+	// Normalise the penalty by what a good eight-bar segment scores, so lambda means the same
+	// thing on a track whose bars all resemble each other as on one whose bars do not.
+	let ref = 0;
+	for (let from = 0; from + 8 <= n; from++) ref = Math.max(ref, segmentScore(sim, n, from, from + 8));
+	if (ref <= 0) ref = 1;
+
+	const best = new Float64Array(n + 1).fill(-Infinity);
+	const link = new Int32Array(n + 1).fill(-1);
+	best[0] = 0;
+
+	for (let end = MIN_SEGMENT_BARS; end <= n; end++) {
+		for (let len = MIN_SEGMENT_BARS; len <= Math.min(MAX_SEGMENT_BARS, end); len++) {
+			const start = end - len;
+			if (best[start] === -Infinity) continue;
+			// The tail of a track is often a fade whose length nobody chose; charging it the
+			// full phrase penalty would drag the previous boundary out of place.
+			const penalty = end === n ? lengthPenalty(len) * 0.5 : lengthPenalty(len);
+			const v = best[start] + segmentScore(sim, n, start, end) - ref * LAMBDA * penalty;
+			if (v > best[end]) {
+				best[end] = v;
+				link[end] = start;
+			}
+		}
+	}
+
+	const bounds: number[] = [n];
+	for (let at = n; at > 0; at = link[at]) {
+		if (link[at] < 0) break;
+		bounds.push(link[at]);
+	}
+	bounds.reverse();
+	if (bounds[0] !== 0) bounds.unshift(0);
+	return bounds;
+}
+
+export interface SegmentGroup {
+	/** Index of the earliest segment this one repeats, or null when it stands alone. */
+	repeatOf: (number | null)[];
+	/** Group id per segment; segments sharing an id are the same material. */
+	group: number[];
+}
+
+/**
+ * Which segments are the same material.
+ *
+ * Transitive closure is what turns a set of pairwise matches into "A B A B C B": if the
+ * second chorus matches the first and the third matches the second, the third is a chorus
+ * even if it never directly matched the first.
+ */
+export function groupSegments(
+	sim: Float32Array,
+	n: number,
+	bounds: readonly number[]
+): SegmentGroup {
+	const count = bounds.length - 1;
+	const repeatOf = new Array<number | null>(count).fill(null);
+	const group = new Array<number>(count).fill(-1);
+	if (count === 0) return { repeatOf, group };
+
+	// Cross-similarity of two segments: the mean of the best diagonal alignment, which is what
+	// makes a 16-bar chorus match its own 8-bar half.
+	const score = (a: number, b: number): number => {
+		const aFrom = bounds[a];
+		const aLen = bounds[a + 1] - aFrom;
+		const bFrom = bounds[b];
+		const bLen = bounds[b + 1] - bFrom;
+		const len = Math.min(aLen, bLen);
+		let acc = 0;
+		for (let k = 0; k < len; k++) acc += sim[(aFrom + k) * n + (bFrom + k)];
+		return acc / len;
+	};
+
+	const pairs: number[] = [];
+	for (let i = 0; i < count; i++) {
+		for (let j = i + 1; j < count; j++) pairs.push(score(i, j));
+	}
+	if (pairs.length === 0) {
+		group[0] = 0;
+		return { repeatOf, group };
+	}
+	const threshold = Math.max(mean(pairs) + stdev(pairs), quantile(pairs, 0.75));
+
+	const parent = Array.from({ length: count }, (_, i) => i);
+	const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+
+	for (let i = 0; i < count; i++) {
+		for (let j = i + 1; j < count; j++) {
+			const aLen = bounds[i + 1] - bounds[i];
+			const bLen = bounds[j + 1] - bounds[j];
+			// Segments of very different lengths are rarely the same thing, and letting them
+			// link is how a whole track collapses into one group.
+			if (Math.min(aLen, bLen) / Math.max(aLen, bLen) < 0.5) continue;
+			if (score(i, j) < threshold) continue;
+			const ra = find(i);
+			const rb = find(j);
+			if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+		}
+	}
+
+	const ids = new Map<number, number>();
+	for (let i = 0; i < count; i++) {
+		const root = find(i);
+		if (!ids.has(root)) ids.set(root, ids.size);
+		group[i] = ids.get(root)!;
+		if (root !== i) repeatOf[i] = root;
+	}
+
+	return { repeatOf, group };
+}

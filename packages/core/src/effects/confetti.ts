@@ -20,7 +20,7 @@ export const confetti: EffectDef = {
 	blurb: 'Beat-popped multicolour dots raining through the chorus.',
 	taste: {
 		energy: 3,
-		sections: ['drop', 'groove', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

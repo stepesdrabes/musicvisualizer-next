@@ -19,8 +19,8 @@ export const subThrob: EffectDef = {
 	blurb: 'The 808 tail as a slow perimeter throb bleeding toward the ceiling.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'drop', 'breakdown'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

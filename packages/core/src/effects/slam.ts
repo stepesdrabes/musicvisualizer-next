@@ -17,7 +17,7 @@ export const slam: EffectDef = {
 	blurb: 'One full-room white frame, decaying through the accent. The blinder hit.',
 	taste: {
 		energy: 5,
-		sections: ['drop', 'groove'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 1,
 		peakReserved: false

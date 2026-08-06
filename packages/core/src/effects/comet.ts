@@ -12,7 +12,7 @@ export const comet: EffectDef = {
 	blurb: 'One hot head with an exponential tail lapping the ring; the tail swells on every kick.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'breakdown', 'drop', 'intro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

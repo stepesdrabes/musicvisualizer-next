@@ -17,7 +17,7 @@ export const sineRoll: EffectDef = {
 	blurb: 'A liquid brightness wave rolling around the room, one cycle per N beats.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'intro', 'outro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 4,
 		maxBars: 64,
 		peakReserved: false

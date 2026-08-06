@@ -17,7 +17,7 @@ export const gradientSpin: EffectDef = {
 	blurb: 'The palette wrapped around the room, one revolution per N bars, kicked by the kick.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'build', 'breakdown'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

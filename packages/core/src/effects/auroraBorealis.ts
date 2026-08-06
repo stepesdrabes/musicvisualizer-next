@@ -23,8 +23,8 @@ export const auroraBorealis: EffectDef = {
 	blurb: 'Green-to-violet curtains drifting around the room. Breakdown material.',
 	taste: {
 		energy: 1,
-		sections: ['breakdown', 'intro', 'outro'],
-		minBars: 8,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

@@ -20,8 +20,8 @@ export const aurora: EffectDef = {
 	blurb: 'Three bar-locked palette waves with interference highlights.',
 	taste: {
 		energy: 2,
-		sections: ['intro', 'groove', 'breakdown', 'outro'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

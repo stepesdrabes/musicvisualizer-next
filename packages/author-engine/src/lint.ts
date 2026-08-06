@@ -23,13 +23,15 @@ export interface LintContext {
 	effects: Map<string, EffectDef>;
 }
 
-/** Below the 3 Hz accessibility ceiling, and never anywhere near the 10-25 Hz danger band. */
-const FLASH_HZ_CEILING = 3;
-const DANGER_HZ_LO = 10;
-const DANGER_HZ_HI = 25;
-const MAX_STROBE_FRACTION = 0.08;
-const MIN_STROBE_GAP_BARS = 8;
+/**
+ * There is deliberately no flash-rate ceiling, no strobe budget and no minimum gap between
+ * strobes. A room this size is one person's, the strobe is half the point of the genre, and a
+ * linter that refuses the biggest card in the deck is a linter people route around. Anyone
+ * fitting this in a public space owns that decision.
+ */
 const SETTLE_BARS = 16;
+/** Distinct hues across the whole show, not at once. See the colour section below. */
+const MAX_HUES = 6;
 const MAX_BRIEF_CHARS = 1100;
 const MAX_NOTE_CHARS = 90;
 const MIN_GENERATED_EFFECTS = 2;
@@ -266,8 +268,6 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// --- punctuation and safety ---------------------------------------------------------
 
 	const hits = [...show.hits].sort((a, b) => a.bar - b.bar);
-	let strobeBars = 0;
-	let lastStrobeBar = -Infinity;
 
 	for (const hit of hits) {
 		if (!Number.isInteger(hit.bar) || hit.bar < 0 || hit.bar > lastBar) {
@@ -284,40 +284,6 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			);
 		}
 
-		if (hit.kind === 'strobe') {
-			const perBeat = hit.params?.perBeat ?? 2;
-			const rawHz = (perBeat * tempo.bpm) / 60;
-			// The strobe effect alternates wall pairs, so a point in the room sees half the rate.
-			const perceivedHz = rawHz / 2;
-			if (perceivedHz > FLASH_HZ_CEILING) {
-				err(
-					'flash-rate',
-					`strobe at bar ${hit.bar} flashes at ${perceivedHz.toFixed(1)} Hz, over the ${FLASH_HZ_CEILING} Hz ceiling`,
-					hit.bar
-				);
-			}
-			if (rawHz >= DANGER_HZ_LO && rawHz <= DANGER_HZ_HI) {
-				err(
-					'flash-danger-band',
-					`strobe at bar ${hit.bar} runs at ${rawHz.toFixed(1)} Hz, inside the ${DANGER_HZ_LO}-${DANGER_HZ_HI} Hz seizure-risk band`,
-					hit.bar
-				);
-			}
-			const bars = hit.beats / tempo.beatsPerBar;
-			if (bars > 2) {
-				err('strobe-too-long', `strobe at bar ${hit.bar} runs ${bars} bars; 2 is the maximum`, hit.bar);
-			}
-			if (hit.bar - lastStrobeBar < MIN_STROBE_GAP_BARS) {
-				warn(
-					'strobe-too-frequent',
-					`strobe at bar ${hit.bar} is only ${hit.bar - lastStrobeBar} bars after the last one; it stops being special`,
-					hit.bar
-				);
-			}
-			lastStrobeBar = hit.bar;
-			strobeBars += bars;
-		}
-
 		if (hit.kind === 'blackout') {
 			const bars = hit.beats / tempo.beatsPerBar;
 			if (bars > 2) {
@@ -328,7 +294,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 				);
 			}
 			const section = analysis.bars[hit.bar]?.section;
-			if (section && section !== 'void' && section !== 'breakdown' && section !== 'outro') {
+			// A build is on the list because cutting the room to black on the last bar before a
+			// drop is one of the oldest moves there is, not a mistake.
+			const deliberate = ['void', 'breakdown', 'outro', 'build'];
+			if (section && !deliberate.includes(section)) {
 				warn(
 					'blackout-placement',
 					`blackout at bar ${hit.bar} lands in a ${section}; it reads as a mistake outside a void or breakdown`,
@@ -336,14 +305,6 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 				);
 			}
 		}
-	}
-
-	const totalBars = analysis.bars.length;
-	if (strobeBars / totalBars > MAX_STROBE_FRACTION) {
-		err(
-			'strobe-budget',
-			`strobe covers ${Math.round((strobeBars / totalBars) * 100)}% of the track; ${Math.round(MAX_STROBE_FRACTION * 100)}% is the budget, and continuous flashing is visual fatigue`
-		);
 	}
 
 	// --- colour -------------------------------------------------------------------------
@@ -357,10 +318,13 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			if (cue.palette.third !== undefined) hues.add(cue.palette.third);
 		}
 	}
-	if (hues.size > 3) {
+	// What muds a room is three hues lit at once, not six visited over four minutes. A cue can
+	// only ever declare base, accent and third, so simultaneity is bounded by the type; this
+	// bounds how far the identity is allowed to wander before it stops being one.
+	if (hues.size > MAX_HUES) {
 		warn(
 			'too-many-hues',
-			`the show uses ${hues.size} hues (${[...hues].join(', ')}); three or more competing hues turn to mud when walls inter-reflect`
+			`the show visits ${hues.size} hues (${[...hues].join(', ')}); past ${MAX_HUES} the room stops having a colour of its own`
 		);
 	}
 

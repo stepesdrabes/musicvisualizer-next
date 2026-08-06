@@ -10,7 +10,7 @@ export const strobe: EffectDef = {
 	blurb: 'Eighth-note burst alternating wall pairs, which halves the full-field flash rate.',
 	taste: {
 		energy: 5,
-		sections: ['drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 2,
 		peakReserved: false

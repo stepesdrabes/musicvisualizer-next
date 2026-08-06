@@ -18,8 +18,8 @@ export const iridescence: EffectDef = {
 	blurb: 'Oil-slick interference fringes flowing slowly through the room.',
 	taste: {
 		energy: 2,
-		sections: ['intro', 'breakdown', 'groove', 'outro'],
-		minBars: 8,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

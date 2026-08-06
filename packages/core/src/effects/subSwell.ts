@@ -18,7 +18,7 @@ export const subSwell: EffectDef = {
 	blurb: 'Radial bloom from the room centre riding the sub-bass envelope.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'breakdown'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

@@ -18,8 +18,8 @@ export const bassRing: EffectDef = {
 	blurb: 'Deep saturated perimeter underglow riding the sub-bass; the beam stays dark.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'intro', 'breakdown', 'drop'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

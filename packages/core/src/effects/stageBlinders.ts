@@ -17,7 +17,7 @@ export const stageBlinders: EffectDef = {
 	blurb: 'Tungsten blinder slam on the downbeat, cooling white-to-amber like filament.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
 		peakReserved: false

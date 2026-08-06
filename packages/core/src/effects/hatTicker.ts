@@ -11,6 +11,10 @@ import { beatRelease, INTENSITY, param } from './helpers.ts';
  * The step happens on the 16th grid; the brightness comes from whether a hat actually
  * played there. A plain 8th pattern ticks lazily, a trap roll visibly sprints around the
  * walls, and the trail length reads as roll density.
+ *
+ * The dot also jumps with the mix: when a chopped vocal is thrown hard across the stereo
+ * field, the ticker jumps the same way, which is what turns a studio trick nobody can see
+ * into the most visible thing in the room.
  */
 export const hatTicker: EffectDef = {
 	id: 'hatTicker',
@@ -19,12 +23,12 @@ export const hatTicker: EffectDef = {
 	blurb: 'A dot ticking around the ring per 16th, sprinting through trap rolls.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'drop', 'breakdown', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false
 	},
-	params: [INTENSITY, param('stepPx', 'Step size', 0.4)],
+	params: [INTENSITY, param('stepPx', 'Step size', 0.4), param('panJump', 'Follow the mix', 0.6, 0, 1, 0.05)],
 	create(g) {
 		const ring = ringsFor(g).perimeter;
 		const scratch = new Float32Array(ring.length * 3);
@@ -47,7 +51,10 @@ export const hatTicker: EffectDef = {
 				if (slot !== lastSlot) {
 					lastSlot = slot;
 					const step = Math.max(6, Math.round(ring.length * 0.02 * (0.5 + p.stepPx)));
-					pos = (pos + step) % ring.length;
+					// A hard pan is worth a quarter of the ring; a mono passage moves it not at all,
+					// so the jump only ever appears on tracks that actually do this.
+					const jump = f.pan * f.panWidth * p.panJump * ring.length * 0.25;
+					pos = (((pos + step + jump) % ring.length) + ring.length) % ring.length;
 					if (f.hatEnv > 0.12) flash.fire(clamp(0.35 + f.hatEnv));
 				}
 

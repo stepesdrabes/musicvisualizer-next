@@ -48,8 +48,9 @@ show run in a browser, in headless Node, and eventually on an ESP32.
 apps/web              SvelteKit, one screen
 packages/preview3d    three.js room view          -> core
 packages/transport-ddp  DDP over UDP              -> core
-packages/author       Claude Agent SDK, tools, linter, sandbox  -> core, analysis
-packages/analysis     ffmpeg -> PCM -> features -> beat grid -> sections  -> core
+packages/author-ai    Claude Agent SDK, tools, sandbox  -> core, analysis, author-engine
+packages/author-engine  deterministic show generation + the linter  -> core
+packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
 packages/core         contracts, geometry, colour, DSL, 12 effects, mixer, player
 ```
 
@@ -68,6 +69,27 @@ inline layer stack from the effect library plus any effect generated for that so
 sample of the baked timeline, so there is no realtime DSP anywhere and no estimate to carry
 a confidence.
 
+## Two authors
+
+The room is lit before anyone decides whether to spend a model on it. `author-engine` composes
+a complete show from the analysis alone in about a millisecond: it covers every bar, keeps
+each effect inside the taste metadata it declares, reserves the biggest look in the catalog
+for the peak section and nowhere else, climbs the intensity through a build, cuts the light in
+every void, and lints clean. It is deterministic - the seed is the analysis hash, so the same
+track is the same show every time, and a different track is a different one.
+
+What it cannot do is know what the song is. So `author-ai` does not write a show; it revises
+that one. Handing the agent a draft that already satisfies every structural rule spends it on
+the part only it can do - what the track is, which moment deserves the biggest move, and the
+two to five effects written for this song and no other - instead of on bookkeeping it is worse
+at than a loop. If it fails, the engine's show is still there.
+
+This is the one place the old iteration of this project was clearly right and worth copying:
+compile the whole show ahead of time from a structural analysis, then execute it as timecode.
+Its two acknowledged weaknesses are fixed here rather than carried over - the peak is reserved
+before anything else is chosen rather than every drop being identical, and no two consecutive
+cues may share a layer stack.
+
 ## Effects
 
 One effect per file in `packages/core/src/effects/`. Each declares taste metadata (energy
@@ -83,24 +105,59 @@ Brevity is enforced rather than requested: the linter warns on a brief over ~150
 long cue notes, and on a show with fewer than two effects of its own. The effort belongs in
 the effects, not in prose about them.
 
+## How the grid is found
+
+Onset strength is SuperFlux: spectral flux on a log-frequency, log-magnitude spectrogram
+where the frame being subtracted has first been passed through a maximum filter across
+frequency, which is what stops a detuned supersaw reading as a continuous onset.
+
+Tempo comes from a tempogram built two ways and multiplied. Autocorrelation asks "does this
+curve repeat at this lag" and is strong at a tempo and every multiple of it; the Fourier
+magnitude asks "is there energy at this rate" and is strong at a tempo and every divisor.
+Their product keeps only what both agree on. A log-normal prior around 120 bpm and a test of
+whether the resulting beats group into bars of three or four settle the metrical level, which
+is the only part that is genuinely hard: on 245 annotated tracks from GTZAN and GiantSteps
+this lands **75.9% exact and 91.8% up to a metrical factor**, which is where non-neural tempo
+estimation sits. `tempo.confidence` reports the margin over the runner-up rather than a
+goodness of fit, so a track whose octave was a coin toss says so, and `reanalyse` is there for
+when Claude finds a published tempo that disagrees.
+
+A constant grid is fitted rather than a beat sequence tracked, because programmed music has
+no local wobble to follow and a constant grid keeps its phase across a quiet passage where a
+tracker slips half a bar and slips back. Ellis' dynamic-programming tracker still runs, to
+decide whether one period can describe the whole track at all; when it cannot, `constant` is
+false and the bar table is the authority.
+
 ## How sections are found
 
-Not by scoring onsets against a threshold. Sections are sustained levels, so they are found
-as plateaus relative to the track's own energy distribution: loud runs above the 62nd
-percentile with hysteresis, quiet runs below the 30th, short gaps merged because a two-bar
-fill inside a chorus is not a section boundary.
+Bar by bar, not frame by frame, and each bar keeps its own time axis: sixteen sub-frames by
+thirty-two bands, so two bars match when they play the same pattern rather than merely
+averaging to the same spectrum. That single choice is worth more than the algorithm on top of
+it - published boundary accuracy rises by about a third for the same detector.
 
-A loud run is a drop when something announced it - a rise over the preceding bars, or a quiet
-passage to come out of. A loud run entered straight from the opening silence is the groove
-arriving. `energyRank` is by mean rather than peak, so a long mid-energy verse containing one
-loud bar cannot outrank a short chorus that is loud throughout.
+Boundaries are then chosen by dynamic programming over the whole track at once, maximising
+similarity inside each segment minus a cost for lengths that are not phrase multiples. The
+cost is the point: hard-snapping to an eight-bar grid throws away nearly 40% of real
+boundaries even in dance music, where a soft cost lets the evidence overrule the prior when
+the music really does move at six bars.
+
+Which sections repeat which is a transitive closure over segment similarity, so a third
+chorus that only directly matches the second is still a chorus.
+
+Only then are they named, and the vocabulary is chosen per track first: a ballad has no drop,
+and announcing its loudest eight bars as one would be an invention. A loud passage is a drop
+when something set it up - a rise across the boundary into it - and when the track has had two
+phrases to establish what it is dropping from. `energyRank` is by mean rather than peak, so a
+long mid-energy verse containing one loud bar cannot outrank a short chorus that is loud
+throughout.
 
 ## The app
 
 One screen. The room is the hero; the chrome stays quiet so the room's colours are the only
 saturated thing on screen.
 
-- **Top bar** takes a YouTube link or a local path, then Generate show.
+- **Top bar** takes a YouTube link or a local path. The engine's show is lit as soon as the
+  audio is; Design with Claude hands it over to be revised.
 - **Stage** is the 3D room, with view presets, a diffuser/raw-pixel toggle and bloom.
   Empty-state text reports which phase the pipeline is in.
 - **Player bar** is Spotify-shaped: art, title, prev-section / play / next-section, and a
@@ -132,11 +189,11 @@ pool.
 
 ```sh
 npm run dev            # the app
-npm test               # 238 tests
+npm test               # 293 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
-Everything else happens in the app: paste a link, Generate show. Artifacts land in `cache/`:
+Everything else happens in the app: paste a link and the room lights. Artifacts land in `cache/`:
 `<id>.<ext>` audio, `<id>.analysis.json`, `<id>.show.json`. The cache is anchored to the
 workspace root rather than to cwd, so the dev server and a production build share it.
 `MV_CACHE_DIR` overrides it.

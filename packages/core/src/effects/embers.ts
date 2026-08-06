@@ -17,8 +17,8 @@ export const embers: EffectDef = {
 	blurb: 'Slow deterministic twinkle pools in the deep palette colours.',
 	taste: {
 		energy: 1,
-		sections: ['intro', 'breakdown', 'outro', 'groove'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

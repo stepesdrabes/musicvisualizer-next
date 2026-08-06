@@ -11,7 +11,7 @@ export const chase: EffectDef = {
 	blurb: 'Ring segments firing on the grid; direction flips every phrase, beam answers the downbeat.',
 	taste: {
 		energy: 3,
-		sections: ['groove', 'drop', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false

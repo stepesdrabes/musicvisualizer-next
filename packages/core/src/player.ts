@@ -55,6 +55,10 @@ export class ShowPlayer {
 	private buildSpans: BuildSpan[] = [];
 	private dropTimes: number[] = [];
 
+	private panCurve = new Float32Array(0);
+	private widthCurve = new Float32Array(0);
+	private stereoFps = 25;
+
 	private barEnergy = new Float32Array(0);
 	private barBands = new Float32Array(0);
 	private barSection: SectionKind[] = [];
@@ -113,6 +117,10 @@ export class ShowPlayer {
 			this.barBands[o + 3] = row.air / 100;
 			this.barSection[i] = row.section;
 		}
+
+		this.panCurve = Float32Array.from(analysis.stereo?.pan ?? []);
+		this.widthCurve = Float32Array.from(analysis.stereo?.width ?? []);
+		this.stereoFps = analysis.stereo?.fps || 25;
 
 		this.sectionBounds = analysis.sections.map((s) => ({ start: s.startTime, end: s.endTime }));
 		this.dropTimes = analysis.sections
@@ -202,6 +210,7 @@ export class ShowPlayer {
 
 		this.updateGrid(t, a.tempo);
 		this.updateEnergy();
+		this.updateStereo(t);
 		this.updateDrums(t, dt, a);
 		this.updateStructure(t);
 		this.applyCues(t, f);
@@ -272,6 +281,23 @@ export class ShowPlayer {
 			f.bands[b] = v0 + (v1 - v0) * w;
 		}
 		f.section = this.barSection[Math.min(Math.max(f.barIndex, 0), n - 1)] ?? 'intro';
+	}
+
+	/** Linear between samples, so a hard pan flick arrives as a ramp rather than a step. */
+	private updateStereo(t: number): void {
+		const f = this.frame;
+		const n = this.panCurve.length;
+		if (n === 0) {
+			f.pan = 0;
+			f.panWidth = 0;
+			return;
+		}
+		const x = clamp(t * this.stereoFps, 0, n - 1);
+		const i0 = Math.floor(x);
+		const i1 = Math.min(i0 + 1, n - 1);
+		const u = x - i0;
+		f.pan = this.panCurve[i0] + (this.panCurve[i1] - this.panCurve[i0]) * u;
+		f.panWidth = this.widthCurve[i0] + (this.widthCurve[i1] - this.widthCurve[i0]) * u;
 	}
 
 	private updateDrums(t: number, dt: number, a: TrackAnalysis): void {

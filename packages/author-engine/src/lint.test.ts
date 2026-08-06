@@ -54,7 +54,7 @@ function fixture(): TrackAnalysis {
 	}));
 
 	return {
-		version: 1,
+		version: 2,
 		hash: 'deadbeef',
 		trackId: 'file-000000000000',
 		title: 'Fixture',
@@ -68,13 +68,20 @@ function fixture(): TrackAnalysis {
 			beatsPerBar: 4,
 			downbeatPhase: 0,
 			phraseAnchorBar: 0,
-			barsPerPhrase: 8
+			barsPerPhrase: 8,
+			constant: true,
+			meterConfidence: 0.9
 		},
+		key: { tonic: 0, name: 'C minor', mode: 'minor', confidence: 0.7 },
 		bars,
 		sections,
 		moments: [],
+		beats: [],
+		stereo: { fps: 25, pan: [], width: [] },
 		onsets: { kick: [], snare: [], hat: [] },
-		integratedLufs: -14
+		integratedLufs: -14,
+		loudnessRange: 6,
+		peakToLoudness: 12
 	};
 }
 
@@ -82,7 +89,7 @@ const analysis = fixture();
 
 function goodShow(): Show {
 	return {
-		version: 1,
+		version: 2,
 		trackId: analysis.trackId,
 		title: analysis.title,
 		analysisHash: analysis.hash,
@@ -250,33 +257,21 @@ describe('effect rules', () => {
 });
 
 describe('safety rules', () => {
-	it('rejects a strobe over the 3 Hz perceived ceiling', () => {
+	it('does not limit the flash rate, the strobe length or the strobe budget', () => {
+		// Deliberate: this room is one person's, and a linter that refuses the biggest card in
+		// the deck is a linter people route around. Anyone fitting this in a public space owns
+		// that decision.
 		const show = goodShow();
-		show.hits[1].params = { perBeat: 4 };
-		expect(rules(lintShow(show, { analysis, effects }))).toContain('flash-rate');
-	});
-
-	it('rejects a strobe longer than two bars', () => {
-		const show = goodShow();
-		show.hits[1].beats = 16;
-		expect(rules(lintShow(show, { analysis, effects }))).toContain('strobe-too-long');
-	});
-
-	it('rejects blowing the strobe budget', () => {
-		const show = goodShow();
-		show.hits = Array.from({ length: 6 }, (_, i) => ({
-			bar: 32 + i * 4,
-			kind: 'strobe' as const,
-			beats: 8,
-			params: { perBeat: 1 }
-		}));
-		expect(rules(lintShow(show, { analysis, effects }))).toContain('strobe-budget');
-	});
-
-	it('warns about strobes packed too close together', () => {
-		const show = goodShow();
-		show.hits.push({ bar: 52, kind: 'strobe', beats: 1, params: { perBeat: 1 } });
-		expect(rules(lintShow(show, { analysis, effects }))).toContain('strobe-too-frequent');
+		show.hits = [
+			{ bar: 40, kind: 'strobe', beats: 32, params: { perBeat: 8 }, note: 'as fast and long as it likes' },
+			{ bar: 44, kind: 'strobe', beats: 16, params: { perBeat: 8 }, note: 'and again' }
+		];
+		const found = rules(lintShow(show, { analysis, effects }));
+		expect(found).not.toContain('flash-rate');
+		expect(found).not.toContain('flash-danger-band');
+		expect(found).not.toContain('strobe-too-long');
+		expect(found).not.toContain('strobe-budget');
+		expect(found).not.toContain('strobe-too-frequent');
 	});
 
 	it('warns about spending the blinder in the first 16 bars', () => {
@@ -318,10 +313,11 @@ describe('taste rules', () => {
 		expect(rules(lintShow(show, { analysis, effects }))).toContain('build-not-stripped');
 	});
 
-	it('warns about a fourth hue', () => {
+	it('warns once the room has visited too many hues to have one of its own', () => {
 		const show = goodShow();
 		show.palette.third = 60;
-		show.cues[1].palette = { base: 30, accent: 210 };
+		show.cues[1].palette = { base: 30, accent: 210, third: 120 };
+		show.cues[2].palette = { base: 15, accent: 195, third: 105 };
 		expect(rules(lintShow(show, { analysis, effects }))).toContain('too-many-hues');
 	});
 

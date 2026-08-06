@@ -17,7 +17,7 @@ export const vocalGlow: EffectDef = {
 	blurb: 'A front-of-room spotlight breathing with the vocal band.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'drop', 'intro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

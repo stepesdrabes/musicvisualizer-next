@@ -16,7 +16,7 @@ export const laidbackWave: EffectDef = {
 	blurb: 'One eased head-nod wave rolling through the room every two bars.',
 	taste: {
 		energy: 2,
-		sections: ['groove', 'breakdown', 'intro', 'outro'],
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false

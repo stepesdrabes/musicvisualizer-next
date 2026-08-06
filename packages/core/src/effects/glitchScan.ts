@@ -21,7 +21,7 @@ export const glitchScan: EffectDef = {
 	blurb: 'Hash-picked ring segments strobing on the 16th grid, inverting every 4 bars.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 16,
 		peakReserved: false

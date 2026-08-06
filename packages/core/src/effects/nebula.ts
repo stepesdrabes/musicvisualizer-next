@@ -18,8 +18,8 @@ export const nebula: EffectDef = {
 	blurb: '3D colour field drifting through the room, surging forward on the bass.',
 	taste: {
 		energy: 2,
-		sections: ['intro', 'groove', 'breakdown', 'outro'],
-		minBars: 4,
+		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		minBars: 2,
 		maxBars: 64,
 		peakReserved: false
 	},

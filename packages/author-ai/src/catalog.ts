@@ -80,6 +80,11 @@ Frame (ctx.f)
   t dt · beat downbeat phraseStart · beatIndex barIndex · beatPhase barPhase phrasePhase
   beatPeriod bpm · section sectionProgress buildProgress timeToDrop timeSinceDrop
   energy · bands[0..3] = sub low mid air
+  pan (-1 left .. +1 right) · panWidth (0 mono .. 1 fully decorrelated)
+    Where the mix is sitting across the room, from the stereo file. Use it to BIAS a position
+    an effect is already choosing, multiplied by panWidth so a mono passage does not move:
+    a chopped vocal flicked hard left and right every sixteenth is invisible to every other
+    field here, because the sum of the two channels does not move at all.
   kick snare hat (booleans, one frame) · kickEnv snareEnv hatEnv (use these for brightness)
 
 Also on ctx: g, p (your params), palette, hueShift, motion (multiply your speeds by it).`;
@@ -157,15 +162,20 @@ export function renderBarTable(analysis: TrackAnalysis, from = 0, to = Infinity)
 
 export function renderHeader(analysis: TrackAnalysis): string {
 	const t = analysis.tempo;
+	const squashed =
+		analysis.peakToLoudness < 8
+			? '   <- heavily limited: per-bar level barely moves, so take the dynamics from onset density and arrangement rather than from energy alone'
+			: '';
 	return [
 		`title: ${analysis.title}`,
 		`trackId: ${analysis.trackId}`,
 		`analysisHash: ${analysis.hash}   <- copy this into the show verbatim`,
 		`duration: ${analysis.duration.toFixed(1)} s`,
-		`bpm: ${t.bpm} (confidence ${t.confidence.toFixed(2)})`,
-		`beatsPerBar: ${t.beatsPerBar}   barsPerPhrase: ${t.barsPerPhrase}   phraseAnchorBar: ${t.phraseAnchorBar}`,
+		`bpm: ${t.bpm} (confidence ${t.confidence.toFixed(2)}${t.constant ? '' : ', tempo drifts: bar times in the table are the authority'})`,
+		`beatsPerBar: ${t.beatsPerBar} (confidence ${t.meterConfidence.toFixed(2)})   barsPerPhrase: ${t.barsPerPhrase}   phraseAnchorBar: ${t.phraseAnchorBar}`,
+		`key: ${analysis.key.name} (confidence ${analysis.key.confidence.toFixed(2)})`,
 		`bars: 0-${analysis.bars.length - 1}`,
-		`integratedLufs: ${analysis.integratedLufs}`
+		`integratedLufs: ${analysis.integratedLufs}   loudnessRange: ${analysis.loudnessRange} LU   peakToLoudness: ${analysis.peakToLoudness} LU${squashed}`
 	].join('\n');
 }
 

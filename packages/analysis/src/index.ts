@@ -1,5 +1,6 @@
 export { analyzeTrack, type AnalyzeInput } from './analyze.ts';
-export { decodeAudio } from './decode.ts';
+export { ANALYSIS_RATE, decodeAudio } from './decode.ts';
+export { STEREO_FPS, analyseStereo } from './stereo.ts';
 export {
 	analysisPath,
 	findAudioFile,

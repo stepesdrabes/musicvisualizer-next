@@ -18,7 +18,7 @@ export const doubleKickGatling: EffectDef = {
 	blurb: 'Kicks strafe hard flashes left/right - a blast beat reads as gunfire.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove', 'build'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
 		peakReserved: false

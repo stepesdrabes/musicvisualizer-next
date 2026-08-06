@@ -17,7 +17,7 @@ export const vortex: EffectDef = {
 	blurb: 'A full-spectrum spiral swirling around the room, kicked forward by the kick.',
 	taste: {
 		energy: 4,
-		sections: ['drop', 'groove'],
+		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 16,
 		peakReserved: false
