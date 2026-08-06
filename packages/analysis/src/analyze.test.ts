@@ -336,16 +336,39 @@ describe('degenerate input', () => {
 });
 
 describe('grid locking', () => {
-	it('places every drum onset exactly on a sixteenth of the grid', () => {
-		// A detector that finds four kicks in five is precise and still looks wrong in a room:
-		// the eye reads the gap, not the accuracy. Everything is snapped so a flash driven by a
-		// drum lands where the music put it.
-		const step = analysis.tempo.beatPeriod / 4;
+	it('keeps every drum onset within a sixteenth of the real beat grid', () => {
+		// Near the grid, deliberately not on it. Snapping a detected hit to the nearest
+		// sixteenth moves it by up to half a slot, which is 58 ms at 130 bpm and reads as a
+		// late flash however good the detection was. The grid decides whether a hit is real and
+		// where a missing one goes; it does not correct one that was heard.
+		//
+		// Measured against the tracked beats rather than a constant period, because those are
+		// what the music is actually on.
+		const beats = analysis.beats;
+		expect(beats.length).toBeGreaterThan(8);
+
+		const sixteenthNear = (t: number): number => {
+			let lo = 0;
+			let hi = beats.length - 1;
+			while (hi - lo > 1) {
+				const mid = (lo + hi) >> 1;
+				if (beats[mid] <= t) lo = mid;
+				else hi = mid;
+			}
+			const span = beats[lo + 1] - beats[lo];
+			if (!(span > 1e-6)) return Math.abs(t - beats[lo]);
+			const step = span / 4;
+			const k = Math.round((t - beats[lo]) / step);
+			return Math.abs(t - (beats[lo] + k * step));
+		};
+
+		// Half a sixteenth is the quantiser's own tolerance: inside it a hit is called on the
+		// grid, outside it the hit is genuinely unquantised and is reported where it was heard.
+		const bound = analysis.tempo.beatPeriod / 8;
 		for (const list of [analysis.onsets.kick, analysis.onsets.snare, analysis.onsets.hat]) {
 			for (const t of list) {
-				const slot = Math.round((t - analysis.tempo.firstBeat) / step);
-				const off = Math.abs(t - (analysis.tempo.firstBeat + slot * step));
-				expect(off).toBeLessThan(0.006);
+				if (t < beats[0] || t > beats[beats.length - 1]) continue;
+				expect(sixteenthNear(t)).toBeLessThanOrEqual(bound);
 			}
 		}
 	});

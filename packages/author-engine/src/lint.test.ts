@@ -50,6 +50,7 @@ function fixture(): TrackAnalysis {
 		meanEnergy: bars[from].energy,
 		peakEnergy: bars[from].energy,
 		energyRank: kind === 'drop' ? 1 : index + 2,
+		group: 0,
 		repeatOf: null
 	}));
 
@@ -70,7 +71,8 @@ function fixture(): TrackAnalysis {
 			phraseAnchorBar: 0,
 			barsPerPhrase: 8,
 			constant: true,
-			meterConfidence: 0.9
+			meterConfidence: 0.9,
+			barTimes: Array.from({ length: 64 + 1 }, (_, i) => i * barLength)
 		},
 		key: { tonic: 0, name: 'C minor', mode: 'minor', confidence: 0.7 },
 		bars,

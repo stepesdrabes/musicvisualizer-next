@@ -3,7 +3,14 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"exports": { ".": "./src/index.ts" },
-	"dependencies": { "@mv/core": "*" },
-	"scripts": { "check": "tsc --build" }
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"@mv/core": "*",
+		"onnxruntime-node": "^1.27.0"
+	},
+	"scripts": {
+		"check": "tsc --build"
+	}
 }

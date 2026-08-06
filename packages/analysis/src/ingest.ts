@@ -1,39 +1,13 @@
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { basename, extname, join, resolve } from 'node:path';
+import { CACHE_DIR } from './paths.ts';
 import { createHash } from 'node:crypto';
 import type { TrackAnalysis } from '@mv/core';
 import { ANALYSIS_VERSION } from '@mv/core';
 import { analyzeTrack } from './analyze.ts';
 import { decodeAudio, downloadAudio, probe } from './decode.ts';
 
-/**
- * Anchored to the workspace root, not to cwd. The dev server runs from apps/web, so a
- * cwd-relative cache would put its artifacts somewhere else and re-download everything.
- */
-function workspaceRoot(): string {
-	let dir = import.meta.dirname;
-	for (let i = 0; i < 8; i++) {
-		try {
-			const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-				workspaces?: unknown;
-			};
-			if (pkg.workspaces) return dir;
-		} catch {
-			// Keep walking.
-		}
-		const parent = dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-	return process.cwd();
-}
-
-export const CACHE_DIR = process.env.MV_CACHE_DIR
-	? resolve(process.env.MV_CACHE_DIR)
-	: join(workspaceRoot(), 'cache');
-
-// Guards every path built from an id, so a crafted id cannot escape the cache directory.
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const LOCAL_ID = /^file-[a-f0-9]{12}$/;
 
@@ -167,6 +141,23 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	log('decoding');
 	const decoded = await decodeAudio(audioPath);
 
+	// The model finds the beats; everything after it is unchanged. If the weights are missing
+	// or the graph fails, the in-repo tracker runs instead: a worse grid is a worse show, a
+	// crash here is no show at all.
+	let tracked: { beats: number[]; downbeats: number[] } | null = null;
+	try {
+		log('tracking beats');
+		const { BeatThis } = await import('./beatthis.ts');
+		const model = await BeatThis.create();
+		try {
+			tracked = await model.run(decoded.mono);
+		} finally {
+			await model.close();
+		}
+	} catch (e) {
+		log(`beat model unavailable, falling back: ${e instanceof Error ? e.message : String(e)}`);
+	}
+
 	log('analysing');
 	const analysis = analyzeTrack({
 		mono: decoded.mono,
@@ -176,7 +167,9 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		duration: decoded.duration,
 		hash: decoded.hash,
 		trackId: id,
-		title
+		title,
+		beats: tracked?.beats,
+		downbeats: tracked?.downbeats
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));

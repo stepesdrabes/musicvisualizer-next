@@ -60,6 +60,7 @@ function fixture(): TrackAnalysis {
 		peakEnergy: energyOf(kind),
 		// The second drop is the peak; the first is the same kind but ranks below it.
 		energyRank: kind === 'drop' ? (from === 96 ? 1 : 2) : 5,
+		group: 0,
 		repeatOf: null
 	}));
 
@@ -80,7 +81,8 @@ function fixture(): TrackAnalysis {
 			phraseAnchorBar: 0,
 			barsPerPhrase: 8,
 			constant: true,
-			meterConfidence: 0.9
+			meterConfidence: 0.9,
+			barTimes: Array.from({ length: 129 }, (_, i) => i * barLength)
 		},
 		key: { tonic: 9, name: 'A minor', mode: 'minor', confidence: 0.8 },
 		bars,

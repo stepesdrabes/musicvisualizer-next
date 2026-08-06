@@ -7,7 +7,7 @@ import { NUM_BANDS, createShowFrame } from './contracts/frame.ts';
 import { blendPalettes, makePalette, swapped } from './color/palette.ts';
 import { FlashEnvelope } from './dsl/env.ts';
 import { clamp, frac } from './dsl/math.ts';
-import { barTimeAt } from './grid.ts';
+import { barAtTime, barDurationAt, barTimeAt } from './grid.ts';
 import type { Mixer } from './mixer.ts';
 import type { EffectRegistry } from './effects/index.ts';
 
@@ -163,11 +163,13 @@ export class ShowPlayer {
 
 		this.hits = show.hits
 			.map((h) => {
-				const t =
-					barTimeAt(tempo, h.bar) + (h.beat ?? 0) * tempo.beatPeriod;
+				// A hit's length is in beats of the bar it lands in, not of the track average,
+				// so a two-beat slam is two beats long wherever the tempo happens to be.
+				const beat = barDurationAt(tempo, h.bar) / Math.max(1, tempo.beatsPerBar);
+				const t = barTimeAt(tempo, h.bar) + (h.beat ?? 0) * beat;
 				return {
 					start: t,
-					end: t + h.beats * tempo.beatPeriod,
+					end: t + h.beats * beat,
 					kind: h.kind,
 					effect: h.kind === 'blackout' ? null : h.kind,
 					params: h.params
@@ -238,21 +240,30 @@ export class ShowPlayer {
 
 	private updateGrid(t: number, tempo: TempoGrid): void {
 		const f = this.frame;
-		const beatsF = (t - tempo.firstBeat) / tempo.beatPeriod;
-		const barsF = (beatsF - tempo.downbeatPhase) / tempo.beatsPerBar;
+		// Every index comes off the bar table, so the frame cannot disagree with the cue list
+		// about where it is. Deriving the beat from the bar rather than the other way round is
+		// what keeps them consistent when the bar is not exactly beatsPerBar * beatPeriod long.
+		const barsF = barAtTime(tempo, t);
+		const barIndex = Math.floor(barsF);
+		const barPhase = barsF - barIndex;
 		const phrasesF = (barsF - tempo.phraseAnchorBar) / tempo.barsPerPhrase;
 
+		const beatsF = (barIndex + barPhase) * tempo.beatsPerBar;
 		const beatIndex = Math.floor(beatsF);
-		const barIndex = Math.floor(barsF);
 		const phraseIndex = Math.floor(phrasesF);
+
+		// Local, not the track median: an effect that derives its time constants from this on a
+		// track that speeds up should speed up with it.
+		const barDuration = barDurationAt(tempo, barIndex);
+		const beatPeriod = barDuration / Math.max(1, tempo.beatsPerBar);
 
 		f.beatIndex = beatIndex;
 		f.barIndex = barIndex;
 		f.beatPhase = beatsF - beatIndex;
-		f.barPhase = barsF - barIndex;
+		f.barPhase = barPhase;
 		f.phrasePhase = frac(phrasesF);
-		f.beatPeriod = tempo.beatPeriod;
-		f.bpm = tempo.bpm;
+		f.beatPeriod = beatPeriod;
+		f.bpm = beatPeriod > 1e-6 ? 60 / beatPeriod : tempo.bpm;
 
 		// Edge detection by index change, never by phase threshold, so a beat cannot
 		// double-fire on a slow frame or be skipped on a fast one.

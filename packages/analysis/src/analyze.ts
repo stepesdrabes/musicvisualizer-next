@@ -7,12 +7,13 @@ import {
 	type TrackAnalysis
 } from '@mv/core';
 import { arrange } from './arrange.ts';
-import { detectBeats } from './beats.ts';
+import { detectBeats, type BeatGrid } from './beats.ts';
 import { beatSynchronous } from './beatsync.ts';
 import { chromagram, estimateKey } from './chroma.ts';
 import { detectDrums } from './drums.ts';
 import { extractFeatures } from './features.ts';
-import { detectMeter } from './downbeats.ts';
+import { detectMeter, type Meter } from './downbeats.ts';
+import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
 import { quantiseOnsets } from './quantise.ts';
 import { analyseStereo } from './stereo.ts';
@@ -31,6 +32,16 @@ export interface AnalyzeInput {
 	title: string;
 	/** Constrain the tempo search to within 6% of a known value. */
 	bpmHint?: number;
+	/**
+	 * Beat and downbeat times from a tracker that has already run, seconds.
+	 *
+	 * Passed in rather than fetched here because the model is asynchronous and this is not, and
+	 * because the caller is the right place to decide whether a 79 MB graph is worth loading.
+	 * When absent the in-repo tracker runs instead, so the pipeline still works with no model
+	 * on disk.
+	 */
+	beats?: readonly number[];
+	downbeats?: readonly number[];
 }
 
 const TARGET_LUFS = -14;
@@ -62,7 +73,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 
 	const features = extractFeatures(mono, sampleRate);
 	const chroma = chromagram(mono, sampleRate);
-	const grid = detectBeats(features.odf, features.curves.fps, duration, { bpmHint: input.bpmHint });
+	const grid =
+		input.beats && input.beats.length > 8
+			? gridFromBeats(input.beats, features.odf, features.curves.fps)
+			: detectBeats(features.odf, features.curves.fps, duration, { bpmHint: input.bpmHint });
 
 	const beatFeatures = beatSynchronous(
 		features.spec,
@@ -72,18 +86,28 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		grid.beats,
 		duration
 	);
-	const meter = detectMeter(beatFeatures);
+	// A tracker that emits downbeats has already answered the question `detectMeter` asks, and
+	// answers it far better: 0.722 downbeat F against 0.498 on the same 100 annotated tracks.
+	const meter =
+		input.downbeats && input.downbeats.length > 2
+			? meterFromDownbeats(grid.beats, input.downbeats)
+			: detectMeter(beatFeatures);
 	const bars = barSynchronous(beatFeatures, meter.beatsPerBar, meter.phase);
 
 	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod });
 	// Snapped to the grid and completed, because a missed kick reads as a missed flash and the
 	// music put it exactly where the grid says.
 	const quantise = (times: number[]) =>
-		quantiseOnsets(times, { beats: grid.beats, beatsPerBar: meter.beatsPerBar, duration });
+		quantiseOnsets(times, {
+			beats: grid.beats,
+			beatsPerBar: meter.beatsPerBar,
+			downbeatPhase: meter.phase,
+			duration
+		});
 	const drums = {
-		kick: quantise(detected.kick),
-		snare: quantise(detected.snare),
-		hat: quantise(detected.hat)
+		kick: quantise(detected.kick).times,
+		snare: quantise(detected.snare).times,
+		hat: quantise(detected.hat).times
 	};
 	const kicks = countPerBar(drums.kick, bars.time, bars.count);
 	const snares = countPerBar(drums.snare, bars.time, bars.count);
@@ -104,12 +128,17 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		snares
 	);
 
+	// One array decides where every bar is. `bars[].t` is written from it below rather than
+	// computed alongside it, because two independent copies of the same timing is exactly how
+	// the grid and the bar table came to disagree by eight beats on a track that speeds up.
+	const barTimes = Array.from(bars.time.subarray(0, bars.count + 1), round3);
+
 	const barRows: BarRow[] = [];
 	for (let b = 0; b < bars.count; b++) {
 		const segment = plan.segments.find((s) => b >= s.startBar && b < s.endBar);
 		barRows.push({
 			bar: b,
-			t: round3(bars.time[b]),
+			t: barTimes[b],
 			section: segment?.kind ?? 'groove',
 			energy: pct(plan.energy[b]),
 			sub: pct(plan.bands[b * NUM_BANDS]),
@@ -136,15 +165,27 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			kind: s.kind,
 			startBar: s.startBar,
 			endBar: s.endBar,
-			startTime: round3(bars.time[s.startBar]),
-			endTime: round3(bars.time[Math.min(s.endBar, bars.count)]),
+			startTime: barTimes[s.startBar],
+			endTime: barTimes[Math.min(s.endBar, bars.count)],
 			lengthBars: len,
 			meanEnergy: pct(sum / len),
 			peakEnergy: pct(peak),
 			energyRank: 0,
-			repeatOf: s.repeatOf
+			group: s.group,
+			// Derived here from the group rather than carried through arrange(), because every
+			// fold, merge and void splice shifts the indices and the old stored value silently
+			// came to point at a different section.
+			repeatOf: null
 		};
 	});
+
+	const firstOfGroup = new Map<number, number>();
+	for (const s of sections) {
+		if (s.group < 0) continue;
+		const first = firstOfGroup.get(s.group);
+		if (first === undefined) firstOfGroup.set(s.group, s.index);
+		else s.repeatOf = first;
+	}
 
 	// Ranked by mean, not peak: a long mid-energy verse containing one loud bar would
 	// otherwise outrank a short chorus that is loud the whole way through.
@@ -176,7 +217,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			phraseAnchorBar: plan.phraseAnchorBar,
 			barsPerPhrase: BARS_PER_PHRASE,
 			constant: grid.constant,
-			meterConfidence: round2(meter.confidence)
+			meterConfidence: round2(meter.confidence),
+			barTimes
 		},
 		key: {
 			tonic: key.tonic,
@@ -202,6 +244,77 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		loudnessRange: round1(loudness.range),
 		peakToLoudness: round1(Number.isFinite(loudness.peakToLoudness) ? loudness.peakToLoudness : 0)
 	};
+}
+
+/**
+ * A grid from beat times somebody else found.
+ *
+ * `constant` reports whether one period would describe the whole track, which is a description
+ * of the music rather than a switch: `barTimes` is the authority either way. The threshold is
+ * generous because a tracked sequence always has a little jitter that a fitted grid cannot.
+ */
+function gridFromBeats(beats: readonly number[], odf: Float32Array, fps: number): BeatGrid {
+	const times = Float64Array.from(beats);
+	const assessment = assessMetricalLevel(beats, odf, fps);
+	const period = assessment.bpm > 0 ? 60 / assessment.bpm : 0.5;
+
+	const local: number[] = [];
+	for (let i = 0; i + 16 < times.length; i += 16) local.push((60 * 16) / (times[i + 16] - times[i]));
+	local.sort((a, b) => a - b);
+	const spread =
+		local.length >= 4
+			? (local[Math.floor(local.length * 0.9)] - local[Math.floor(local.length * 0.1)]) /
+				local[local.length >> 1]
+			: 0;
+
+	return {
+		bpm: assessment.bpm,
+		beatPeriod: period,
+		firstBeat: times[0] ?? 0,
+		beats: times,
+		constant: spread <= 0.01,
+		// The level is the doubtful part, not the phase, so the assessment is what this reports.
+		confidence: assessment.confidence
+	};
+}
+
+/** Beats per bar and phase from a downbeat list, by the commonest spacing along the beats. */
+function meterFromDownbeats(beats: Float64Array, downbeats: readonly number[]): Meter {
+	const indexOf = (t: number): number => {
+		let lo = 0;
+		let hi = beats.length - 1;
+		while (hi - lo > 1) {
+			const mid = (lo + hi) >> 1;
+			if (beats[mid] <= t) lo = mid;
+			else hi = mid;
+		}
+		return Math.abs(beats[lo] - t) <= Math.abs(beats[hi] - t) ? lo : hi;
+	};
+
+	const indices = downbeats.map(indexOf).sort((a, b) => a - b);
+	const gaps = new Map<number, number>();
+	for (let i = 1; i < indices.length; i++) {
+		const g = indices[i] - indices[i - 1];
+		if (g >= 2 && g <= 12) gaps.set(g, (gaps.get(g) ?? 0) + 1);
+	}
+	let beatsPerBar = 4;
+	let best = 0;
+	for (const [g, n] of gaps) {
+		if (n > best) {
+			best = n;
+			beatsPerBar = g;
+		}
+	}
+
+	// The phase the most downbeats already agree with, which is the only thing a residue class
+	// can mean once the spacing is fixed.
+	const votes = new Int32Array(beatsPerBar);
+	for (const i of indices) votes[((i % beatsPerBar) + beatsPerBar) % beatsPerBar]++;
+	let phase = 0;
+	for (let p = 1; p < beatsPerBar; p++) if (votes[p] > votes[phase]) phase = p;
+
+	const total = indices.length || 1;
+	return { beatsPerBar, phase, confidence: Math.max(0, Math.min(1, votes[phase] / total)) };
 }
 
 function countPerBar(times: readonly number[], barTime: Float64Array, count: number): Int32Array {

@@ -41,6 +41,8 @@ export { hsv2rgb } from './color/hsv.ts';
 export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
 export {
 	PHRASE_BARS,
+	barAtTime,
+	barDurationAt,
 	barTimeAt,
 	nearestPhraseBar,
 	onPhraseGrid,

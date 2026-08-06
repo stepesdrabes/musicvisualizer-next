@@ -6,3 +6,9 @@ build/
 cache/
 shows/
 .DS_Store
+bench/corpus/
+bench/reports/
+models/
+bench/clicktests/
+bench/renders/
+bench/models/

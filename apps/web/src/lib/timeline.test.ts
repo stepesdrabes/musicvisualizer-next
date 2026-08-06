@@ -6,7 +6,7 @@ const beatPeriod = 60 / 120;
 
 function analysis(): TrackAnalysis {
 	return {
-		version: 3,
+		version: 4,
 		hash: 'h',
 		trackId: 'file-000000000000',
 		title: 'T',
@@ -22,7 +22,8 @@ function analysis(): TrackAnalysis {
 			phraseAnchorBar: 0,
 			barsPerPhrase: 8,
 			constant: true,
-			meterConfidence: 0.9
+			meterConfidence: 0.9,
+			barTimes: Array.from({ length: 65 }, (_, i) => i * beatPeriod * 4)
 		},
 		key: { tonic: 0, name: 'C minor', mode: 'minor', confidence: 0.7 },
 		bars: [],
@@ -38,6 +39,7 @@ function analysis(): TrackAnalysis {
 				meanEnergy: 60,
 				peakEnergy: 70,
 				energyRank: 2,
+				group: 0,
 				repeatOf: null
 			},
 			{
@@ -51,6 +53,7 @@ function analysis(): TrackAnalysis {
 				meanEnergy: 95,
 				peakEnergy: 99,
 				energyRank: 1,
+				group: 0,
 				repeatOf: 0
 			}
 		],
