@@ -8,7 +8,15 @@ export interface Segment {
 	startBar: number;
 	endBar: number;
 	kind: SectionKind;
-	repeatOf: number | null;
+	/**
+	 * Which material this is. Segments sharing an id are the same passage of the song.
+	 *
+	 * Kept separate from `kind` on purpose. `kind` is a lighting instruction drawn from a
+	 * seven-value vocabulary, so a verse and a chorus routinely share one; identity is what
+	 * says they are different sections, and merging on `kind` alone is what used to fuse
+	 * fifteen segments into a single 116-bar groove.
+	 */
+	group: number;
 }
 
 export interface Arrangement {
@@ -98,6 +106,8 @@ function barLoudness(
  */
 const DROP_STEP = 0.22;
 const MAX_BUILD_BARS = 16;
+/** The longest a merge may make a section. Four phrases. */
+const MAX_MERGED_BARS = 32;
 const MAX_VOID_BARS = 2;
 
 export function arrange(
@@ -133,7 +143,7 @@ export function arrange(
 			startBar: bounds[i],
 			endBar: bounds[i + 1],
 			kind: 'groove',
-			repeatOf: groups.repeatOf[i] ?? null
+			group: groups.group[i] ?? i
 		});
 	}
 	if (segments.length === 0) {
@@ -228,7 +238,9 @@ export function arrange(
 		if (voidBars === 0) continue;
 		const start = prev.endBar - voidBars;
 		prev.endBar = start;
-		segments.splice(i, 0, { startBar: start, endBar: start + voidBars, kind: 'void', repeatOf: null });
+		// A void is carved out rather than detected, so it belongs to no group and can only
+		// ever merge with another void.
+		segments.splice(i, 0, { startBar: start, endBar: start + voidBars, kind: 'void', group: -1 });
 		i++;
 	}
 
@@ -340,9 +352,17 @@ function snapToPhrases(segments: Segment[], barCount: number, anchor: number): v
 		segments.splice(i, 1);
 	}
 
-	// Neighbouring sections that ended up identical after folding say nothing; merge them.
+	// Neighbours that are the same material AND carry the same instruction say nothing twice;
+	// merge only those. Merging on `kind` alone deleted 47% of the boundaries the segmenter
+	// found, because a four-value energy vocabulary makes most neighbours look alike.
 	for (let i = segments.length - 1; i > 0; i--) {
 		if (segments[i].kind !== segments[i - 1].kind) continue;
+		if (segments[i].group !== segments[i - 1].group) continue;
+		// And never past this, however alike two neighbours are. A passage that runs longer
+		// than four phrases is an arrangement rather than a section, and handing the show one
+		// cue for it means the room does not move for ninety seconds. The engine re-subdivides
+		// at sixteen bars anyway, so a longer span only removes the analyser's say in where.
+		if (segments[i].endBar - segments[i - 1].startBar > MAX_MERGED_BARS) continue;
 		segments[i - 1].endBar = segments[i].endBar;
 		segments.splice(i, 1);
 	}

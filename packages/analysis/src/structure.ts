@@ -1,6 +1,5 @@
 import type { BeatFeatures } from './beatsync.ts';
 import { PITCH_CLASSES } from './chroma.ts';
-import { mean, quantile, stdev } from './dsp/stats.ts';
 
 /**
  * How many sub-frames each bar is resampled to. Keeping a time axis inside the bar is what
@@ -146,10 +145,17 @@ export function similarityMatrix(bars: BarFeatures): Float32Array {
  * would reject any section that develops, which is most of them.
  */
 const BAND = 7;
-const MAX_SEGMENT_BARS = 32;
+/**
+ * Two phrases. Higher recovers longer sections on synthetic block structure, and costs the
+ * fixture's peak: at 32 the segmenter fuses the drop with the groove behind it, because the
+ * bar patterns are L2-normalised and the two play the same figure at different levels, so
+ * nothing in the similarity matrix separates them. Raising this wants a level term in
+ * `similarityMatrix` first, measured against SALAMI rather than against one fixture.
+ */
+const MAX_SEGMENT_BARS = 16;
 const MIN_SEGMENT_BARS = 2;
-/** Weight of the length prior against the similarity score. */
-const LAMBDA = 0.04;
+/** Weight of the length prior, in units of one bar's worth of banded pairs. */
+const LAMBDA = 0.35;
 
 /** 0 for eight bars, then progressively worse for four, two and anything else. */
 function lengthPenalty(bars: number): number {
@@ -160,13 +166,48 @@ function lengthPenalty(bars: number): number {
 	return 1;
 }
 
-function segmentScore(sim: Float32Array, n: number, from: number, to: number): number {
+/**
+ * How much better than average the bars inside this segment resemble each other.
+ *
+ * The baseline subtraction is what makes the objective work, and its absence was a real bug:
+ * dividing the banded similarity sum by the segment length saturates once the length passes
+ * `BAND`, because each bar can only ever contribute `BAND` pairs. A saturating per-segment
+ * score summed over segments is maximised by having as many segments as possible, so the DP
+ * chopped every input into the shortest length that paid no phrase penalty, and a synthetic
+ * matrix of five perfect 32-bar blocks came back as twenty 8-bar ones.
+ *
+ * Measuring each pair against the track's own mean instead makes a boundary cost what it
+ * should: splitting homogeneous material throws away pairs that were scoring above average,
+ * and merging unlike material takes on pairs scoring below it. Neither direction is free, so
+ * the optimum is where the music actually changes.
+ */
+function segmentScore(
+	sim: Float32Array,
+	n: number,
+	from: number,
+	to: number,
+	baseline: number
+): number {
 	let acc = 0;
 	for (let i = from; i < to; i++) {
 		const hi = Math.min(to, i + BAND + 1);
-		for (let j = i + 1; j < hi; j++) acc += sim[i * n + j];
+		for (let j = i + 1; j < hi; j++) acc += sim[i * n + j] - baseline;
 	}
-	return (2 * acc) / (to - from);
+	return 2 * acc;
+}
+
+/** Mean similarity over every pair the segment scorer can see, which is the level to beat. */
+function bandedMean(sim: Float32Array, n: number): number {
+	let acc = 0;
+	let count = 0;
+	for (let i = 0; i < n; i++) {
+		const hi = Math.min(n, i + BAND + 1);
+		for (let j = i + 1; j < hi; j++) {
+			acc += sim[i * n + j];
+			count++;
+		}
+	}
+	return count > 0 ? acc / count : 0;
 }
 
 /**
@@ -181,11 +222,10 @@ function segmentScore(sim: Float32Array, n: number, from: number, to: number): n
 export function segmentBars(sim: Float32Array, n: number): number[] {
 	if (n < MIN_SEGMENT_BARS * 2) return [0, n];
 
-	// Normalise the penalty by what a good eight-bar segment scores, so lambda means the same
-	// thing on a track whose bars all resemble each other as on one whose bars do not.
-	let ref = 0;
-	for (let from = 0; from + 8 <= n; from++) ref = Math.max(ref, segmentScore(sim, n, from, from + 8));
-	if (ref <= 0) ref = 1;
+	const baseline = bandedMean(sim, n);
+	// One bar contributes about `BAND` pairs, so this is the penalty in bars-worth of evidence
+	// and lambda means the same thing whatever the track's overall similarity happens to be.
+	const unit = BAND;
 
 	const best = new Float64Array(n + 1).fill(-Infinity);
 	const link = new Int32Array(n + 1).fill(-1);
@@ -198,7 +238,7 @@ export function segmentBars(sim: Float32Array, n: number): number[] {
 			// The tail of a track is often a fade whose length nobody chose; charging it the
 			// full phrase penalty would drag the previous boundary out of place.
 			const penalty = end === n ? lengthPenalty(len) * 0.5 : lengthPenalty(len);
-			const v = best[start] + segmentScore(sim, n, start, end) - ref * LAMBDA * penalty;
+			const v = best[start] + segmentScore(sim, n, start, end, baseline) - unit * LAMBDA * penalty;
 			if (v > best[end]) {
 				best[end] = v;
 				link[end] = start;
@@ -215,6 +255,20 @@ export function segmentBars(sim: Float32Array, n: number): number[] {
 	if (bounds[0] !== 0) bounds.unshift(0);
 	return bounds;
 }
+
+/**
+ * How close two segments must come to their own internal cohesion to count as the same
+ * material. Below 1 because a repeat is never identical: a second chorus has a different
+ * vocal take and usually an extra layer.
+ */
+const SAME_MATERIAL = 0.92;
+/**
+ * And an absolute floor underneath it. The relative test alone is not enough: on a track whose
+ * segments are internally loose, nine tenths of a low cohesion is a low bar, and everything
+ * links into one group. Two passages that do not resemble each other this much are not the
+ * same material however unlike themselves they each are.
+ */
+const SAME_MATERIAL_FLOOR = 0.62;
 
 export interface SegmentGroup {
 	/** Index of the earliest segment this one repeats, or null when it stands alone. */
@@ -253,15 +307,37 @@ export function groupSegments(
 		return acc / len;
 	};
 
-	const pairs: number[] = [];
-	for (let i = 0; i < count; i++) {
-		for (let j = i + 1; j < count; j++) pairs.push(score(i, j));
-	}
-	if (pairs.length === 0) {
+	if (count === 1) {
 		group[0] = 0;
 		return { repeatOf, group };
 	}
-	const threshold = Math.max(mean(pairs) + stdev(pairs), quantile(pairs, 0.75));
+
+	/**
+	 * How much a segment's own bars resemble each other, which is the level a different
+	 * segment has to reach to count as the same material.
+	 *
+	 * An absolute-ish reference, not a quantile of the pair distribution. A distribution cut
+	 * admits a roughly fixed top slice whatever the content, so it can never answer "this
+	 * track has no repeated material" and it fuses a uniform track into a single group; it can
+	 * also land above 1.0, at which point a track gets no repeats at all.
+	 */
+	const cohesion = (s: number): number => {
+		const from = bounds[s];
+		const to = bounds[s + 1];
+		let acc = 0;
+		let pairs = 0;
+		for (let i = from; i < to; i++) {
+			for (let j = i + 1; j < Math.min(to, i + BAND + 1); j++) {
+				acc += sim[i * n + j];
+				pairs++;
+			}
+		}
+		// A two-bar segment has almost no internal pairs, so it falls back to the diagonal,
+		// which is 1 by construction and correctly makes it hard to match.
+		return pairs > 0 ? acc / pairs : 1;
+	};
+
+	const self = Array.from({ length: count }, (_, s) => cohesion(s));
 
 	const parent = Array.from({ length: count }, (_, i) => i);
 	const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
@@ -273,7 +349,10 @@ export function groupSegments(
 			// Segments of very different lengths are rarely the same thing, and letting them
 			// link is how a whole track collapses into one group.
 			if (Math.min(aLen, bLen) / Math.max(aLen, bLen) < 0.5) continue;
-			if (score(i, j) < threshold) continue;
+			// Two passages are the same material when they resemble each other nearly as much
+			// as each resembles itself.
+			const reference = Math.max(SAME_MATERIAL_FLOOR, ((self[i] + self[j]) / 2) * SAME_MATERIAL);
+			if (score(i, j) < reference) continue;
 			const ra = find(i);
 			const rb = find(j);
 			if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
