@@ -131,20 +131,18 @@ pool.
 ## Commands
 
 ```sh
-npm run dev                                   # the app
-npm test                                      # 94 tests
-npm run check                                 # tsc --build across all packages
-npm run analyse -- <url|file> [--force]        # analyse and print the arrangement
-npm run author  -- <url|file>                  # analyse, then author a show with Claude
-node --experimental-strip-types scripts/reference-show.ts <trackId>   # hand-built show
-node --experimental-strip-types scripts/bench.ts <trackId>            # render cost
+npm run dev            # the app
+npm test               # 238 tests
+npm run check          # tsc --build across all packages, then svelte-check
 ```
 
-Artifacts land in `cache/`: `<id>.<ext>` audio, `<id>.analysis.json`, `<id>.show.json`.
-The cache is anchored to the repo root, not to cwd, so the CLI and the dev server share it.
+Everything else happens in the app: paste a link, Generate show. Artifacts land in `cache/`:
+`<id>.<ext>` audio, `<id>.analysis.json`, `<id>.show.json`. The cache is anchored to the
+workspace root rather than to cwd, so the dev server and a production build share it.
+`MV_CACHE_DIR` overrides it.
 
-Node runs the TypeScript directly in strip-only mode, so there is no build step. That is
-why the codebase avoids TS parameter properties, which strip-only mode rejects.
+The packages are consumed as TypeScript source rather than built to `dist/`, so there is no
+build step between editing a package and seeing it in the app.
 
 ## Hardware
 

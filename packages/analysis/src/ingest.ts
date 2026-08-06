@@ -8,9 +8,8 @@ import { analyzeTrack } from './analyze.ts';
 import { decodeAudio, downloadAudio, probe } from './decode.ts';
 
 /**
- * Anchored to the workspace root, not to cwd. The CLI runs from the repo root and the dev
- * server runs from apps/web, so a cwd-relative cache would silently give them two different
- * caches and re-download everything.
+ * Anchored to the workspace root, not to cwd. The dev server runs from apps/web, so a
+ * cwd-relative cache would put its artifacts somewhere else and re-download everything.
  */
 function workspaceRoot(): string {
 	let dir = import.meta.dirname;
@@ -56,7 +55,7 @@ export function showPath(id: string): string {
 	return join(CACHE_DIR, `${id}.show.json`);
 }
 
-export function metaPath(id: string): string {
+function metaPath(id: string): string {
 	assertId(id);
 	return join(CACHE_DIR, `${id}.meta.json`);
 }
@@ -79,7 +78,8 @@ export async function readMeta(id: string): Promise<TrackMeta | null> {
 	}
 }
 
-async function findAudio(id: string): Promise<string | null> {
+/** The cached audio for a track, whatever container yt-dlp settled on. */
+export async function findAudioFile(id: string): Promise<string | null> {
 	assertId(id);
 	if (!existsSync(CACHE_DIR)) return null;
 	const files = await readdir(CACHE_DIR);
@@ -125,11 +125,11 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			webpageUrl: probed.webpageUrl,
 			source
 		};
-		audioPath = await findAudio(id);
+		audioPath = await findAudioFile(id);
 		if (!audioPath) {
 			log('downloading');
 			await downloadAudio(source, join(CACHE_DIR, `${id}.%(ext)s`));
-			audioPath = await findAudio(id);
+			audioPath = await findAudioFile(id);
 			if (!audioPath) throw new Error('yt-dlp reported success but wrote no audio file');
 		}
 	} else {

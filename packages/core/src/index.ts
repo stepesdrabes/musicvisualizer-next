@@ -34,17 +34,9 @@ export type { Cue, CuePalette, GeneratedEffect, Hit, LayerSpec, Show } from './c
 export { SHOW_VERSION } from './contracts/show.ts';
 export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 
-export { DEFAULT_ROOM, buildGeometry, ledCountFor } from './geometry.ts';
+export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
 export { hsv2rgb } from './color/hsv.ts';
-export {
-	addSample,
-	blendPalettes,
-	makePalette,
-	rotateHue,
-	sample,
-	setSample,
-	swapped
-} from './color/palette.ts';
+export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
 export { Layer, Mixer } from './mixer.ts';
 export { ShowPlayer, barTimeAt } from './player.ts';
 export {

@@ -15,12 +15,6 @@ export const DEFAULT_ROOM: RoomSpec = {
 	beamOffset: 0
 };
 
-export function ledCountFor(spec: RoomSpec): number {
-	const perimeter = 2 * (spec.width + spec.depth);
-	const beamLen = spec.beamAxis === 'y' ? spec.depth : spec.width;
-	return Math.round(perimeter * spec.density) + Math.round(beamLen * spec.density);
-}
-
 function segLength(s: { start: Vec3; end: Vec3 }): number {
 	return Math.hypot(s.end[0] - s.start[0], s.end[1] - s.start[1], s.end[2] - s.start[2]);
 }

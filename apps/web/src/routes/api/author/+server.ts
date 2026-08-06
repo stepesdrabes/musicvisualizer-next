@@ -1,6 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
 import {
 	BUILT_IN_EFFECTS,
 	DEFAULT_ROOM,
@@ -8,15 +7,9 @@ import {
 	compileGenerated,
 	type TrackAnalysis
 } from '@mv/core';
-import { CACHE_DIR, analysisPath, isValidId, showPath } from '@mv/analysis';
+import { analysisPath, findAudioFile, isValidId, showPath } from '@mv/analysis';
 import { authorShow, formatFindings, lintShow, type AuthorEvent } from '@mv/author';
 import type { RequestHandler } from './$types';
-
-async function findAudio(id: string): Promise<string | undefined> {
-	const files = await readdir(CACHE_DIR).catch(() => [] as string[]);
-	const name = files.find((f) => f.startsWith(`${id}.`) && !f.includes('.json'));
-	return name ? join(CACHE_DIR, name) : undefined;
-}
 
 /**
  * Server-sent events, because authoring takes minutes. Every tool call the agent makes is
@@ -37,7 +30,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
 		error(404, 'that track has not been analysed yet');
 	}
 
-	const audioPath = await findAudio(id);
+	const audioPath = (await findAudioFile(id)) ?? undefined;
 	const geometry = buildGeometry(DEFAULT_ROOM);
 	const encoder = new TextEncoder();
 

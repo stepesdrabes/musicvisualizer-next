@@ -1,7 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { readFile, readdir } from 'node:fs/promises';
-import { join } from 'node:path';
-import { CACHE_DIR, isValidId } from '@mv/analysis';
+import { readFile } from 'node:fs/promises';
+import { findAudioFile, isValidId } from '@mv/analysis';
 import type { RequestHandler } from './$types';
 
 const TYPES: Record<string, string> = {
@@ -17,13 +16,11 @@ const TYPES: Record<string, string> = {
 export const GET: RequestHandler = async ({ params }) => {
 	if (!isValidId(params.id)) error(400, 'invalid track id');
 
-	const files = await readdir(CACHE_DIR).catch(() => [] as string[]);
-	const name = files.find((f) => f.startsWith(`${params.id}.`) && !f.includes('.json'));
-	if (!name) error(404, 'not cached');
+	const path = await findAudioFile(params.id);
+	if (!path) error(404, 'not cached');
 
-	const path = join(CACHE_DIR, name);
 	const data = await readFile(path);
-	const ext = name.slice(name.lastIndexOf('.'));
+	const ext = path.slice(path.lastIndexOf('.'));
 
 	return new Response(new Uint8Array(data), {
 		headers: {

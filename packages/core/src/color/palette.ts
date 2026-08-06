@@ -122,32 +122,3 @@ export function blendPalettes(dst: Palette, a: Palette, b: Palette, t: number): 
 	for (let i = 0; i < dst.length; i++) dst[i] = a[i] + (b[i] - a[i]) * t;
 	return dst;
 }
-
-/** Rotate every anchor's hue. Cheap global recolour without rebuilding the palette. */
-export function rotateHue(dst: Palette, src: Palette, shift: number): Palette {
-	if (shift === 0) {
-		dst.set(src);
-		return dst;
-	}
-	for (let i = 0; i < PALETTE_ANCHORS; i++) {
-		const o = i * 3;
-		const r = src[o];
-		const g = src[o + 1];
-		const b = src[o + 2];
-		const max = Math.max(r, g, b);
-		const min = Math.min(r, g, b);
-		const v = max;
-		const s = max <= 0 ? 0 : (max - min) / max;
-		let h = 0;
-		if (max > min) {
-			if (max === r) h = (g - b) / (max - min) / 6;
-			else if (max === g) h = (2 + (b - r) / (max - min)) / 6;
-			else h = (4 + (r - g) / (max - min)) / 6;
-		}
-		hsv2rgb(frac(h + shift), s, v, RGB_SCRATCH);
-		dst[o] = RGB_SCRATCH[0];
-		dst[o + 1] = RGB_SCRATCH[1];
-		dst[o + 2] = RGB_SCRATCH[2];
-	}
-	return dst;
-}

@@ -1,16 +1,4 @@
 import type { ParamSpec } from '../contracts/effect.ts';
-import { hash01 } from '../dsl/rng.ts';
-
-/**
- * A stateless per-index constant in 0..1.
- *
- * The DSL's `hash01` finishes on a signed xor, so it actually lands in about -0.5..0.5.
- * Effects want a unit constant - a negative one silently yields negative brightness or an
- * out-of-range index - so the shift happens here once rather than at every call site.
- */
-export function unitHash(k: number): number {
-	return hash01(k) + 0.5;
-}
 
 export function param(
 	key: string,
