@@ -1,0 +1,15 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"noUnusedLocals": true,
+		"noUnusedParameters": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"lib": ["ES2023", "DOM"],
+		"types": []
+	},
+	"include": ["src/**/*.ts"],
+	"references": [{ "path": "../core" }]
+}

@@ -1,0 +1,87 @@
+import type { EffectDef } from '../contracts/effect.ts';
+import { Band } from '../contracts/frame.ts';
+import { SLOT } from '../contracts/palette.ts';
+import { sample } from '../color/palette.ts';
+import { clamp, envelope } from '../dsl/math.ts';
+import { nblend } from '../dsl/buffer.ts';
+import { sinewave } from '../dsl/wave.ts';
+import { INTENSITY, param } from './helpers.ts';
+
+/**
+ * Three palette waves at 8 / 16 / 32 beats per cycle with an interference highlight.
+ *
+ * Several simple layers at different musical rates beat one complex layer: the bright
+ * seams appear where the waves constructively interfere, so they are emergent rather
+ * than authored.
+ */
+export const aurora: EffectDef = {
+	id: 'aurora',
+	name: 'Aurora',
+	role: 'bed',
+	blurb: 'Three bar-locked palette waves with interference highlights.',
+	taste: {
+		energy: 2,
+		sections: ['intro', 'groove', 'breakdown', 'outro'],
+		minBars: 4,
+		maxBars: 64,
+		peakReserved: false
+	},
+	params: [INTENSITY, param('waves', 'Wave scale', 0.5)],
+	create(g) {
+		const buf = new Float32Array(g.count * 3);
+		const ph = new Float32Array(3);
+		const slots = [SLOT.base, SLOT.third, SLOT.glow];
+		const gains = [0.5, 0.35, 0.3];
+		let airEnv = 0;
+
+		return {
+			reset() {
+				ph.fill(0);
+				airEnv = 0;
+				buf.fill(0);
+			},
+			render(out, ctx) {
+				const { f, p, palette, hueShift, motion } = ctx;
+
+				const bp = Math.max(0.2, f.beatPeriod);
+				ph[0] += (f.dt / (8 * bp)) * motion;
+				ph[1] -= (f.dt / (16 * bp)) * motion;
+				ph[2] += (f.dt / (32 * bp)) * motion;
+
+				airEnv = envelope(airEnv, f.bands[Band.Air], f.dt, 0.05, 0.6);
+				const gain = (0.3 + p.intensity * 0.8) * clamp(0.35 + f.energy * 0.85);
+				const scale = 1.5 + p.waves * 3.5;
+				// Busy top end lowers the bar for a highlight, so dense passages shimmer.
+				const threshold = 0.62 - airEnv * 0.2;
+
+				for (let i = 0; i < g.count; i++) {
+					const u = g.perim[i] >= 0 ? g.perim[i] : g.local[i];
+					let r = 0;
+					let gr = 0;
+					let b = 0;
+					let lum = 0;
+					for (let l = 0; l < 3; l++) {
+						const wave = sinewave(u * scale * (l + 1) * 0.7 + ph[l] + l * 0.31);
+						const c = sample(palette, slots[l] + hueShift, wave * gains[l] * gain);
+						r += c[0];
+						gr += c[1];
+						b += c[2];
+						lum += wave * gains[l];
+					}
+					if (lum > threshold) {
+						const w = sample(palette, SLOT.white + hueShift, (lum - threshold) * 1.8 * gain);
+						r += w[0];
+						gr += w[1];
+						b += w[2];
+					}
+					const o = i * 3;
+					buf[o] = r;
+					buf[o + 1] = gr;
+					buf[o + 2] = b;
+				}
+
+				nblend(out, buf, 1 - Math.exp(-f.dt / 0.1));
+			}
+		};
+	}
+};

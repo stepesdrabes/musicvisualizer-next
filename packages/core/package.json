@@ -1,0 +1,13 @@
+{
+	"name": "@mv/core",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts",
+		"./dsl": "./src/dsl/index.ts"
+	},
+	"scripts": {
+		"check": "tsc --build"
+	}
+}

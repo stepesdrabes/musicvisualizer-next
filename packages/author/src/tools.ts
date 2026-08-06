@@ -1,0 +1,317 @@
+import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod';
+import type { EffectDef, GeneratedEffect, Geometry, Show, TrackAnalysis } from '@mv/core';
+import { BUILT_IN_EFFECTS, compileGenerated } from '@mv/core';
+import { analyzeTrack, decodeAudio } from '@mv/analysis';
+import { renderArrangementChart, renderBarTable, renderCatalog } from './catalog.ts';
+import { formatFindings, lintShow } from './lint.ts';
+import { coerceShow, showSchema } from './showSchema.ts';
+
+/** Mutated by the tools as the author works; read afterwards by the caller. */
+export interface AuthorSession {
+	analysis: TrackAnalysis;
+	geometry: Geometry;
+	audioPath?: string;
+	generated: Map<string, GeneratedEffect>;
+	compiled: Map<string, EffectDef>;
+	submitted: Show | null;
+	log: string[];
+	onAnalysis?: (analysis: TrackAnalysis, reason: string) => void;
+}
+
+export function createSession(
+	analysis: TrackAnalysis,
+	geometry: Geometry,
+	audioPath?: string
+): AuthorSession {
+	return {
+		analysis,
+		geometry,
+		audioPath,
+		generated: new Map(),
+		compiled: new Map(),
+		submitted: null,
+		log: []
+	};
+}
+
+function barTimeOf(a: TrackAnalysis, bar: number): number {
+	const t = a.tempo;
+	return t.firstBeat + (t.downbeatPhase + bar * t.beatsPerBar) * t.beatPeriod;
+}
+
+function effectMap(session: AuthorSession): Map<string, EffectDef> {
+	const map = new Map<string, EffectDef>();
+	for (const e of BUILT_IN_EFFECTS) map.set(e.id, e);
+	for (const [id, def] of session.compiled) map.set(id, def);
+	return map;
+}
+
+function text(body: string) {
+	return { content: [{ type: 'text' as const, text: body }] };
+}
+
+export function buildTools(session: AuthorSession) {
+	const getBars = tool(
+		'get_bars',
+		'Bar-level analysis rows for a range of bars. Use this to zoom into a build, a void or a drop rather than working from the overview.',
+		{
+			fromBar: z.number().int().min(0).describe('First bar, inclusive'),
+			toBar: z.number().int().min(0).describe('Last bar, inclusive')
+		},
+		async ({ fromBar, toBar }) => {
+			const last = session.analysis.bars.length - 1;
+			if (fromBar > last) return text(`No such bar. The track has bars 0-${last}.`);
+			return text(renderBarTable(session.analysis, fromBar, Math.min(toBar, last)));
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const getOnsets = tool(
+		'get_onsets',
+		'Exact onset times for kick, snare or hat within a bar range, so you can see whether a roll is eighths or sixteenths.',
+		{
+			fromBar: z.number().int().min(0),
+			toBar: z.number().int().min(0),
+			instrument: z.enum(['kick', 'snare', 'hat'])
+		},
+		async ({ fromBar, toBar, instrument }) => {
+			const { tempo, onsets } = session.analysis;
+			const from = barTimeOf(session.analysis, fromBar);
+			const to = barTimeOf(session.analysis, toBar + 1);
+			const hits = onsets[instrument].filter((t) => t >= from && t < to);
+			if (hits.length === 0) return text(`No ${instrument} onsets in bars ${fromBar}-${toBar}.`);
+			const lines = hits.map((t) => {
+				const beats = (t - tempo.firstBeat) / tempo.beatPeriod;
+				const bar = Math.floor((beats - tempo.downbeatPhase) / tempo.beatsPerBar);
+				const beatInBar = (beats - tempo.downbeatPhase) % tempo.beatsPerBar;
+				return `${t.toFixed(3)}s  bar ${bar} beat ${beatInBar.toFixed(2)}`;
+			});
+			return text(`${hits.length} ${instrument} onsets:\n${lines.join('\n')}`);
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const audioFile = tool(
+		'audio_file',
+		'Where the decoded audio lives on disk. You cannot hear it, but you can run ffprobe, ffmpeg or any other command-line tool on it with Bash.',
+		{},
+		async () => {
+			if (!session.audioPath) return text('No audio file is available for this session.');
+			return text(
+				[
+					`path: ${session.audioPath}`,
+					`duration: ${session.analysis.duration.toFixed(2)} s`,
+					`integrated loudness: ${session.analysis.integratedLufs} LUFS`,
+					'',
+					'You cannot hear this file. What Bash genuinely buys you:',
+					'  ffprobe -v quiet -print_format json -show_format -show_streams <path>',
+					'  ffmpeg -i <path> -af ebur128 -f null -              loudness over time',
+					'  ffmpeg -i <path> -af astats=metadata=1 -f null -    level statistics',
+					'  ffmpeg -ss <sec> -t <sec> -i <path> -af volumedetect -f null -',
+					'',
+					'Do not try to derive cue timings this way. The bar grid you were given is',
+					'sample-accurate; every cue is addressed against it.'
+				].join('\n')
+			);
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const audioStats = tool(
+		'audio_stats',
+		'Aggregate measurements over a bar range, plus the exact ffmpeg command to verify them independently.',
+		{ fromBar: z.number().int().min(0), toBar: z.number().int().min(0) },
+		async ({ fromBar, toBar }) => {
+			const rows = session.analysis.bars.filter((b) => b.bar >= fromBar && b.bar <= toBar);
+			if (rows.length === 0) return text('No such bars.');
+			const from = barTimeOf(session.analysis, fromBar);
+			const to = barTimeOf(session.analysis, toBar + 1);
+			const mean = (k: 'energy' | 'sub' | 'low' | 'mid' | 'air') =>
+				Math.round(rows.reduce((n, b) => n + b[k], 0) / rows.length);
+			const sum = (k: 'kicks' | 'snares' | 'hats') => rows.reduce((n, b) => n + b[k], 0);
+			return text(
+				[
+					`bars ${fromBar}-${toBar} = ${from.toFixed(2)}s to ${to.toFixed(2)}s (${(to - from).toFixed(1)}s)`,
+					`energy ${mean('energy')} · sub ${mean('sub')} · low ${mean('low')} · mid ${mean('mid')} · air ${mean('air')}`,
+					`kicks ${sum('kicks')} · snares ${sum('snares')} · hats ${sum('hats')}`,
+					session.audioPath
+						? `\nTo measure it yourself:\n  ffmpeg -ss ${from.toFixed(2)} -t ${(to - from).toFixed(2)} -i ${session.audioPath} -af ebur128=peak=true -f null -`
+						: ''
+				].join('\n')
+			);
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const reanalyse = tool(
+		'reanalyse',
+		'Re-run the local analysis with the tempo constrained near a value you have established. Use this ONLY when the detected tempo is clearly wrong and you have credible evidence. It replaces the bar grid, so every bar number changes and any cues you had written must be rewritten.',
+		{
+			bpm: z.number().min(40).max(260).describe('The tempo you believe is correct'),
+			reason: z.string().describe('Why, and on what evidence')
+		},
+		async ({ bpm, reason }) => {
+			if (!session.audioPath) {
+				return text('No audio file is available, so re-analysis is not possible.');
+			}
+			const before = session.analysis.tempo.bpm;
+			const decoded = await decodeAudio(session.audioPath);
+			const next = analyzeTrack({
+				mono: decoded.mono,
+				sampleRate: decoded.sampleRate,
+				duration: decoded.duration,
+				hash: decoded.hash,
+				integratedLufs: decoded.integratedLufs,
+				trackId: session.analysis.trackId,
+				title: session.analysis.title,
+				bpmHint: bpm
+			});
+
+			if (Math.abs(next.tempo.bpm - bpm) > bpm * 0.06) {
+				return text(
+					`Re-analysis did not settle near ${bpm} bpm; it found ${next.tempo.bpm}. The grid is unchanged at ${before} bpm. Work with the grid you have.`
+				);
+			}
+
+			session.analysis = next;
+			session.log.push(`reanalyse: ${before} -> ${next.tempo.bpm} bpm (${reason})`);
+			session.onAnalysis?.(next, reason);
+
+			return text(
+				[
+					`Grid replaced: ${before} -> ${next.tempo.bpm} bpm. Every bar number has changed, so any cues already written need rewriting against the table below.`,
+					`bars 0-${next.bars.length - 1} · downbeatPhase ${next.tempo.downbeatPhase} · phraseAnchorBar ${next.tempo.phraseAnchorBar}`,
+					'',
+					renderArrangementChart(next)
+				].join('\n')
+			);
+		}
+	);
+
+	const listEffects = tool(
+		'list_effects',
+		'The effect catalog with taste metadata, including any effect you have already generated.',
+		{},
+		async () => text(renderCatalog([...effectMap(session).values()])),
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const testEffect = tool(
+		'test_effect',
+		'Compile a generated effect and run the admission gate: finite bounded pixels, bitwise determinism across fresh instances, and reset() restoring a fresh state. Returns pass or the exact failures.',
+		{
+			id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/).describe('camelCase id, unique'),
+			name: z.string(),
+			role: z.enum(['bed', 'rhythm', 'transient', 'accent', 'master']),
+			blurb: z.string().describe('One sentence on what it looks like'),
+			params: z
+				.array(
+					z.object({
+						key: z.string(),
+						label: z.string(),
+						min: z.number(),
+						max: z.number(),
+						step: z.number(),
+						default: z.number()
+					})
+				)
+				.describe('Include an "intensity" param'),
+			source: z
+				.string()
+				.describe('Plain JS declaring function create(g) returning { reset, render }')
+		},
+		async (input) => {
+			const gen: GeneratedEffect = {
+				id: input.id,
+				name: input.name,
+				role: input.role,
+				blurb: input.blurb,
+				params: input.params,
+				source: input.source
+			};
+			const result = compileGenerated(gen, session.geometry);
+			if (!result.def) {
+				session.log.push(`test_effect ${input.id}: FAILED`);
+				return text(
+					`REJECTED. Fix these and call test_effect again:\n${result.failures
+						.map((f) => `- ${f}`)
+						.join('\n')}`
+				);
+			}
+			session.generated.set(gen.id, gen);
+			session.compiled.set(gen.id, result.def);
+			session.log.push(`test_effect ${input.id}: passed`);
+			return text(
+				`PASSED. "${input.id}" is registered as a ${input.role} effect and may be used in cues.`
+			);
+		}
+	);
+
+	const lint = tool(
+		'lint_show',
+		'Validate a Show against the analysed grid and the craft rules. Errors block submission. Call this while iterating.',
+		{ show: showSchema },
+		async ({ show }) => {
+			const { show: candidate, error } = coerceShow(show);
+			if (!candidate) {
+				session.log.push('lint_show: malformed show');
+				return text(`Not read: ${error}`);
+			}
+			const result = lintShow(candidate, {
+				analysis: session.analysis,
+				effects: effectMap(session)
+			});
+			session.log.push(
+				`lint_show: ${result.errors.length} errors, ${result.warnings.length} warnings`
+			);
+			return text(formatFindings(result));
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const submit = tool(
+		'submit_show',
+		'Submit the finished Show. Rejected unless it lints with zero errors.',
+		{ show: showSchema },
+		async ({ show }) => {
+			const { show: candidate, error } = coerceShow(show);
+			if (!candidate) return text(`Not accepted: ${error}`);
+			const result = lintShow(candidate, {
+				analysis: session.analysis,
+				effects: effectMap(session)
+			});
+			if (!result.ok) {
+				return text(
+					`NOT ACCEPTED, ${result.errors.length} error(s) remain:\n${formatFindings(result)}`
+				);
+			}
+			candidate.generatedEffects = [...session.generated.values()];
+			session.submitted = candidate;
+			session.log.push('submit_show: accepted');
+			return text(
+				`Accepted: ${candidate.cues.length} cues, ${candidate.hits.length} hits, ${
+					candidate.generatedEffects.length
+				} generated effect(s), ${result.warnings.length} warning(s) noted.`
+			);
+		}
+	);
+
+	return createSdkMcpServer({
+		name: 'lightdesk',
+		version: '1.0.0',
+		instructions:
+			'Tools for authoring a lighting show against a pre-analysed track. All timing is by bar index.',
+		tools: [
+			getBars,
+			getOnsets,
+			audioFile,
+			audioStats,
+			reanalyse,
+			listEffects,
+			testEffect,
+			lint,
+			submit
+		]
+	});
+}

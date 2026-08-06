@@ -1,0 +1,228 @@
+import type { EffectDef, RenderCtx } from '../contracts/effect.ts';
+import type { Geometry } from '../contracts/room.ts';
+import type { SectionKind, ShowFrame } from '../contracts/frame.ts';
+import { createShowFrame } from '../contracts/frame.ts';
+import { makePalette } from '../color/palette.ts';
+import { clamp } from '../dsl/math.ts';
+
+const FPS = 60;
+const PIXEL_CAP = 64;
+
+interface Beat {
+	bars: number;
+	section: SectionKind;
+	energy: number;
+	drums: boolean;
+}
+
+/** groove -> build -> void -> drop, the journey every effect has to survive. */
+const SCRIPT: Beat[] = [
+	{ bars: 8, section: 'groove', energy: 0.6, drums: true },
+	{ bars: 4, section: 'build', energy: 0.8, drums: true },
+	{ bars: 1, section: 'void', energy: 0.02, drums: false },
+	{ bars: 8, section: 'drop', energy: 1, drums: true }
+];
+
+/**
+ * Synthesise a deterministic frame journey with no audio at all. An effect that only
+ * looks right against real music is an effect whose timing is wrong.
+ */
+export function scriptFrames(bpm = 130): ShowFrame[] {
+	const beatPeriod = 60 / bpm;
+	const frames: ShowFrame[] = [];
+	const dt = 1 / FPS;
+
+	let bar = 0;
+	let t = 0;
+	let lastBeat = Number.NaN;
+	let lastBar = Number.NaN;
+	let lastPhrase = Number.NaN;
+	let kickEnv = 0;
+	let snareEnv = 0;
+	let hatEnv = 0;
+
+	const buildStart = SCRIPT[0].bars * 4 * beatPeriod;
+	const dropStart = (SCRIPT[0].bars + SCRIPT[1].bars + SCRIPT[2].bars) * 4 * beatPeriod;
+
+	for (const stage of SCRIPT) {
+		const stageFrames = Math.round((stage.bars * 4 * beatPeriod) / dt);
+		for (let k = 0; k < stageFrames; k++) {
+			const beatsF = t / beatPeriod;
+			const barsF = beatsF / 4;
+			const beatIndex = Math.floor(beatsF);
+			const barIndex = Math.floor(barsF);
+			const phraseIndex = Math.floor(barsF / 8);
+			const beatPhase = beatsF - beatIndex;
+
+			const beat = beatIndex !== lastBeat;
+			const downbeat = barIndex !== lastBar;
+			const phraseStart = phraseIndex !== lastPhrase;
+			lastBeat = beatIndex;
+			lastBar = barIndex;
+			lastPhrase = phraseIndex;
+
+			const eighth = Math.floor(beatsF * 2);
+			const kick = stage.drums && beat;
+			const snare = stage.drums && beat && beatIndex % 4 >= 2 && beatIndex % 2 === 0;
+			const hat = stage.drums && eighth !== Math.floor((beatsF - dt / beatPeriod) * 2);
+
+			if (kick) kickEnv = 1;
+			if (snare) snareEnv = 1;
+			if (hat) hatEnv = 1;
+			kickEnv *= 0.9;
+			snareEnv *= 0.9;
+			hatEnv *= 0.85;
+
+			const f = createShowFrame();
+			f.t = t;
+			f.dt = dt;
+			f.beat = beat;
+			f.downbeat = downbeat;
+			f.phraseStart = phraseStart;
+			f.beatIndex = beatIndex;
+			f.barIndex = barIndex;
+			f.beatPhase = beatPhase;
+			f.barPhase = barsF - barIndex;
+			f.phrasePhase = barsF / 8 - phraseIndex;
+			f.beatPeriod = beatPeriod;
+			f.bpm = bpm;
+			f.section = stage.section;
+			f.sectionProgress = k / stageFrames;
+			f.buildProgress =
+				t >= buildStart && t < dropStart ? clamp((t - buildStart) / (dropStart - buildStart)) : 0;
+			f.timeToDrop = t < dropStart ? dropStart - t : Infinity;
+			f.timeSinceDrop = t >= dropStart ? t - dropStart : Infinity;
+			f.energy = stage.energy;
+			f.bands[0] = stage.energy * 0.9;
+			f.bands[1] = stage.energy * 0.8;
+			f.bands[2] = stage.energy * 0.6;
+			f.bands[3] = stage.section === 'build' ? f.buildProgress : stage.energy * 0.5;
+			f.kick = kick;
+			f.snare = snare;
+			f.hat = hat;
+			f.kickEnv = kickEnv;
+			f.snareEnv = snareEnv;
+			f.hatEnv = hatEnv;
+
+			frames.push(f);
+			t += dt;
+		}
+		bar += stage.bars;
+	}
+
+	void bar;
+	return frames;
+}
+
+function makeCtx(g: Geometry, def: EffectDef): RenderCtx {
+	const p: Record<string, number> = {};
+	for (const spec of def.params) p[spec.key] = spec.default;
+	// Masters are hit-driven; without a trigger they render nothing and prove nothing.
+	if ('trigger' in p) p.trigger = 1;
+	return {
+		g,
+		f: createShowFrame(),
+		p,
+		palette: makePalette({ base: 320, accent: 185 }),
+		hueShift: 0,
+		motion: 1
+	};
+}
+
+function runOnce(def: EffectDef, g: Geometry, frames: ShowFrame[]): Float32Array[] {
+	const effect = def.create(g);
+	const ctx = makeCtx(g, def);
+	const out = new Float32Array(g.count * 3);
+	const snapshots: Float32Array[] = [];
+	for (let i = 0; i < frames.length; i++) {
+		ctx.f = frames[i];
+		effect.render(out, ctx);
+		if (i % 37 === 0) snapshots.push(Float32Array.from(out));
+	}
+	snapshots.push(Float32Array.from(out));
+	return snapshots;
+}
+
+export interface GateResult {
+	id: string;
+	ok: boolean;
+	failures: string[];
+	/** False for effects that legitimately render darkness, like `blackout`. */
+	producesLight: boolean;
+}
+
+/**
+ * Admission test for any effect, built-in or generated. The determinism check is the one
+ * that matters most for generated code: it catches a smuggled Math.random or Date.now,
+ * which would silently break seeking and exports.
+ */
+export function runGate(def: EffectDef, g: Geometry): GateResult {
+	const failures: string[] = [];
+	const frames = scriptFrames();
+
+	let a: Float32Array[];
+	try {
+		a = runOnce(def, g, frames);
+	} catch (err) {
+		return {
+			id: def.id,
+			ok: false,
+			failures: [`threw during render: ${(err as Error).message}`],
+			producesLight: false
+		};
+	}
+
+	let maxSeen = 0;
+	for (const snap of a) {
+		for (let i = 0; i < snap.length; i++) {
+			const v = snap[i];
+			if (!Number.isFinite(v)) {
+				failures.push(`non-finite pixel (${v}) at index ${i}`);
+				break;
+			}
+			if (v < 0) {
+				failures.push(`negative pixel (${v}) at index ${i}`);
+				break;
+			}
+			if (v > maxSeen) maxSeen = v;
+		}
+		if (failures.length > 0) break;
+	}
+	if (maxSeen > PIXEL_CAP) failures.push(`pixel value ${maxSeen} exceeds cap ${PIXEL_CAP}`);
+
+	const b = runOnce(def, g, frames);
+	for (let s = 0; s < a.length; s++) {
+		for (let i = 0; i < a[s].length; i++) {
+			if (a[s][i] !== b[s][i]) {
+				failures.push(`not deterministic: snapshot ${s} index ${i} differs between instances`);
+				s = a.length;
+				break;
+			}
+		}
+	}
+
+	const effect = def.create(g);
+	const ctx = makeCtx(g, def);
+	const scratch = new Float32Array(g.count * 3);
+	for (let i = 0; i < 200; i++) {
+		ctx.f = frames[i];
+		effect.render(scratch, ctx);
+	}
+	effect.reset();
+	scratch.fill(0);
+	const fresh = def.create(g);
+	const freshOut = new Float32Array(g.count * 3);
+	for (let i = 0; i < 40; i++) {
+		ctx.f = frames[i];
+		effect.render(scratch, ctx);
+		fresh.render(freshOut, ctx);
+	}
+	for (let i = 0; i < scratch.length; i++) {
+		if (scratch[i] !== freshOut[i]) {
+			failures.push(`reset() does not restore a fresh instance (index ${i})`);
+			break;
+		}
+	}
+
+	return { id: def.id, ok: failures.length === 0, failures, producesLight: maxSeen > 1e-3 };
+}

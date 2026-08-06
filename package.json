@@ -1,0 +1,27 @@
+{
+	"name": "musicvisualizer",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"workspaces": [
+		"packages/*",
+		"apps/*"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"dev": "npm run dev -w @mv/web",
+		"build": "npm run build -w @mv/web",
+		"check": "tsc --build packages/core packages/analysis packages/author packages/transport-ddp packages/preview3d && npm run check -w @mv/web",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"analyse": "node --experimental-strip-types packages/analysis/src/cli.ts",
+		"author": "node --experimental-strip-types packages/author/src/cli.ts"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.2",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.10"
+	}
+}

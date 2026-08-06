@@ -1,0 +1,146 @@
+import { createSocket, type Socket } from 'node:dgram';
+import type { LedFrame, LedSink, LedSinkStats } from '@mv/core';
+
+export const DDP_PORT = 4048;
+
+// WLED's own receive buffer is 1458 bytes and its sender uses 1440 data bytes. Do not
+// raise this: a larger packet is silently dropped, not fragmented.
+const MAX_DATA = 1440;
+
+const FLAG_VER1 = 0x40;
+const FLAG_PUSH = 0x01;
+const TYPE_RGB24 = 0x0b;
+const TYPE_RGBW32 = 0x1b;
+const ID_DISPLAY = 1;
+
+export interface DdpTarget {
+	host: string;
+	port?: number;
+	/** Slice of the global frame this device owns. */
+	firstLed: number;
+	ledCount: number;
+	/** Where that slice lands in the device's own buffer. Normally 0. */
+	deviceFirstLed?: number;
+}
+
+export interface DdpOptions {
+	targets: readonly DdpTarget[];
+	rgbw?: boolean;
+}
+
+export function createDdpSink(opts: DdpOptions): LedSink {
+	let socket: Socket | null = null;
+	let seq = 1;
+	const stats: LedSinkStats = { framesSent: 0, framesDropped: 0, bytesSent: 0 };
+
+	const type = opts.rgbw ? TYPE_RGBW32 : TYPE_RGB24;
+
+	return {
+		kind: 'ddp',
+
+		async open() {
+			socket = createSocket('udp4');
+			socket.unref();
+			await new Promise<void>((resolve, reject) => {
+				socket!.once('error', reject);
+				socket!.bind(() => {
+					socket!.off('error', reject);
+					resolve();
+				});
+			});
+		},
+
+		send(frame: LedFrame) {
+			if (!socket) {
+				stats.framesDropped++;
+				return;
+			}
+
+			for (const target of opts.targets) {
+				const byteStart = target.firstLed * 3;
+				const byteLen = target.ledCount * 3;
+				const deviceStart = (target.deviceFirstLed ?? 0) * 3;
+				const port = target.port ?? DDP_PORT;
+
+				for (let sent = 0; sent < byteLen; sent += MAX_DATA) {
+					const len = Math.min(MAX_DATA, byteLen - sent);
+					const isLast = sent + len >= byteLen;
+
+					// A fresh buffer per packet, not a reused one: dgram.send is asynchronous and
+					// does not copy, so a shared buffer gets overwritten by the next iteration
+					// before the kernel reads it and every packet ships the last one's header.
+					const packet = Buffer.allocUnsafe(10 + len);
+
+					// PUSH only on the final packet. Without it WLED renders on every packet
+					// and a 1320-LED frame tears three ways.
+					packet[0] = FLAG_VER1 | (isLast ? FLAG_PUSH : 0);
+					packet[1] = seq;
+					packet[2] = type;
+					packet[3] = ID_DISPLAY;
+					packet.writeUInt32BE(deviceStart + sent, 4);
+					packet.writeUInt16BE(len, 8);
+					packet.set(frame.rgb.subarray(byteStart + sent, byteStart + sent + len), 10);
+
+					try {
+						socket.send(packet, port, target.host);
+						stats.bytesSent += 10 + len;
+					} catch (err) {
+						stats.lastError = (err as Error).message;
+					}
+
+					seq = seq === 15 ? 1 : seq + 1;
+				}
+			}
+
+			stats.framesSent++;
+		},
+
+		async close() {
+			const s = socket;
+			socket = null;
+			if (s) await new Promise<void>((resolve) => s.close(() => resolve()));
+		},
+
+		stats() {
+			return { ...stats };
+		}
+	};
+}
+
+/**
+ * Re-clocks to a steady rate and repeats the last frame when nothing new arrives.
+ *
+ * Three things this buys: WLED never hits its 2500 ms realtime timeout and drop to its
+ * own effects mid-show, a stalled render loop shows one held frame instead of darkness,
+ * and a backgrounded browser tab does not stop the room.
+ */
+export class FixedRateSender {
+	private timer: NodeJS.Timeout | null = null;
+	private last: LedFrame | null = null;
+	private frameId = 0;
+
+	private readonly sink: LedSink;
+	private readonly fps: number;
+
+	constructor(sink: LedSink, fps = 60) {
+		this.sink = sink;
+		this.fps = fps;
+	}
+
+	submit(rgb: Uint8Array, dt: number): void {
+		this.last = { rgb, dt, frameId: this.frameId++, presentAtMs: performance.now() };
+	}
+
+	start(): void {
+		if (this.timer) return;
+		this.timer = setInterval(() => {
+			if (this.last) this.sink.send(this.last);
+		}, 1000 / this.fps);
+	}
+
+	stop(): void {
+		if (!this.timer) return;
+		clearInterval(this.timer);
+		this.timer = null;
+	}
+}
