@@ -11,6 +11,9 @@ import { mean, quantile } from '../packages/analysis/src/dsp/stats.ts';
  */
 const rows = new Map<string, number[]>();
 const perTrack = new Map<string, number[]>();
+/** Per kind: bars, then the drum descriptors a label ought to be able to be read off. */
+const drums = new Map<string, { bars: number; kick: number[]; snare: number[]; kit: number[] }>();
+let allBars = 0;
 let tracks = 0;
 let withBreakdown = 0;
 let breakdownAboveMedian = 0;
@@ -32,6 +35,24 @@ for (const entry of cacheIndex()) {
 	for (const [i, s] of plan.segments.entries()) {
 		if (!rows.has(s.kind)) rows.set(s.kind, []);
 		rows.get(s.kind)!.push(energies[i]);
+
+		if (!drums.has(s.kind)) drums.set(s.kind, { bars: 0, kick: [], snare: [], kit: [] });
+		const d = drums.get(s.kind)!;
+		const n = s.endBar - s.startBar;
+		let kicks = 0;
+		let snares = 0;
+		let played = 0;
+		for (let b = s.startBar; b < Math.min(s.endBar, c.kicks.length); b++) {
+			kicks += c.kicks[b];
+			snares += c.snares[b];
+			if (c.kicks[b] > 0 || c.snares[b] > 0) played++;
+		}
+		d.bars += n;
+		allBars += n;
+		// Per beat rather than per bar, so 4/4 and 3/4 are the same number.
+		d.kick.push(kicks / Math.max(1, n) / c.beatsPerBar);
+		d.snare.push(snares / Math.max(1, n) / c.beatsPerBar);
+		d.kit.push(played / Math.max(1, n));
 		if (s.kind !== 'breakdown') continue;
 		anyBreakdown = true;
 		if (energies[i] > mid) breakdownAboveMedian++;
@@ -62,3 +83,18 @@ console.log(
 	`\ntracks with a breakdown        ${withBreakdown}/${tracks} (${((100 * withBreakdown) / tracks).toFixed(0)}%)`
 );
 console.log(`breakdowns above track median  ${breakdownAboveMedian}`);
+
+// The headline: how much of the corpus each instruction is responsible for, and whether the
+// drums say anything a label could be read off. A kind that is four fifths of every track is
+// one instruction for most of the runtime whatever its energy range looks like.
+console.log(`\n${'kind'.padEnd(12)}${'bars %'.padStart(8)}${'kick/beat'.padStart(11)}${'snare/beat'.padStart(12)}${'kit bars'.padStart(10)}`);
+for (const [kind, d] of [...drums].sort((a, b) => b[1].bars - a[1].bars)) {
+	console.log(
+		kind.padEnd(12) +
+			((100 * d.bars) / Math.max(1, allBars)).toFixed(1).padStart(8) +
+			quantile(d.kick, 0.5).toFixed(2).padStart(11) +
+			quantile(d.snare, 0.5).toFixed(2).padStart(12) +
+			quantile(d.kit, 0.5).toFixed(2).padStart(10)
+	);
+}
+console.log(`\ngroove share of bars\t${((100 * (drums.get('groove')?.bars ?? 0)) / Math.max(1, allBars)).toFixed(1)}`);

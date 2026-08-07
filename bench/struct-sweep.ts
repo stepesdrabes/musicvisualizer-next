@@ -26,6 +26,8 @@ const limit = Number(flag('limit') ?? Infinity);
 interface Row extends SegmentScores {
 	key: string;
 	dataset: string;
+	/** Share of the track's bars carrying the one label that means "going along", 0..1. */
+	grooveShare: number;
 }
 
 const rows: Row[] = [];
@@ -57,9 +59,15 @@ for (const entry of index) {
 	const scored = c.segments.map((ann) => scoreSegments(ann, est));
 	const mean = (pick: (s: SegmentScores) => number) =>
 		scored.reduce((a, s) => a + pick(s), 0) / scored.length;
+	let grooveBars = 0;
+	for (const s of plan.segments) {
+		if (s.kind === 'groove') grooveBars += s.endBar - s.startBar;
+	}
+
 	rows.push({
 		key: c.key,
 		dataset: c.dataset,
+		grooveShare: grooveBars / Math.max(1, bars.count),
 		f05: mean((s) => s.f05),
 		f3: mean((s) => s.f3),
 		pairwiseF: mean((s) => s.pairwiseF),
@@ -78,6 +86,7 @@ writeFileSync(join(dir, `${label}.json`), JSON.stringify({ results: rows }));
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const METRICS: [string, (r: Row) => number, number][] = [
+	['groove share', (r) => r.grooveShare, 100],
 	['boundary F0.5', (r) => r.f05, 100],
 	['boundary F3', (r) => r.f3, 100],
 	['pairwise F', (r) => r.pairwiseF, 100],

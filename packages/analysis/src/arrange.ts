@@ -135,6 +135,41 @@ const BREAKDOWN_STEP = 0.2;
  * an otherwise full arrangement, so the bar's own level has to have gone with it.
  */
 const VOID_RATIO = 0.35;
+/**
+ * How much of the kit has to be missing before a passage is a breakdown rather than a thinner
+ * groove.
+ *
+ * The one test that does not go through level at all, which is the point: a filtered breakdown
+ * can be as loud as the groove around it and still be the passage where the drums stopped.
+ * Measured across 374 tracks, half the bars of a breakdown carry no kick or snare against all
+ * of a groove's, so the two are separated by a wide margin here and not at all by energy.
+ */
+const BREAKDOWN_KIT = 0.62;
+/**
+ * How far the kit has to come back across a boundary for the lift to be a drop.
+ *
+ * Yadati et al. (ISMIR 2014) label the drop as the moment the buildup ends and the bassline is
+ * re-introduced, and add rhythm features to a spectral classifier precisely because the rhythm
+ * switches there. Both halves of that are tested: the kit returns AND the bottom comes with it.
+ */
+const DROP_KICK_STEP = 0.3;
+const DROP_SUB_STEP = 0.2;
+/**
+ * How far the kick has to sit below the drop it leads into for the passage to be a build.
+ *
+ * A build is the one section defined by where it is going rather than by what it contains, and
+ * withdrawing the kick under a climbing snare and noise floor is the form that takes. Its
+ * measured kick density is a quarter below a groove's while its snare is not.
+ */
+const BUILD_KICK_RATIO = 0.85;
+const BUILD_SNARE_RISE = 1.15;
+/**
+ * How full the kit has to be for a repeat of a drop to be lit as one too.
+ *
+ * Just under parity: the same chorus played again is rarely bar-for-bar identical, and asking
+ * for its equal would only ever admit an exact loop.
+ */
+const REPEAT_KICK_RATIO = 0.9;
 const MAX_BUILD_BARS = 16;
 /** The longest a merge may make a section. Four phrases. */
 const MAX_MERGED_BARS = 32;
@@ -166,6 +201,54 @@ export function levelEnvelopes(
 		for (let b = 0; b < count; b++) bands[b * NUM_BANDS + k] = n[b];
 	}
 	return { energy: barEnergy(bands, count, loudnessOn(shortTerm, shortTermFps, time, count)), bands };
+}
+
+/**
+ * What the kit is doing across a segment, each measured against the track's own busiest bars.
+ *
+ * Within-track rather than absolute, because "the drums are full" means full for THIS track: a
+ * drum and bass drop and a folk chorus are each at their own ceiling, and reading one against
+ * the other says nothing about either.
+ */
+interface DrumState {
+	kick: number;
+	snare: number;
+	/** Share of the segment's bars with any of the kit in them at all. */
+	kit: number;
+}
+
+/**
+ * Percussion per segment, and whether there is enough of it to be worth reading.
+ *
+ * `audible` is the guard that keeps a string quartet out of this entirely: with no kit detected
+ * every drum test below is skipped and labelling falls back to the energy it always used. A
+ * detector that fires nowhere would otherwise report the whole track as a breakdown.
+ */
+function readDrums(
+	segments: readonly Segment[],
+	kicksPerBar: Int32Array,
+	snaresPerBar: Int32Array
+): { states: DrumState[]; audible: boolean } {
+	const kickRef = quantile(kicksPerBar, 0.9);
+	const snareRef = quantile(snaresPerBar, 0.9);
+	const states = segments.map((s) => {
+		const hi = Math.min(s.endBar, kicksPerBar.length);
+		let kicks = 0;
+		let snares = 0;
+		let played = 0;
+		for (let b = s.startBar; b < hi; b++) {
+			kicks += kicksPerBar[b];
+			snares += snaresPerBar[b];
+			if (kicksPerBar[b] > 0 || snaresPerBar[b] > 0) played++;
+		}
+		const bars = Math.max(1, hi - s.startBar);
+		return {
+			kick: kickRef > 0 ? kicks / bars / kickRef : 0,
+			snare: snareRef > 0 ? snares / bars / snareRef : 0,
+			kit: played / bars
+		};
+	});
+	return { states, audible: kickRef > 0 || snareRef > 0 };
 }
 
 export function arrange(
@@ -203,35 +286,85 @@ export function arrange(
 	}
 
 	const segEnergy = segments.map((s) => mean(energy, s.startBar, s.endBar));
+	const { states: kit, audible } = readDrums(segments, kicksPerBar, snaresPerBar);
+	const segSub = segments.map((s) => meanBand(bandsN, s.startBar, s.endBar, 0));
 
 	// --- what kind of track is this ------------------------------------------------------
 	// Rekordbox picks a label vocabulary per track before labelling anything, and the reason
 	// is sound: a ballad has no drop, and a track with a drop has no verse. Deciding first
 	// stops the loudest eight bars of a folk song being announced as the drop of the night.
+	//
+	// The kit gets a vote here too. A track whose drums come back all at once has drops whether
+	// or not the master left any level step to see it by, and on this repertoire that is most of
+	// them: everything is limited to within a couple of dB of everything else.
 	let biggestStep = 0;
+	let biggestKickStep = 0;
 	for (let i = 1; i < segments.length; i++) {
 		biggestStep = Math.max(biggestStep, segEnergy[i] - segEnergy[i - 1]);
+		biggestKickStep = Math.max(biggestKickStep, kit[i].kick - kit[i - 1].kick);
 	}
-	const hasDrops = biggestStep >= DROP_STEP;
+	const hasDrops = biggestStep >= DROP_STEP || (audible && biggestKickStep >= DROP_KICK_STEP);
 
 	const body = median(segEnergy);
 	const loudLevel = Math.max(quantile(segEnergy, 0.7), Math.max(...segEnergy) * 0.82);
 
 	for (let i = 0; i < segments.length; i++) {
 		const e = segEnergy[i];
-		if (e >= loudLevel) {
-			// A loud passage is a drop only when something set it up, and only once the track has
-			// had room to establish what it is dropping from. Nothing drops in its first two
-			// phrases; a loud passage there is the groove arriving, which is a different thing
-			// to light.
-			const rose = i > 0 && e - segEnergy[i - 1] >= DROP_STEP;
-			const settled = segments[i].startBar >= 2 * PHRASE_BARS;
-			segments[i].kind = hasDrops && rose && settled ? 'drop' : 'groove';
+		// A loud passage is a drop only when something set it up, and only once the track has
+		// had room to establish what it is dropping from. Nothing drops in its first two
+		// phrases; a loud passage there is the groove arriving, which is a different thing
+		// to light.
+		const settled = segments[i].startBar >= 2 * PHRASE_BARS;
+		const rose = i > 0 && e - segEnergy[i - 1] >= DROP_STEP;
+		// The kit returning with the bottom, which is what the literature actually defines a
+		// drop as. Both halves are required: drums alone come back at the top of a verse too,
+		// and the bass alone is a bassline entry rather than a drop.
+		const kitReturned =
+			audible &&
+			i > 0 &&
+			kit[i].kick - kit[i - 1].kick >= DROP_KICK_STEP &&
+			segSub[i] - segSub[i - 1] >= DROP_SUB_STEP;
+
+		// The level gate is what the drum route exists to get past. A master limited to within a
+		// couple of dB puts most of its passages under the same quantile, so a drop found by the
+		// kit is only asked to be above the body of the track rather than in its top third.
+		const loudEnough = e >= loudLevel || (kitReturned && e >= body);
+
+		if (loudEnough && hasDrops && settled && (rose || kitReturned)) {
+			segments[i].kind = 'drop';
+		} else if (audible && kit[i].kit < BREAKDOWN_KIT && e < loudLevel) {
+			// The kit stopped. Not a level test at all, which is the point: a filtered breakdown
+			// sits at the same loudness as the groove around it and the energy quantile that used
+			// to decide this cannot see it.
+			segments[i].kind = 'breakdown';
 		} else if (e <= body - BREAKDOWN_STEP) {
 			segments[i].kind = 'breakdown';
 		} else {
 			segments[i].kind = 'groove';
 		}
+	}
+
+	// --- repeats ---------------------------------------------------------------------------
+	// Two passages of the same material are the same part of the song, so a repeat of a drop is
+	// a drop. Without this the second chorus is a groove whenever the passage before it happened
+	// to be loud enough to erase the step, and the room then answers the same music two
+	// different ways for no reason anyone in it can hear.
+	//
+	// Guarded by the kit rather than applied blindly, because a stripped reprise IS the same
+	// material played differently and lighting it as a drop is exactly why the real one stops
+	// landing. Repeat identity is a tie-breaker on the drum evidence here, never a substitute
+	// for it: scored on its own across 374 tracks it partitions worse than the labels do.
+	const dropFloor = new Map<number, number>();
+	for (let i = 0; i < segments.length; i++) {
+		if (segments[i].kind !== 'drop' || segments[i].group < 0) continue;
+		const g = segments[i].group;
+		dropFloor.set(g, Math.min(dropFloor.get(g) ?? Infinity, kit[i].kick));
+	}
+	for (let i = 0; i < segments.length; i++) {
+		const floor = dropFloor.get(segments[i].group);
+		if (segments[i].kind !== 'groove' || floor === undefined) continue;
+		if (segments[i].startBar < 2 * PHRASE_BARS) continue;
+		if (audible && kit[i].kick >= floor * REPEAT_KICK_RATIO) segments[i].kind = 'drop';
 	}
 
 	// A track with dynamics has a peak whether or not the step test caught it.
@@ -258,28 +391,44 @@ export function arrange(
 	}
 
 	// --- builds --------------------------------------------------------------------------
-	// Bounded by the previous boundary rather than by walking back until the evidence runs
-	// out: the segmentation already found where this passage began, and a build that starts
-	// mid-section is a build the detector invented.
+	// The one section defined by where it is going rather than by what it contains, so it is
+	// read backwards from the drop it points at and nowhere else.
+	const looksLikeBuild = (p: number, drop: number): boolean => {
+		const prev = segments[p];
+		const airBefore = meanBand(bandsN, prev.startBar, prev.endBar, 3);
+		const airEarlier = meanBand(bandsN, Math.max(0, prev.startBar - 8), prev.startBar, 3);
+		const climbing = airBefore > airEarlier * 1.08;
+		const withdrawn = segSub[p] < segSub[drop] * 0.8;
+		// What the kit says about the same passage: the kick pulls out under the drop it is
+		// leading into while the snare climbs into it, which is the roll every genre uses. Both
+		// halves are required, because a segment merely quieter than the drop is most segments.
+		const kickHeld = audible && kit[p].kick < kit[drop].kick * BUILD_KICK_RATIO;
+		const snareClimbing =
+			audible && p > 0 && kit[p].snare > kit[p - 1].snare * BUILD_SNARE_RISE;
+		return climbing || withdrawn || (kickHeld && snareClimbing);
+	};
+
 	for (let i = 1; i < segments.length; i++) {
 		if (segments[i].kind !== 'drop') continue;
 		// Past a void, because a gap between the build and the drop is the oldest arrangement
 		// there is and the build is the passage before it, not the silence.
 		let p = i - 1;
 		while (p > 0 && segments[p].kind === 'void') p--;
-		const prev = segments[p];
-		if (prev.kind === 'drop' || prev.kind === 'void') continue;
-		if (prev.endBar - prev.startBar > MAX_BUILD_BARS) continue;
 
-		const drop = segments[i];
-		const airBefore = meanBand(bandsN, prev.startBar, prev.endBar, 3);
-		const airEarlier = meanBand(bandsN, Math.max(0, prev.startBar - 8), prev.startBar, 3);
-		const subBefore = meanBand(bandsN, prev.startBar, prev.endBar, 0);
-		const subDrop = meanBand(bandsN, drop.startBar, drop.endBar, 0);
-
-		const climbing = airBefore > airEarlier * 1.08;
-		const withdrawn = subBefore < subDrop * 0.8;
-		if (climbing || withdrawn) prev.kind = 'build';
+		// Walked back rather than tested once. A segmenter that split a sixteen-bar riser in
+		// two leaves only its second half touching the drop, and stopping at the first segment
+		// calls the rest of the climb a groove. Bounded in bars, so the walk cannot swallow the
+		// verse: a build that runs longer than four phrases is the arrangement, not a build.
+		let bars = 0;
+		while (p >= 0) {
+			const prev = segments[p];
+			if (prev.kind === 'drop' || prev.kind === 'void' || prev.kind === 'build') break;
+			bars += prev.endBar - prev.startBar;
+			if (bars > MAX_BUILD_BARS) break;
+			if (!looksLikeBuild(p, i)) break;
+			prev.kind = 'build';
+			p--;
+		}
 	}
 
 	// --- intro and outro -----------------------------------------------------------------
