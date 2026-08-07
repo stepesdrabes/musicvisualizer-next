@@ -196,11 +196,171 @@
 	<div class="meta">
 		<span><b>764</b> annotated tracks</span>
 		<span><b>48</b> defects catalogued</span>
-		<span><b>19</b> fixed and measured</span>
+		<span><b>29</b> fixed and measured</span>
 		<span>corpus: GTZAN &middot; GiantSteps &middot; Harmonix &middot; SALAMI</span>
 	</div>
 <div class="legend"><span><b>green</b> = fixed and verified this session</span><span>everything else is open</span></div>
 </header>
+
+<h2 class="done">A dark room, and the two bugs behind it</h2>
+<p class="lede">Reported from the app: a track loaded, the timeline and the arrangement drew, and the room stayed black with "Track ready" on screen. Two separate faults, one of them mine and one of them a failure mode that has been waiting there all along.</p>
+<div class="callout">
+	<p><b>The planner sized a hit at one bar and placed it at another.</b> A strobe's length is capped in seconds; the cap was evaluated with <code>barDurationAt</code> at the bar the strobe was measured from, and the hit was then written a bar earlier. On a grid that drifts by a per cent - which is every real track, and 16% of the corpus by more - the two disagree, so the engine wrote a strobe of <span class="num">3.02 s</span> against its own 3.0 s cap. Both sides now call one function, <code>hitSeconds</code> in <code>grid.ts</code>, which reads the span off the bar table. The same class of defect as the two clocks the first pass found, and the same fix: one place owns the arithmetic.</p>
+	<p><b>And the app discards a show the linter rejects, without saying so.</b> <code>if (!verdict.ok) show = null</code> in the ingest route, which leaves the room dark and the panel reading "No show yet" - no error, no finding, nothing to act on. A show with one over-long strobe in it is strictly better than no show at all, and a rejection the user cannot see is worse than either. This has not been changed here, because what an invalid show should do is a product decision rather than a bug fix, but it is the reason a small planner defect presented as a completely dead application.</p>
+	<p><b>The guard.</b> <code>composeShow</code> now has to survive its own linter across seven tempos from 58 to 175 bpm, on flat grids and on grids jittered a few per cent per bar, twelve seeds each. The jitter matters and a smooth ramp does not: the fault only appears where neighbouring bars fall on OPPOSITE sides of a cap, so the first two versions of this test passed against the broken code. It was only worth keeping once it failed against it.</p>
+</div>
+
+<h2 class="done">The sixth pass: the room was blinking, and it was my fault</h2>
+<p class="lede">The reactive work made the quiet passages shimmer. Reported by eye, confirmed by measurement, and fixed by removing the three separate routes through which continuous music-driven signals were reaching brightness.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">intro ripple</div><div class="v" style="color:var(--good)">1.04</div><div class="s">peaked at 4.09, was 1.35</div></div>
+	<div class="card"><div class="k">outro ripple</div><div class="v" style="color:var(--good)">1.13</div><div class="s">peaked at 3.60, was 0.93</div></div>
+	<div class="card"><div class="k">breakdown ripple</div><div class="v" style="color:var(--good)">1.23</div><div class="s">was 2.12</div></div>
+	<div class="card"><div class="k">drop ripple</div><div class="v">27.9</div><div class="s">untouched, as asked</div></div>
+	<div class="card"><div class="k">delivered contrast</div><div class="v" style="color:var(--good)">3.19x</div><div class="s">was 2.85</div></div>
+	<div class="card"><div class="k">outro change on a beat</div><div class="v" style="color:var(--good)">50%</div><div class="s">fell to 33%, was 57%</div></div>
+</div>
+
+<h3>The metric had to be built before anything could be said</h3>
+<p>Neither mean brightness nor frame-to-frame change can see a blink: a slow swell moves every pixel every frame and looks calm, while a shimmer of a few bytes is invisible in an average. The second difference is no better, because it cannot tell jitter from the curvature of a swell - the same mistake <code>shape</code> made in the pass before. What works is a high-pass: subtract each pixel's own quarter-second average and take what is left. <b>Ripple</b> is that residual, in bytes. It is blind to a swell of any speed or shape and sees nothing else.</p>
+
+<h3>Three routes, all of them continuous, all of them into brightness</h3>
+<ul>
+	<li><b>The spectrum drove brightness.</b> Each band is normalised across the whole track, so a quiet intro's bass sits at <span class="num">byte 166 of 255</span> - the encoding says loud where the music is quiet - and every band carries <span class="num">5-8 bytes of jitter per frame</span> at 50 fps. Effects now spend the spectrum on COLOUR and POSITION only. Brightness comes from the section, the cue and the bar table.</li>
+	<li><b>Nothing was latched to the grid.</b> <code>BeatHold</code> in the DSL reads its input once per beat and holds it, with a glide measured in beats: long for a position so it arrives, short for a colour so it steps. Every change the room makes now lands on a beat by construction.</li>
+	<li><b><code>f.energy</code> is beat-resolution data that the player interpolates per frame</b>, so a brightness multiplied by it slides continuously - the same shimmer by another route, and the one that survived the first two fixes. Latched in the six effects that can appear in a quiet cue.</li>
+</ul>
+
+<div class="callout">
+	<p><b>The largest single cause was an idiom used in the wrong place.</b> <code>fadeToBlack</code> plus <code>addSample</code> keeps a fraction of the last frame and adds the full pattern on top, which is exactly right for trails and sparks. For a field that MOVES it leaves a lagging edge on every pixel the pattern crosses, and that edge ripples at the frame rate however slowly the pattern itself travels. Measured alone on a real intro, <code>bandBloom</code> rippled at <span class="num">4.23</span> bytes and <code>harmonicRibbon</code> at <span class="num">3.91</span>, against 0.72 for the worst bed in the catalog. Both are steady fields and both now write every pixel every frame; that one change took the intro from 4.09 to 1.12.</p>
+	<p>Two smaller things went with it: a breakdown drew its accent from the same pool as a drop, so a passage with the drums taken out could be lit by stage blinders (ripple 2.32), and the quiet sections' <code>motion</code> was still 0.55-0.7 where the instruction was "nearly still". They are 0.24-0.34 now.</p>
+</div>
+
+<h2 class="done">The fifth pass: what a photograph of the room showed</h2>
+<p class="lede">Three complaints from watching an actual show, one of which turned out to be a defect underneath every effect in the catalog at once. All of them were found by building the instrument first: <code>bench/effectprobe.ts</code> runs each built-in alone through the real mixer and reports what share of the room it lights, how much of that light sits in the brightest tenth of the pixels, how much of it lands on a hue the palette could produce, and how far its output moves when the music is driven rather than held flat.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">slot colour error</div><div class="v" style="color:var(--good)">0.000</div><div class="s">RGB, was up to 0.19</div></div>
+	<div class="card"><div class="k">lit bytes on a declared hue</div><div class="v" style="color:var(--good)">99.4%</div><div class="s">was 97.4</div></div>
+	<div class="card"><div class="k">longest blackout</div><div class="v" style="color:var(--good)">2.1 s</div><div class="s">was a 4-beat bar, 3.1 s</div></div>
+	<div class="card"><div class="k">dimmest wall vs brightest</div><div class="v" style="color:var(--good)">1.88x</div><div class="s">mean, quiet sections</div></div>
+	<div class="card"><div class="k">effects miscalling themselves</div><div class="v" style="color:var(--good)">0</div><div class="s">7 were, now tested</div></div>
+	<div class="card"><div class="k">catalog</div><div class="v" style="color:var(--good)">62</div><div class="s">5 added, 1 deleted</div></div>
+	<div class="card"><div class="k">looks per show</div><div class="v" style="color:var(--good)">31.3</div><div class="s">distinct, was 27.0</div></div>
+	<div class="card"><div class="k">tests</div><div class="v" style="color:var(--good)">364</div><div class="s">all green</div></div>
+</div>
+
+<h3>Every effect was being handed the wrong colour</h3>
+<p>The palette is a ring of anchors that effects sample by named slot, and the slots sat at 0.06, 0.22, 0.38, 0.5, 0.64, 0.8 and 0.94 on a ring of <b>16</b>. Only one of those is a whole anchor. <code>SLOT.accent</code> fell at position 12.8, so asking for the accent returned four fifths of an anchor already fading toward <code>accentDeep</code> blended with one fifth of an anchor sitting 69% of the way from the third hue toward it: up to <b>0.19 of RGB distance</b> from the colour the show declared, on the one slot a drop is lit with.</p>
+<p>Fifty anchors, and every slot lands exactly on one. Measured against <code>hsv2rgb</code> of the declared hue directly, the error is now <span class="num">0.000</span> at every slot for every palette tested, and there is a test asserting it. The share of lit bytes on a hue the palette could produce went from <span class="num">97.4%</span> to <span class="num">99.4%</span> across the cache.</p>
+<div class="callout">
+	<p><b>What this was NOT.</b> The first measurement said the declared accent hue appeared nowhere on the ring, out by up to 37 degrees. That is <code>hsv2rgb</code> doing its documented job: it is FastLED's rainbow ramp, not textbook HSV, with a widened yellow band because textbook HSV reads wrong on LEDs. Comparing the ring against the ramp's own output rather than against a hue angle is what separated the real defect from the deliberate one, and the ramp was left alone.</p>
+</div>
+
+<h3>A bar of black is four beats</h3>
+<p>The fourth pass fixed a held breath that ended mid-bar by making it a whole bar, which at the tempos this repertoire actually sits at is <b>three seconds of nothing</b>. That is the same mistake at the other end.</p>
+<p>Punctuation is now counted in whole BEATS rather than whole bars, and the rule is that a hit touches a downbeat at one end or the other. A gesture whose whole job is the thing that follows it may start inside its bar, which is the only way to be short and still land exactly on the drop: at 77 bpm the held breath is now two beats and 1.6 s, at 128 bpm four beats and 1.9 s. Longest blackout in the cache <span class="num">3.1 s to 2.1 s</span>, median <span class="num">0.75 bars</span>. All <span class="num">200</span> planned hits still fire and every show still lints clean.</p>
+
+<h3>Only part of the room lit up</h3>
+<p>A photograph of an intro showed a bright ceiling beam over near-black walls. The cue was a bed and one accent, and both were measured afterwards: the accent lit 28% of the room with nearly half its output in the brightest tenth of the pixels, and it declared <code>carries: true</code>. So did six others that could not.</p>
+<p><code>carries</code> is what the planner trusts when it picks the single texture over a bed in a quiet cue, so a false claim there is not a documentation slip, it is a dark room. Seven were corrected from measurement, and a test now holds the metadata to it: a bed claiming to carry must light at least 22% of the room, keep under a third of its light in the brightest tenth, and leave its dimmest wall no worse than 35% of its brightest.</p>
+<table>
+	<thead><tr><th>Corrected to <code>carries: false</code></th><th>why, measured</th></tr></thead>
+	<tbody>
+		<tr><td><code>vocalGlow</code></td><td>a front-wall spotlight: 28% lit, 46% of it in a tenth of the pixels</td></tr>
+		<tr><td><code>emberStorm</code></td><td>sparks: 19% lit, 74% concentration</td></tr>
+		<tr><td><code>buildStrobe</code></td><td>a strobe is what happens to a lit room, not what lights it</td></tr>
+		<tr><td><code>aurora</code>, <code>lavaBlobs</code>, <code>iridescence</code></td><td>curtains and blobs: 32-37% of their light in a tenth of the pixels, gaps between</td></tr>
+		<tr><td><code>bassRing</code></td><td>the dark ceiling beam is the look, and one of five strips is off at all times</td></tr>
+	</tbody>
+</table>
+<p>Five effects were added to refill the pool, all of them driven by the spectrum or the beat grid rather than by drums, because the passages that were dark are the ones with no drums in them: <code>harmonicHaze</code> (a noise field whose grain follows how busy the mix is, 88% of the room), <code>phraseArc</code> (a swell that completes on the phrase, 79%), <code>bandBloom</code> (low, middle and top of the mix as three overlapping fields, 95%), <code>breathe</code> (a two-bar cycle for passages that should feel held), and <code>spectrumRings</code>. <code>spectrumBed</code> was fixed: it lit <span class="num">4%</span> of the room, because its quiet end sat below the authoring value of 0.335 that gamma 2.2 puts at byte 24.</p>
+
+<div class="callout">
+	<p><b>One effect was deleted rather than repaired.</b> <code>tideline</code> was written as a waterline rising up the walls, and the room has no vertical extent: every strip sits at the wall/ceiling junction, so the coordinate it was reading is floor-plan depth, not height. It lit the south wall and left the north wall at byte 0.1 at every tide. The premise was wrong for this room, so it went.</p>
+	<p><b>And one metric was wrong, which is worth recording because it flattered the fourth pass.</b> `shape`, the fourth pass's measure of "the room has structure", is mean absolute deviation across the frame, and a bright beam over dark walls scores <em>high</em> on it. It cannot tell structure from patchiness. The measure that answers the actual complaint is the dimmest strip against the brightest, which is <span class="num">1.88x</span> on average across the quiet sections of 24 tracks and <span class="num">5.2x</span> on the worst of them, down from 7.5x. That worst case is still open.</p>
+</div>
+
+<h2 class="done">The fourth pass: arrangement, reactivity, punctuation</h2>
+<p class="lede">Three complaints that survived the third pass, each one a thing the owner could see in the room rather than a number on a page. All three are closed and measured; one of them is closed with a cost, recorded below rather than buried.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">bars labelled groove</div><div class="v" style="color:var(--good)">60.6%</div><div class="s">was 78.0, 374 SALAMI</div></div>
+	<div class="card"><div class="k">boundary F0.5</div><div class="v" style="color:var(--good)">13.6%</div><div class="s">was 13.5</div></div>
+	<div class="card"><div class="k">boundary F3</div><div class="v" style="color:var(--good)">31.3%</div><div class="s">was 31.0</div></div>
+	<div class="card"><div class="k">pairwise F</div><div class="v" style="color:var(--high)">53.0%</div><div class="s">was 53.8, the cost</div></div>
+	<div class="card"><div class="k">full-run check</div><div class="v">13.6 / 31.3 / 53.3</div><div class="s">7m36s from audio</div></div>
+	<div class="card"><div class="k">quiet-section shape</div><div class="v" style="color:var(--good)">21.5</div><div class="s">bytes of spread, was 7.1</div></div>
+	<div class="card"><div class="k">delivered contrast</div><div class="v" style="color:var(--good)">2.91x</div><div class="s">was 2.63 on this cache</div></div>
+	<div class="card"><div class="k">hits off the bar grid</div><div class="v" style="color:var(--good)">0/100</div><div class="s">43 of 91 were part-bar</div></div>
+	<div class="card"><div class="k">longest strobe</div><div class="v" style="color:var(--good)">3.0 s</div><div class="s">was 8.4</div></div>
+	<div class="card"><div class="k">tests</div><div class="v" style="color:var(--good)">341</div><div class="s">all green</div></div>
+</div>
+
+<h3>The arrangement now comes from the drums</h3>
+<p><code>arrange()</code> received <code>kicksPerBar</code> and <code>snaresPerBar</code> and spent them on three event tags while every label was decided by an energy quantile. Four fifths of every track came out <span class="num">groove</span>, so the show had one instruction for most of its runtime.</p>
+<p>The kit turns out to separate the vocabulary cleanly, and the separation was measured before anything was built. Per beat, across 374 tracks: a drop carries <span class="num">1.69</span> kicks and <span class="num">1.41</span> snares, a groove <span class="num">1.44</span> and <span class="num">1.00</span>, a build <span class="num">1.06</span> and <span class="num">0.63</span>, and half a breakdown's bars carry no kit at all against all of a groove's. Three rules follow directly, and each was measured on its own:</p>
+<ul>
+	<li><b>A breakdown is where the kit stops</b>, not where the level drops. The one test in the labeller that goes nowhere near loudness, which is the point: a filtered breakdown sits at the same loudness as the groove around it. Worth <span class="num">1.5 points</span> of groove share and <span class="num">+0.1</span> of pairwise F: free.</li>
+	<li><b>A build is read backwards from the drop it points at</b>, and now walks back through more than one segment while the trajectory holds. A segmenter that split a sixteen-bar riser in two left only its second half touching the drop, and the rest was called groove. Free on every metric.</li>
+	<li><b>A drop is where the kit returns with the bottom.</b> Yadati et al. (ISMIR 2014) define the drop as the moment the buildup ends and the bassline is re-introduced, and add rhythm features to a spectral classifier precisely because the rhythm switches there; both halves are required here. This is the expensive one: <span class="num">11 points</span> of groove share for <span class="num">0.8</span> of pairwise F.</li>
+</ul>
+<p>A fourth rule came out of the research question about <code>SectionSpan.group</code>: <b>a repeat of a drop is a drop</b>, guarded by the kit so a stripped reprise is not promoted. Worth <span class="num">7.6 points</span> of groove share, <span class="num">+0.2</span> of F0.5 and <span class="num">+0.2</span> of F3 for <span class="num">0.3</span> of pairwise.</p>
+
+<div class="callout">
+	<p><b>Repeat identity should not decide labels on its own, and that was settled by measurement rather than by argument.</b> Scoring <code>SectionSpan.group</code> directly as the pairwise partition over 374 tracks gives <span class="num">49.2%</span> against the seven-value lighting vocabulary's <span class="num">53.8%</span>. The grouper is less reliable than the labeller, so identity is used here as a tie-breaker on drum evidence and never as a substitute for it.</p>
+	<p><b>The pairwise cost is real and it is a trade, not a defect.</b> Per track: 103 score worse, 206 unchanged, 65 better, with comparable magnitudes at both ends. The dial is <code>DROP_KICK_STEP</code> in <code>arrange.ts</code>; at 9 the drum route is off and the numbers are groove <span class="num">66.1%</span> with pairwise <span class="num">53.6%</span>. It sits at 0.3. Worth remembering that SALAMI is folk, jazz and classical as well as dance, and this rule is written for a repertoire where the kit returning IS the chorus.</p>
+	<p>All the figures above are from the frozen-cache sweep, which is the instrument the <span class="num">13.5 / 31.0 / 53.8</span> targets were themselves measured with. The full 7m36s run from audio confirms them independently at <span class="num">13.6 / 31.3 / 53.3</span>: the two paths differ slightly because the full run re-derives the drum detection and the void carving that the sweep freezes, and the pairwise cost comes out smaller by that route, not larger.</p>
+</div>
+
+<h3>Effects that react to what is playing</h3>
+<p>The complaint, verbatim: "when there are no drums/kicks in intro, the effects are just plain color with a little drift, nothing fancy." Accurate, and unfixable with what the contract carried - four band numbers at beat resolution cannot describe a chord, a filter opening or a melody.</p>
+<p><code>TrackAnalysis.spectrum</code> is new: <span class="num">20</span> log-spaced bands from 35&nbsp;Hz to 13.7&nbsp;kHz at <span class="num">50&nbsp;fps</span>, each normalised against its own distribution across the track exactly as the four contract bands are. Stored as one byte per value in a single base64 string, because a four-minute track is a quarter of a million values and pretty-printed JSON numbers would be a megabyte and a quarter of a million lines; as shipped it is <span class="num">178&nbsp;kB</span> for a 137-second track. <code>ANALYSIS_VERSION</code> 6 to 7.</p>
+<p>What that buys is measurable without watching anything. <code>bench/levelprobe.ts</code> gained two columns: <b>move</b>, how many bytes the average pixel changes frame to frame, and <b>shape</b>, how far the pixels differ from each other within one frame. "Plain colour with a little drift" is a passage with a respectable mean byte and nothing in either column.</p>
+
+<table>
+	<thead><tr><th>Quiet sections</th><th style="text-align:right">before</th><th style="text-align:right">after</th></tr></thead>
+	<tbody>
+		<tr><td>shape (spread across the room, bytes)</td><td class="n">7.1</td><td class="n delta-up">21.5</td></tr>
+		<tr><td>intro shape</td><td class="n">8.1</td><td class="n delta-up">23.3</td></tr>
+		<tr><td>outro shape</td><td class="n">5.1</td><td class="n delta-up">23.4</td></tr>
+		<tr><td>move (bytes per frame)</td><td class="n">0.30</td><td class="n delta-up">0.47</td></tr>
+		<tr><td>drop-to-quiet contrast</td><td class="n">2.63x</td><td class="n delta-up">2.91x</td></tr>
+		<tr><td>mean byte, quiet</td><td class="n">43.6</td><td class="n">35.7</td></tr>
+	</tbody>
+</table>
+
+<p>Three times the spatial structure in the passages that had none, and contrast <em>improved</em> rather than being spent to buy it. Two new effects (<code>spectrumBed</code> lays the room out low-to-high; <code>harmonicRibbon</code> follows the spectral centroid and tightens as the mix thins to one voice), three reworked (<code>vuTowers</code> gives every strip its own column instead of one drive and a hashed bias, <code>chorusBloom</code> and <code>ambientDrift</code> gained a breath of spectrum), and five DSL helpers that are also vocabulary for generated effects: <code>bandAt</code>, <code>bandBetween</code>, <code>spectrumPeak</code>, <code>spectralTilt</code>, <code>spectrumFocus</code>.</p>
+
+<div class="callout">
+	<p><b>The loose end the third pass left is closed properly.</b> A quiet cue's accent is now required to carry, which was tried before and reverted because exactly one accent in the catalog qualified. There are now two for an intro and two for an outro, so the rule can be what it should always have been: the second layer of a thin cue is a layer.</p>
+	<p><b>And the house floor came down with it.</b> <code>SECTION_FLOOR</code> for the quiet three was cut by about a third, because it existed to compensate for cues whose second layer emitted nothing. A compensation left in place after the thing it compensated for is fixed is contrast spent for no reason - the room reads the difference between a verse and a drop, not the absolute level of either. Every quiet section still sits above byte 32 at 99-100% coverage.</p>
+</div>
+
+<h3>Punctuation that lands where the music does</h3>
+<p>Strobes too long, some starting early, and a blackout that ended before the phrase change it existed to set up. All three were in <code>planHits</code>, and the last one was written down: the held-breath blackout ran <code>max(1, round(beatsPerBar / 2))</code> beats from the bar before a drop, so the room came back <b>mid-bar, before the downbeat</b>.</p>
+<p>The rules are now in the contract and enforced by the linter, so they cannot regress:</p>
+<ul>
+	<li><b>Every hit starts on a downbeat and lasts a whole number of bars</b>, so it also ends on one. <span class="num">43 of 91</span> planned hits were a fractional number of bars long; now none are.</li>
+	<li><b>Every hit is anchored to something audible</b>: the 4-bar grid, a boundary the analyser measured, a crash in the audio, or the gesture it hands over to. That last clause is what makes strobe&nbsp;&rarr;&nbsp;black&nbsp;&rarr;&nbsp;slam one figure in three parts rather than three loose hits, and without it the run into a drop is unplaceable, because only its final part lands on a downbeat anyone is counting.</li>
+	<li><b>The pre-drop blackout runs to the drop downbeat.</b> A whole bar, ending exactly there. <span class="num">12 of 14</span> ended early; now none do.</li>
+	<li><b>A strobe is capped in bars and in seconds.</b> Two bars and 3.0&nbsp;s, because a bar is 1.4&nbsp;s at 175&nbsp;bpm and 3&nbsp;s at 80 and the complaint was about how long it felt. The longest strobe in the cache was <span class="num">8.4&nbsp;s</span> and is now <span class="num">3.0</span>. Where one bar already exceeds the cap, no strobe is placed: a tempo that cannot fit a bar of it inside three seconds should not be strobing.</li>
+</ul>
+<p>Six new linter rules carry this: <code>hit-off-downbeat</code>, <code>hit-part-bar</code>, <code>hit-too-long</code>, <code>hit-too-long-in-seconds</code>, <code>unanchored-hit</code>, <code>blackout-ends-early</code>. Every engine-composed show in the cache lints with zero errors and all <span class="num">100</span> planned hits still fire.</p>
+
+<div class="callout">
+	<p><b>One documented decision was deliberately reversed, and it is worth saying which.</b> A test asserted the linter does not limit strobe length, alongside flash rate, budget and minimum gap. Length is now capped and the other three are not, because they are different questions: the rate is the safety dial and belongs to <code>FlashLimiter</code> and WCAG 2.3.1, while the length is taste - a strobe that outlasts the phrase it points at has stopped being punctuation whatever rate it runs at. Nothing in <code>FlashLimiter</code> was touched.</p>
+	<p>A side effect worth recording: shorter strobes mean the flash limiter engages on <span class="num">5.7%</span> of frames rather than <span class="num">7.2%</span>. The limiter was quietly attenuating the back half of every long strobe, so the extra seconds were buying fatigue rather than brightness.</p>
+</div>
+
+<div class="callout">
+	<p><b>Nothing here moved the grid, and that was checked rather than assumed.</b> The full 764-track tempo, beat, downbeat and meter run comes back <b>exactly flat</b>: all thirteen metrics at <span class="num">+0.0pp</span> against the baseline, tempo Acc1 <span class="num">74.7%</span>, Acc2 <span class="num">94.9%</span>, beat F <span class="num">78.1%</span>, downbeat F <span class="num">49.8%</span>, meter <span class="num">89.9%</span>. End to end on the shipped cache: <span class="num">100 of 100</span> planned hits fire, every engine-composed show lints with <span class="num">zero errors</span>, no built-in is left unplaced, <span class="num">97.4%</span> of lit bytes sit on a hue the frame's palette could produce, and <span class="num">341</span> tests pass.</p>
+</div>
+
+<div class="callout">
+	<p><b>Three things were tried, measured and reverted</b>, on top of the three the last pass recorded. <b>Extending intro and outro</b> through the leading and trailing run of quiet segments took groove share down another 2.7 points and cost 0.5 of pairwise, and the giveaway was in the drum profile: the extended intros came out at <span class="num">1.07</span> kicks per beat against a real intro's 0.78, which is groove density wearing an intro's label. <b>A minimum length for a drum-found drop</b> was built on the theory that promoting a short segment fragments a passage the annotation hears as continuous; swept from 0 to 12 bars it moved pairwise by less than 0.2 in either direction, so the theory was wrong and the constant came out. <b>Raising <code>LAMBDA</code></b> from 1.1 to 2.2, which the brief offered as a way to bring the section count down toward the annotated 11.7, cost <span class="num">1.5 points</span> of F0.5 and lowered pairwise as well, so fewer segments is not what the pairwise loss wanted.</p>
+</div>
 
 <h2>The instrument</h2>
 <p>Nothing below is judged by eye. <code>bench/metrics.ts</code> reimplements mir_eval 0.8 (maximum-bipartite F at 70 ms, CMLt/AMLt at 0.175, MIREX Acc1/Acc2, 5 s trim) and was validated against degenerate cases: a perfect estimate scores 1.0, double-time scores CMLt 0 and AMLt 1.0, an offbeat estimate scores F 0.</p>
@@ -565,6 +725,7 @@
 	<li><b>Settled by ear, because nothing else could:</b> metrical level on the disputed tracks. <code>bench/clicktest.ts</code> pans the two candidate grids hard apart at different pitches, so where they agree the clicks fuse and where they disagree they separate.</li>
 	<li><b>Still by eye:</b> whether the light feels right. <code>bench/render.ts</code> renders any show to video with its own audio muxed, from the same mixer bytes the LEDs receive, which is how the 4.85 s drift was confirmed as visible rather than merely tabulated. <code>bench/flashprobe.ts</code> is the readable version: the kick band's envelope and the show's <code>kickEnv</code> printed side by side, frame by frame, so a flash that lands late shows up as a lagging column rather than as a feeling.</li>
 	<li><b>Newly measured in the third pass:</b> colour identity, by taking the hue of every lit byte the LEDs receive and asking whether the palette the effect was handed that frame could have produced it; delivered contrast, as the drop-to-quiet ratio of those same bytes undone through gamma; catalog reach and peak variety over 380 seeded shows; and which planned hits ever actually reach the room. <code>bench/flashprobe.ts</code> is the readable form of the render check: the kick band's envelope and the show's <code>kickEnv</code> printed side by side, frame by frame, so a flash that lands late shows as a lagging column rather than as a feeling.</li>
+	<li><b>Newly measured in the fourth pass:</b> what each section label means in DRUMS rather than in energy, per beat and per track, which is what said the seven-value vocabulary was recoverable from the kit before any of it was built (<code>bench/labelprobe.ts</code>); how much the room MOVES and how much SHAPE it has, as bytes of frame-to-frame change and of within-frame spread, which is the only way "plain colour with a little drift" is a number rather than an opinion (<code>bench/levelprobe.ts</code>); and where punctuation starts, how long it holds the room in bars and in seconds, and whether the linter still rejects the things it is supposed to (<code>bench/punctprobe.ts</code>, which runs the real linter rather than reimplementing its rules, so a rule that quietly stops being enforced shows up as a number instead of as silence).</li>
 	<li><b>Iteration cost, which decided how much of this was possible:</b> a full SALAMI pass is 7 minutes 36 seconds, and almost all of it is decode, spectrogram and beat tracking, none of which any change to the segmenter can touch. Freezing everything upstream of the bar table to disk turned that into <b>4.4 seconds</b>, reproducing the full run's figures exactly, which is the difference between sweeping four constants and sweeping forty.</li>
 </ul>
 
