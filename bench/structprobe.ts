@@ -25,10 +25,10 @@ for (const id of process.argv.slice(2)) {
 	const m = detectMeter(bf);
 	const bars = barSynchronous(bf, m.beatsPerBar, m.phase);
 	const sim = similarityMatrix(bars);
-	const bounds = segmentBars(sim, bars.count);
+	const bounds = segmentBars(sim, bars);
 	const groups = groupSegments(sim, bars.count, bounds);
 
-	const det = detectDrums(f.spec, { beatPeriod: g.beatPeriod });
+	const det = detectDrums(f.spec, { beatPeriod: g.beatPeriod, odf: f.odf });
 	const q = (t: number[]) => quantiseOnsets(t, { beats: g.beats, beatsPerBar: m.beatsPerBar, duration: audio.duration });
 	const kicks = new Int32Array(bars.count), snares = new Int32Array(bars.count);
 	const count = (times: number[], out: Int32Array) => { for (const t of times) { for (let b = 0; b < bars.count; b++) if (t >= bars.time[b] && t < bars.time[b + 1]) { out[b]++; break; } } };

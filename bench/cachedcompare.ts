@@ -44,7 +44,7 @@ for (const id of ids) {
 	if (Number.isFinite(g0)) { const g = Math.min(g0, 40); for (let i = 0; i < mono.length; i++) mono[i] *= g; }
 	const f = extractFeatures(mono, audio.sampleRate);
 	const cur = detectBeats(f.odf, f.curves.fps, audio.duration, {});
-	const kicks = detectDrums(f.spec, { beatPeriod: cur.beatPeriod }).kick;   // raw, unquantised
+	const kicks = detectDrums(f.spec, { beatPeriod: cur.beatPeriod, odf: f.odf }).kick;   // raw, unquantised
 	const bt = await model.run(audio.mono);
 
 	const hc = hug(kicks, Array.from(cur.beats));
