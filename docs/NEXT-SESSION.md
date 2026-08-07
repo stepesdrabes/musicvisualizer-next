@@ -1,272 +1,282 @@
-# Implementation session: finish the analysis and mixing overhaul
+# Handover, and the brief for the next session
 
-Paste everything below the line as the opening prompt for a fresh session.
+The state of the repo as of commit `8dd074f`, and then a prompt to paste. Everything below
+the line is the prompt; everything above it is for you.
+
+## Where things stand
+
+Three commits landed this session, on `master`:
+
+- `edb0cd1` the analysis and mixing overhaul
+- `11dc2ef` the bench probes each change was decided by
+- `8dd074f` the audit page
+
+321 tests green, `npm run check` clean, every engine-composed show lints with zero errors.
+`ANALYSIS_VERSION` is 6 and `SHOW_VERSION` is 2, so any cached blob older than this session
+re-analyses on load.
+
+`docs/analysis-audit.html` is the running record. Twenty-nine findings carry a green "fixed"
+chip and the number they became; three attempts that were tried, measured and reverted are
+written up beside them rather than dropped.
+
+**Your cache currently holds about five tracks**, because you cleared it and re-ingested during
+the session. `node bench/reingest.ts --shards 2` re-analyses and re-composes whatever is in
+`cache/` in place, keeping ids. It takes roughly ten minutes for nineteen tracks.
+
+## What the next session is for
+
+You asked for three things, and the decisions you made on each are baked into the prompt:
+
+1. **Sections driven by the drums**, keeping the seven lighting kinds and detecting them better
+   rather than adding a song-structure vocabulary. Research first.
+2. **A per-frame spectrum in the contract** so effects can be genuinely reactive, and the effect
+   catalog rewritten freely to use it. `author-ai` stays out of scope.
+3. **Hard timing rules for punctuation**, enforced in the linter so they cannot regress.
+
+Two facts were measured for the brief rather than guessed, and both are stronger than they
+looked from the room: **78% of all bars come out `groove`**, not the 50% you estimated, and
+**55 of 91 hits start off the 4-bar grid** with 43 of 91 not a whole number of bars long.
 
 ---
 
-You are continuing an overhaul of music analysis and effect mixing in this repo (Room, a
-1320-pixel LED show driven by DSP). A previous session audited the whole DSP-to-light path
-against annotated ground truth, fixed part of it, and left the rest measured and open.
+# Implementation session: intelligent scenes, reactive effects, punctual hits
 
-**Your job is to work until every item below is resolved.** Not triaged, not planned: resolved,
-meaning either fixed with a measurement that proves it, or attempted, measured, found not to
-work, reverted, and written up as such. Do not stop at the first hard one. Do not stop to ask
-which to do next; the order is given at the end. Ask only when a decision is genuinely the
-owner's, and keep working on everything else while you wait.
-
-An item is done when all four are true: the change is in, the relevant benchmark moved (or is
-explicitly recorded as flat), `npx vitest run` and `npm run check` are both green, and the entry
-in `docs/analysis-audit.html` is marked fixed. Keep a running checklist and report progress
-against it as you go.
+You are continuing work on Room, a 1320-pixel LED show driven by DSP. The previous session
+rebuilt the analysis and mixing path against annotated ground truth and left it measured; the
+audit at `docs/analysis-audit.html` records what moved, what did not, and what was reverted.
+This session is about the three things the owner can still see wrong in the room.
 
 **Read these first, in this order.** They contain measured numbers you must not re-derive:
 
-1. `docs/analysis-audit.html` - the full audit. Items already fixed are marked in green with a
-   "fixed" chip; everything else is open. Open it in a browser, do not just grep it.
-2. `bench/METRICAL-VERDICTS.md` - four tempo-octave judgements made by ear by the repo owner,
-   and the record of a corrector that was built, measured and abandoned.
-3. `CLAUDE.md` - house rules. Tabs, single quotes, ~100 columns, **no em-dashes anywhere**,
+1. `docs/analysis-audit.html` - the full audit. Open it in a browser rather than grepping it.
+   Green chips are closed; the reverted attempts are recorded beside them and are worth reading,
+   because two of them are traps you could walk back into.
+2. `CLAUDE.md` - house rules. Tabs, single quotes, ~100 columns, **no em-dashes anywhere**,
    comments say why and never what. `core` imports nothing at all. One effect per file.
+3. `bench/METRICAL-VERDICTS.md` - four tempo-octave judgements made by ear by the repo owner.
 4. The two memory files for this project, if your harness loads them.
 
-## The measuring instrument, which already exists
+## The measuring instrument
 
-`bench/` at the repo root is gitignored and is the only thing that decides whether a change is
-real. It is mir_eval 0.8 reimplemented in TypeScript and validated against degenerate cases.
+`bench/` is the only thing that decides whether a change is real. It is committed, so read it.
 
 ```sh
-bash bench/fetch.sh                                  # corpora, idempotent, resumes
-node bench/run.ts --label before                     # tempo/beat/downbeat/meter, 764 tracks
-node bench/run.ts --label after --diff before        # the delta
-node bench/run-structure.ts --dataset salami --shards 3 --label s-after   # sections, 374 tracks
-node bench/run-beatthis.ts --dataset gtzan --shards 2 # the model on its own
-node bench/render.ts <trackId> [--from 60] [--seconds 45]   # show to video, audio muxed
-node bench/clicktest.ts <trackId>...                 # A/B click test for tempo disputes
+node bench/struct-cache.ts --dataset salami --shards 6   # once, ~8 min, freezes 374 tracks
+node bench/struct-sweep.ts --label after --diff before    # sections, 4.4 SECONDS
+node bench/tune.ts --run bench/<probe>.ts --in <file.ts> NAME=1,2,3   # grid-sweep constants
+node bench/run-structure.ts --dataset salami --shards 6 --label x     # the full 7m36s run
+node bench/run.ts --label after --diff baseline           # tempo/beat/downbeat, 764 tracks
+node bench/levelprobe.ts        # delivered BYTES per section kind, and the share of LEDs lit
+node bench/rotationprobe.ts     # catalog reach, peak variety, off-phrase cues, N seeded shows
+node bench/hitprobe.ts          # which planned punctuation ever reaches the room
+node bench/colourprobe.ts       # share of lit bytes on a hue the frame's palette can produce
+node bench/contrastprobe.ts     # delivered drop-to-quiet ratio
+node bench/flashprobe.ts <id>   # kick band vs the show's kickEnv, frame by frame
+node bench/render.ts <id> [--from 60] [--seconds 45]      # show to video, audio muxed
+node bench/reingest.ts --shards 2                         # re-analyse the cache in place
 ```
 
-`MV_MODEL_DIR=<repo>/bench/models` if the Beat This weights are already there; otherwise they
-are fetched on demand and SHA-pinned.
+**The struct cache is why the last session got anywhere.** A full SALAMI pass is 7m36s and
+almost all of it is decode, spectrogram and beat tracking, none of which a change to the
+segmenter can touch. Freezing everything upstream of the bar table reproduces the full run's
+figures **exactly** in 4.4 seconds. Rebuild it whenever you change anything upstream of
+`barSynchronous`.
 
-**Two traps that already cost time.** The ONNX runs saturate the machine: use `--shards 2` and
-expect a load average near 40 if you do not, which makes every wall-clock measurement
-meaningless. And do not sweep a constant by re-importing a module with a cache-busting query
-string, because the module under test imports its dependency by the plain specifier and keeps
-the first instance; sweep in separate processes.
+**Three traps that already cost time.** ONNX runs saturate the machine: use `--shards 2`.
+Do not sweep a constant by re-importing a module with a cache-busting query string; the module
+under test keeps the first instance of its dependency, so sweep in separate processes, which is
+what `tune.ts` does. And never call `ingest()` on a path already inside `cache/`: it treats a
+path as a new local file and re-keys the track by the hash of that path, writing a duplicate
+under a `file-<hash>` id.
 
-`bench/render.ts` is how you check the things a number cannot: whether a flash lands on the
-kick, whether a drop reads. Use it on every change in tasks 4 to 6, not just at the end.
+`bench/render.ts` and `bench/flashprobe.ts` are how you check what a number cannot. Use them on
+every change in tasks 2 and 3, not only at the end.
 
 ## Ground rules
 
-- **No change ships on vibes.** Run the relevant benchmark before and after. A change that
-  helps the tracks in `cache/` and hurts the corpus is a regression.
+- **No change ships on vibes.** Run the relevant probe before and after. A change that helps the
+  tracks in `cache/` and hurts the corpus is a regression.
 - **Leave the suite green.** `npx vitest run` and `npm run check` both.
-- **Do not touch `packages/author-ai`.** The owner has ruled the AI show-creation path out of
-  scope. It benefits automatically from fixes to `barTimeAt` and friends.
+- **Do not touch `packages/author-ai`.** It benefits automatically from contract improvements.
+  Keep it compiling; do not redesign it.
 - **Do not commit** unless explicitly asked. Stage explicit paths, never `git add -A`.
-- When a fix does not work, say so and revert it rather than tuning until the test passes. The
-  previous session abandoned two changes on measurement and that was the right call both times.
+- When a fix does not work, say so and revert it rather than tuning until the test passes. Three
+  changes were abandoned on measurement last session and that was right every time.
+- A contract change means `ANALYSIS_VERSION` (currently 6) and a re-analyse: `bench/reingest.ts`
+  for the cache, `bench/struct-cache.ts` for the structure corpus.
 
-## Task 1: the one failing test, and the limitation under it
+---
 
-`packages/analysis/src/analyze.test.ts > sections > gives the peak rank to the loudest
-arrangement stage` fails: the peak lands at bar 3, expected inside the drop at bar 26.
+## Task 1: the arrangement should come from the drums
 
-Diagnosed, do not re-diagnose: the segmenter places the drop boundary three bars early, pulling
-the fixture's two silent void bars into the drop section and diluting its mean energy below an
-earlier groove. The quantiser is correct here - it rightly invents no kicks in silence.
+**Measured, do not re-derive.** Across 374 SALAMI tracks, the share of BARS by section kind:
 
-The root cause is a layer down. `barSynchronous` in `packages/analysis/src/structure.ts`
-L2-normalises each bar's pattern vector, so **amplitude is invisible to `similarityMatrix`**. A
-drop and the groove behind it playing the same figure at different levels are literally
-identical to the segmenter, so it has no reason to put a boundary between them. `bars.rms` is
-already computed and unused for this.
+| kind | share of bars |
+|---|---|
+| groove | **78.0%** |
+| breakdown | 8.1% |
+| drop | 7.2% |
+| intro | 2.5% |
+| outro | 2.1% |
+| build | 1.8% |
+| void | 0.3% |
 
-A naive level term (`0.62 * pattern + 0.22 * chroma + 0.16 * level`, level from a log-amplitude
-ratio over 1.5 octaves) was tried and did not separate them, because the fixture's stages differ
-by under 2 dB. Something better is needed: a tighter level tolerance, a contrast measure rather
-than a ratio, or a separate novelty term over `bars.rms` added to the DP objective rather than
-to the similarity. Measure on SALAMI, not on the fixture.
+Four fifths of every track is labelled `groove`, which means the show has one instruction for
+most of its runtime. That is the complaint, in a number.
 
-`MAX_SEGMENT_BARS` is pinned at 16 for the same reason. At 32 the synthetic control is correct
-(five 32-bar blocks recover as 5 segments, not 20) but this invariant breaks. Once level is
-represented, raise it and re-measure both.
+**The hook already exists and is unused.** `arrange()` in `packages/analysis/src/arrange.ts`
+receives `kicksPerBar` and `snaresPerBar` and uses them for **nothing but three event tags**
+(`kick_in`, `kick_out`, `snare_roll`). Every label is decided by energy: a within-track quantile
+for loud, `DROP_STEP` for whether a lift counts as a drop, `BREAKDOWN_STEP` for whether a dip
+counts as a breakdown. Percussion never votes.
 
-## Task 2: sections
+That is backwards for this repertoire. A drop is where the drums are densest and most complete;
+a build is what precedes one, and is usually where the kick withdraws while the snare and the
+noise floor climb; a breakdown is where the kit stops. The analysis now has good drum data to
+decide with: onsets are punctual to 0.5 ms of the grid, sixteenth rolls resolve, each hit
+carries a level, and only 4.5% of shipped kicks are inferred.
 
-Measured on 374 SALAMI tracks, whose audio is the exact file that was annotated:
+**The owner's decision: keep the seven lighting kinds** (`intro`, `groove`, `breakdown`,
+`build`, `void`, `drop`, `outro`) and detect them better. Do not add a verse/chorus vocabulary.
+If your research says the seven cannot express what the room needs, propose that as a finding
+with evidence before building anything.
 
-| metric | before | after | reference |
-|---|---|---|---|
-| boundary F0.5 | 8.6% | **11.6%** | |
-| boundary F3 | 20.5% | **25.6%** | 0.505-0.582 for "a boundary every 3 s"; 0.6061 Marmoret et al. |
-| pairwise F | 51.6% | 52.3% | 0.447-0.499 for one label over the whole track |
-| over-segmentation | 59.0% | 63.0% | |
-| under-segmentation | 36.0% | 33.3% | lower is better |
-| sections found | 8.4 | **11.5** | 11.7 annotated |
-| longest section | 42.6% | **21.1%** | of the track |
+**Research before implementing, and say what you found.** Cover at least:
 
-**The segmentation work stays.** F3 moved a quarter in relative terms, section count went from
-under-counting by a third to essentially exact, and the longest section halved. Do not revert it.
+- drum-informed structure analysis: whether published segmenters use percussive features, and
+  what they gain from them over timbre and chroma;
+- what actually distinguishes a chorus or a drop from a verse in the literature, and how much of
+  it is loudness against how much is arrangement density;
+- how systems decide a *build*: it is the one section defined by its trajectory rather than its
+  content, and the current detector only looks one segment back from a drop;
+- whether `SectionSpan.group`, which already carries repeat identity, should decide labels: two
+  sections of the same material arguably should not get different kinds.
 
-It is still poor in absolute terms, and the shape of the error tells you where to go: F0.5 at
-11.6% against F3 at 25.6% means **less than half the boundaries that land within three seconds
-land within half a second**. They are near the truth, not on it. Task 1's level blindness is the
-most likely reason a boundary lands three bars early, so do Task 1 first and re-measure this
-before reaching for anything more elaborate.
+Then design and implement, measuring at every step with `bench/struct-sweep.ts` (4.4 s) and
+`bench/labelprobe.ts`. The targets, in order of importance:
 
-Still open here:
+1. `groove` well under 78% of bars, without inventing sections that are not there.
+2. Boundary F0.5 and F3 not worse than **13.5% and 31.0%**, ideally better.
+3. Pairwise F not worse than **53.8%**.
 
-- `arrange.ts:155` labels sections by within-track energy quantile, so `breakdown` does not mean
-  quiet. Measured overlap across the cached tracks: breakdown spans energy 29-89 and groove
-  spans 64-94. The `hasDrops` gate picks a vocabulary per track for the drop label only;
-  nothing equivalent gates breakdown.
-- `SectionSpan.group` now exists and carries repeat identity. Nothing consumes it yet.
-- `PHRASE_BARS` is 4 but `tempo.barsPerPhrase` ships 8, and `phraseAnchorBar` is fitted mod 4
-  and consumed mod 8 in `player.ts:243`. Only 54 of 115 section starts fire `f.phraseStart`.
-- A section composed entirely of digital silence is still labelled `outro` and lit.
+**A gotcha that will cost you an hour if you miss it.** The kick and snare counts inside the
+struct cache were computed with the *old* drum detector. Rebuild the cache
+(`node bench/struct-cache.ts --dataset salami --shards 6`) before trusting any drum-driven
+result from `struct-sweep`.
 
-## Task 3: drum detection, and repetition as the correction
+Also open, and probably related: estimated sections currently overshoot at **16.25 against 11.68
+annotated**, with over-segmentation NCE at 67.7%. `LAMBDA` in `structure.ts` is the dial and is
+at 1.1; 2.2 gives 14.7 sections at the same F3 and 1.4 points less F0.5.
 
-**The owner reports that drum detection sometimes plainly does not work.** That is consistent
-with what was measured, and there are two separate faults.
+---
 
-Known and measured:
+## Task 2: effects that react to the music
 
-- **The kick curve peaks 24-42 ms behind the curve the beat grid is fitted to.** Two different
-  onset functions feed the two things that must agree: `onsets.ts:74` subtracts a
-  frequency-max-filtered reference frame, `drums.ts:31` does not. Measured signed offset to the
-  nearest sixteenth: beat path +2.9 to +5.3 ms, kick path +24.1 to +42.1 ms. Every kick flash is
-  systematically late. Fix this first; it is the most visible thing in the room.
-- `kickGap = max(0.07, beatPeriod * 0.4)` makes sixteenth-note kicks undetectable at every
-  reachable tempo: 67 of 144 detected at 120 bpm, 1 of 211 at 175 bpm.
-- `kickCurve = kickBand - 0.8 * bassBand` subtracts two curves each normalised by its own
-  99.5th percentile, so the effective weight lands anywhere from 1.16 to 4.08 depending on the
-  track, and it defends a register the band edge already excludes (kick-band response at 110 Hz
-  is 0.018).
-- HPSS `BETA = 2` sends 46% of kick-band cells to neither side; only about 6% of the band's
-  magnitude survives into `percussive`. A soft Wiener mask over the same medians keeps 21-34%.
-- `invented[]` is computed by `quantiseOnsets` and thrown away by `analyze.ts`. 19.6% of shipped
-  kicks (1249 of 6379) were completed from the pattern, not detected.
-- Per-hit strength does not exist: `f.kickEnv` is exactly 1.0 on 6379 of 6379 kick frames, so
-  `kickTunnel`'s ring power has one distinct value across the whole corpus. The peak strength is
-  computed in `drums.ts` and dropped at the map. This needs a contract change: onset times gain
-  an index-aligned level array and the player scales `FlashEnvelope.fire()` by it.
+**The complaint, in the owner's words:** "when there are no drums/kicks in intro, the effects are
+just plain color with a little drift, nothing fancy". That is accurate. The beds are slow
+spatial fields modulated by four numbers.
 
-**Then the part to research before implementing.** Percussion in this repertoire is overwhelmingly
-periodic, and that redundancy is evidence the detector is currently not using. The existing
-pattern completion is a crude version of the idea and it is why a fifth of shipped kicks are
-fabricated: it votes over fixed 8-bar windows, ignores how confident each detection was, and can
-only add, never remove or move.
+**The decision: add a per-frame spectrum to the contract.** Roughly 16 to 24 log-spaced bands at
+40 to 60 fps, precomputed at ingest, so an effect can do a real spectrum, VU or band-visualiser
+look. Bump `ANALYSIS_VERSION`. Think about the cache cost before you choose the numbers: a
+four-minute track at 50 fps by 20 bands is 240,000 values, so a compact encoding is worth ten
+minutes of thought rather than shipping raw JSON floats.
 
-Research the literature before writing code, and say what you found. Cover at least:
+What already exists, so you do not rebuild it:
 
-- pattern- and template-based drum transcription: NMF with learned or track-adapted kick and
-  snare templates, and the "partially fixed" NMF variants that adapt a template to the track;
-- how published systems use periodicity to correct a detection rather than to invent one, and
-  what they do about a fill or a break where the pattern legitimately stops;
-- whether a per-section pattern is better than a per-window one, now that
-  `SectionSpan.group` gives you repeat identity for free: two sections in the same group should
-  have the same drum pattern, and disagreement between them is either a fill or a detector error;
-- confidence-weighted decisions: keeping a detection's strength through the pipeline so a
-  marginal hit can be promoted when the pattern expects it and demoted when it does not;
-- what ADTOF-class systems score on kick and snare separately in polyphonic music, so you know
-  what a good result looks like.
+- `TrackAnalysis.envelopes` carries energy and the four contract bands at **beat** resolution,
+  added last session, and the player reads them there. The half-bar lead is fixed: an entry is
+  the mean over its span so it is sampled half an entry back.
+- `ShowFrame` carries `bands[0..3]` (sub/low/mid/air), `kick`/`snare`/`hat` with per-hit
+  `kickEnv`/`snareEnv`/`hatEnv` levels, `pan` and `panWidth`, plus the grid and structure fields.
+- `packages/analysis/src/dsp/spectrogram.ts` already builds a log filterbank; `features.ts`
+  runs it at 100 fps with 24 bands per octave.
 
-Then design and implement, measuring at each step. The target is fewer fabricated hits AND fewer
-misses, not one at the cost of the other. Report both counts separately; a single F-measure will
-hide the trade you are making. `bench/kickprobe.ts` already reports detected, shipped, invented
-and displaced per track.
+**The catalog may be rewritten freely.** Rework, replace or delete any of the 55 built-ins to
+make them reactive. Every effect, old or new, must still pass `effects/gate.ts`: deterministic
+(no `Math.random`, `Date`, `performance`), no allocation in `render`, `reset()` restores a fresh
+instance, bounded and finite pixels. Colour goes through `SLOT` and `ctx.palette`; reach for
+`paletteArc(u)` when an effect wants variety rather than one colour. Anything you add under
+`src/dsl/` must be documented in `renderDslReference()` in `packages/author-ai/src/catalog.ts`.
 
-## Task 4: effect rotation, and the palette
+Two constraints the last session established the hard way, both in the audit:
 
-**The owner reports three specific things.** All three are corroborated by the audit.
+- **Gamma 2.2 is unforgiving at the bottom.** An authoring value under 0.081 quantises to byte 0
+  and under 0.207 to byte 8. Judge brightness in bytes, with `bench/levelprobe.ts`, never in the
+  authoring domain.
+- **A bed is the floor of a cue**, and `EffectTaste.carries` marks the ones that cannot hold a
+  room alone. The mixer has a house floor per section (`SECTION_FLOOR` in `player.ts`) which is
+  what stops quiet passages going black; a void sets it to zero.
 
-1. **After the strobe there should be another effect.** `planHits` in `author-engine/src/plan.ts`
-   runs strobe out of the build, blackout for the held breath, slam on the drop downbeat for one
-   bar, and then nothing for the rest of the drop. The drop is a static layer stack from there.
-   Give the loud passages further punctuation after the slam, and make it different from the
-   slam rather than a repeat of it.
-2. **The rotation should introduce more effects within one song, and changes should land on the
-   beat.** Measured: 11 of 55 built-ins are never placed in any cue on any track;
-   `buildStrobe` and `colorBump` are unreachable by construction; `riser` never wins in 300
-   seeded shows. Taste metadata does not discriminate - all twelve bed effects list all seven
-   section kinds and the `maxBars` limits never bind - so `EffectPicker.strongest` breaks a
-   three-way tie by id and **`chromaBurst` wins the peak on every single track**. `MAX_CUE_BARS`
-   is 16, so a long section holds one look for four phrases. Widen the rotation, make the
-   selection actually depend on the music, and put every change on a beat or phrase boundary
-   (`grid.ts` has `onPhraseGrid` and `nearestPhraseBar`; the linter already enforces this for
-   cues, so extend the same discipline to hits and interior look changes).
-3. **Effects should use the song's palette.** Six of them do not read it at all and call
-   `hsv2rgb` with their own hues: `auroraBorealis`, `chromaBurst`, `hueCarousel`, `iridescence`,
-   `rainbowRain`, `vortex`. Combined with the tiebreak above, this means **the biggest moment of
-   every show is lit by an effect that ignores the track's colour identity**, which is exactly
-   the complaint. Route them through `SLOT` and `ctx.palette` like the rest. Where an effect is
-   deliberately spectral (a rainbow is a rainbow), say so in a comment and keep it, but it must
-   then not be reachable as the peak look on a track whose palette says otherwise.
+Measure with `bench/levelprobe.ts` (delivered bytes and coverage per section kind),
+`bench/colourprobe.ts` (currently ~97% of lit bytes on a palette hue) and `bench/render.ts`.
+Do not regress the delivered drop-to-quiet ratio far below **3.2** or the quiet sections below
+**byte 32** with 100% coverage.
 
-Every effect you touch must still pass the gate in `effects/gate.ts`: deterministic, no
-allocation in `render`, `reset()` restores a fresh instance, bounded and finite pixels. Use
-`bench/render.ts` to watch the result against the audio; a rotation that reads well as a list of
-cue names can still look mechanical in the room.
+**One loose end worth fixing while you are here.** `carries` is enforced only for the bed. The
+accent chosen for an intro or outro is very often `sparkle`, which contributes about 0.000, so
+the second layer of a thin cue is a layer in name only. Requiring `carries` for that pick was
+tried and reverted because only one accent in the catalog qualifies. Rewriting the catalog fixes
+that properly.
 
-## Task 5: effect mixing and the output chain
+---
 
-- **`MeanLevel` deletes about three quarters of the show's contrast.** Measured by running the
-  real player and mixer over 15 tracks with it live and stubbed: authored drop-to-breakdown
-  ratio 8.03x, delivered 1.99x. `mixer.ts:143`.
-- **The held-breath blackout before a drop never fires.** Overlapping hits resolve by `find()`,
-  which returns the earliest match; 9 of 117 planned hits never fire and every one is that
-  blackout - the move the README calls the strongest in the vocabulary. `player.ts:403`.
-- `f.energy` and `f.bands` are per-bar means linearly interpolated, so they lead the audio by
-  half a bar and 12-43% of the true band-envelope variance is within-bar and unreachable.
-- `FlashLimiter` clamps 14.6% of all frames and sits pinned between 0.336 and 0.426 through the
-  biggest drop of a track.
-- Nothing reads `bars[].events`, `analysis.moments`, `loudnessRange` or `peakToLoudness`, and
-  only two effects read stereo pan.
+## Task 3: punctuation that lands where the music does
 
-## Task 6: expose the tempo-octave correction
+**The complaint:** strobes are too long and sometimes start too early, and a blackout mixed in
+with one ends before the phrase change so the room comes back up too soon.
 
-Metrical level is unreliable in both trackers on this repertoire and that is settled, not open:
-the two disagree on 7 of the owner's 15 tracks and an ear test split those 2-2.
+**Measured across the cached shows, 91 hits:**
 
-Measured on 664 GiantSteps dance tracks, the model is better on average and worse in the tail:
-tempo Acc1 76.1% to **83.0%**, but Acc2 95.2% down to **92.2%**. So it picks the right tempo
-more often, and when it fails it fails harder - three per cent more tracks land on a tempo that
-is not even a metrical relative of the truth. Melanz is that case: 79 against a true 120, a
-two-against-three relationship, which **a half/double control cannot repair**. So the control
-below is necessary and not sufficient; offer thirds as well, or accept that a small tail needs
-`reanalyse` with an explicit bpm.
+- **55 of 91 start off the 4-bar grid.**
+- **43 of 91 have a length that is not a whole number of bars.**
+- blackout: median **0.50 bars**, max 2.00; strobe: median 1.00 bars, max 2.00; bump 0.50; slam 1.00.
 
-`assessMetricalLevel` in `packages/analysis/src/metricalLevel.ts` already reports `ambiguous`
-and a list of `alternatives`. Nothing surfaces it. Add a half/double control to the app for
-tracks flagged ambiguous, re-running against the cached analysis.
+The blackout case is exactly what the owner described and you can read it in `planHits` in
+`packages/author-engine/src/plan.ts`: the held-breath blackout is placed at `slot.bar - 1` with
+`beats = max(1, round(beatsPerBar / 2))`, so it runs **half a bar from the start of the bar
+before the drop** and the room comes back mid-bar, before the downbeat it exists to set up.
 
-## Task 7: keep the audit current
+**Enforce hard rules, and enforce them in the linter so they cannot regress:**
 
-`docs/analysis-audit.html` is the deliverable that records all of this. As you finish each item:
+- Every hit starts on a bar boundary; a hit that marks a structural change starts on a phrase
+  boundary. `grid.ts` owns the arithmetic (`onPhraseGrid`, `nearestPhraseBar`, `phraseOffset`)
+  and neither the analyser nor the linter may write the modulo out by hand.
+- Every hit's length is a whole number of bars, or an explicitly justified fraction.
+- The pre-drop blackout runs **to the drop downbeat**, not to somewhere inside the bar before it.
+- Strobes are capped in bars **and** in seconds, because a bar is 1.4 s at 175 bpm and 3 s at 80,
+  and the complaint is about how long it feels rather than how many bars it covers.
 
-- mark its finding `class="f <severity> fixed"` and add `<span class="chip">fixed</span>` before
-  the title, which turns the title green;
-- append a short `<b style="color:var(--good)">Fixed: ...</b>` to its body saying what the
-  number became;
-- update the cards at the top and the section table with the new measured values;
-- add findings for anything new you discover, in the same form.
+Useful context in `packages/core/src/player.ts`: overlapping hits now resolve by priority
+(`HIT_PRIORITY`, blackout beats slam beats bump beats strobe) rather than by whichever started
+first, which is what fixed the blackout never firing at all. All 91 planned hits currently fire;
+keep it that way and verify with `bench/hitprobe.ts`.
 
-The page is theme-aware and self-contained; keep it that way. If the harness offers an Artifact
-tool, republish the same file path so the existing URL keeps working.
+There is deliberately no flash-rate ceiling in the linter and that is documented in `lint.ts`.
+`FlashLimiter` in `output.ts` is WCAG 2.3.1 and was left alone on purpose. Do not weaken either
+to make a number look better.
+
+---
 
 ## Order
 
-1. Task 1, because the suite must be green before anything else is trustworthy.
-2. Task 2's after-measurement, because it decides whether the segmentation work stays.
-3. Task 3, kick timing first, then the repetition research and rebuild.
-4. Task 4, palette first (it is small and the peak look is wrong on every track), then rotation.
-5. Task 5, `MeanLevel` and the lost blackout first.
-6. Tasks 6 and 7 as you go.
+1. Task 3 first. It is the smallest, the rules are already decided, and it is the most visible
+   thing in the room per hour spent.
+2. Task 1, because the section labels decide which effects are chosen and when, so doing it
+   before task 2 means the reactive work is measured against a sane arrangement.
+3. Task 2, the largest, and the one that needs its research done before any code.
 
-Then go back over tasks 2 to 5 and check nothing you did later undid something you did earlier;
-re-run both benchmarks end to end and put the final numbers in the audit.
+Then go back over all three and check nothing you did later undid something earlier. Re-run
+`bench/run.ts`, `bench/run-structure.ts`, `levelprobe`, `rotationprobe`, `hitprobe` and
+`colourprobe` end to end and put the final numbers in the audit.
+
+## Keeping the audit current
+
+`docs/analysis-audit.html` is the deliverable that records all of this. As you close an item:
+mark its finding `class="f <severity> fixed"`, add `<span class="chip">fixed</span>` before the
+title, append a short `<b style="color:var(--good)">Fixed: ...</b>` saying what the number
+became, and update the cards and tables. Add findings for anything new you discover, in the same
+form. The page is theme-aware and self-contained; keep it that way.
 
 Report what each change did to the numbers. If something does not work, say so plainly and
-revert it. Keep going until the checklist is empty.
+revert it.
