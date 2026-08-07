@@ -2,7 +2,7 @@ import type { SectionKind } from './frame.ts';
 import type { LayerRole, ParamSpec, Params } from './effect.ts';
 import type { ShowPalette } from './palette.ts';
 
-export const SHOW_VERSION = 1;
+export const SHOW_VERSION = 2;
 
 export interface LayerSpec {
 	effect: string;
@@ -34,7 +34,11 @@ export interface Hit {
 	bar: number;
 	/** Beat within the bar, 0-indexed. Defaults to 0. */
 	beat?: number;
-	kind: 'slam' | 'strobe' | 'blackout';
+	/**
+	 * `bump` is the one that is not a flash: an accent-colour flood, so a loud passage can be
+	 * punctuated a second and third time without spending the same card twice.
+	 */
+	kind: 'slam' | 'strobe' | 'blackout' | 'bump';
 	beats: number;
 	/** Overrides on the hit's effect, e.g. strobe `perBeat`. The linter reads these. */
 	params?: Params;

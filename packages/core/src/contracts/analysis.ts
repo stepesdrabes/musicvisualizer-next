@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 4;
+export const ANALYSIS_VERSION = 6;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -25,6 +25,17 @@ export interface TempoGrid {
 	constant: boolean;
 	/** 0..1, separately from `confidence`: the beat grid can be certain and the meter not. */
 	meterConfidence: number;
+	/**
+	 * True when half, double or three-against-two is defensible on the same evidence.
+	 *
+	 * Metrical level is the one thing neither tracker can be trusted with on this repertoire:
+	 * the two disagree on seven of fifteen cached tracks and a listening test split those two
+	 * all. This is a well-calibrated flag rather than a defect, and the answer is to ask, which
+	 * a listener settles in seconds and the cache then keeps.
+	 */
+	ambiguous: boolean;
+	/** Readings a listener might prefer instead, most plausible first. */
+	alternativeBpm: number[];
 	/**
 	 * Start time of every bar, seconds, plus the end of the last one: length is barCount + 1.
 	 *
@@ -98,6 +109,40 @@ export interface SectionSpan {
 	repeatOf: number | null;
 }
 
+/**
+ * One drum's hits.
+ *
+ * Times and levels are one object rather than two arrays on the analysis, because the only
+ * thing that makes a level meaningful is which hit it belongs to, and two sibling arrays that
+ * have to stay index-aligned eventually do not.
+ */
+export interface OnsetStream {
+	/** Onset times, seconds, ascending. */
+	times: number[];
+	/**
+	 * How hard each hit was struck, 0..1 against the track's own strongest, index-aligned with
+	 * `times`. A hit completed from the pattern rather than heard carries the pattern's own
+	 * confidence, so it is never the loudest thing in the bar.
+	 */
+	levels: number[];
+}
+
+/**
+ * Energy and band levels at beat resolution, 0..100, aligned with `TrackAnalysis.beats`.
+ *
+ * Per bar was too coarse for anything an effect modulates with. Between 12% and 43% of the
+ * true band-envelope variance lives inside the bar and was unreachable, and interpolating
+ * between per-bar means also led the audio by half a bar, which is a whole second at 120 bpm.
+ * The bar table still carries the same fields, because that is the granularity a cue is
+ * authored at and a show is read at; this is the granularity the light moves at.
+ */
+export interface Envelopes {
+	/** One per beat. */
+	energy: number[];
+	/** beats * NUM_BANDS, in the contract's band order. */
+	bands: number[];
+}
+
 export interface Moment {
 	bar: number;
 	beat: number;
@@ -133,12 +178,12 @@ export interface TrackAnalysis {
 	moments: Moment[];
 	/** Every tracked beat, seconds. Exact even where the constant grid is only a fit. */
 	beats: number[];
+	envelopes: Envelopes;
 	stereo: StereoImage;
-	/** Onset times in seconds. */
 	onsets: {
-		kick: number[];
-		snare: number[];
-		hat: number[];
+		kick: OnsetStream;
+		snare: OnsetStream;
+		hat: OnsetStream;
 	};
 	integratedLufs: number;
 	/** EBU R128 loudness range, LU. */

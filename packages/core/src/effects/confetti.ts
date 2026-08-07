@@ -23,7 +23,9 @@ export const confetti: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// Bursts of particles, and nothing at all between them.
+		carries: false
 	},
 	params: [INTENSITY, param('perPop', 'Dots per pop', 7, 2, 16, 1)],
 	create(g) {

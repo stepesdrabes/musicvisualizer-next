@@ -1,14 +1,15 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sample } from '../color/palette.ts';
 import { Band } from '../contracts/frame.ts';
-import { hsv2rgb } from '../color/hsv.ts';
-import { alphaFor, clamp, envelope, frac } from '../dsl/math.ts';
+import { alphaFor, clamp, envelope, paletteArc } from '../dsl/math.ts';
 import { nblend, setPixel } from '../dsl/buffer.ts';
 import { noise3 } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
- * Thin-film interference: hue is a WRAPPING function of the noise field, so the colour
- * repeats in fringes like a soap bubble. Low brightness on purpose - this is a surface
+ * Thin-film interference: colour is a WRAPPING function of the noise field, so it repeats in
+ * fringes like a soap bubble. The fringes run through the show's palette rather than the
+ * spectrum, which keeps the sheen and drops the tie-dye. Low brightness on purpose - this is a surface
  * sheen that makes whatever sits above it look expensive.
  */
 export const iridescence: EffectDef = {
@@ -37,18 +38,21 @@ export const iridescence: EffectDef = {
 				buf.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, hueShift, motion } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 
 				clock += f.dt * 0.05 * motion * (1 + f.bands[Band.Mid] * 0.8);
-				level = envelope(level, clamp(0.25 + f.energy * 0.8), f.dt, 0.15, 0.9);
-				const bright = level * (0.3 + p.intensity * 0.7);
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				level = envelope(level, clamp(0.55 + f.energy * 0.45), f.dt, 0.15, 0.9);
+				const bright = level * (0.52 + p.intensity * 0.95);
 				const scale = 1.5 + p.scale * 5;
 				const t = clock;
 
 				for (let i = 0; i < g.count; i++) {
 					const n1 = noise3(g.nx[i] * scale + t, g.ny[i] * scale - t * 0.6, g.nz[i] + t * 0.3);
 					const n2 = noise3(g.nx[i] * scale * 1.9 + 17, g.ny[i] * scale * 1.9 - t, 5.1);
-					hsv2rgb(frac(n1 * 1.6 + hueShift), 0.75, (0.15 + 0.85 * n2 * n2) * bright, rgb);
+					sample(palette, paletteArc(n1 * 1.6 + hueShift), (0.15 + 0.85 * n2 * n2) * bright, rgb);
 					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 

@@ -23,9 +23,11 @@ export type { Palette, ShowPalette, SlotName } from './contracts/palette.ts';
 export { PALETTE_ANCHORS, SLOT } from './contracts/palette.ts';
 export type {
 	BarRow,
+	Envelopes,
 	EventTag,
 	KeyEstimate,
 	Moment,
+	OnsetStream,
 	SectionSpan,
 	StereoImage,
 	TempoGrid,
@@ -40,6 +42,7 @@ export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
 export { hsv2rgb } from './color/hsv.ts';
 export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
 export {
+	BARS_PER_PHRASE,
 	PHRASE_BARS,
 	barAtTime,
 	barDurationAt,

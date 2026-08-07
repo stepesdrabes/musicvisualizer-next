@@ -44,13 +44,14 @@ export const chorusBloom: EffectDef = {
 				}
 				bloom = envelope(bloom, target, f.dt, 0.6, 1.4);
 
-				const gain = (0.35 + p.intensity * 0.85) * (0.3 + bloom * 0.9);
+				const gain = (0.5 + p.intensity * 1.1) * (0.55 + bloom * 0.75);
 
 				for (let i = 0; i < g.count; i++) {
 					const u = ringU(g, i);
 					// Petal lobes that widen as the bloom opens.
 					const petal = 0.7 + 0.3 * sinewave(u * (5 - bloom * 2) + bloom * 0.5);
-					const slot = lerp(SLOT.deep, SLOT.glow, clamp(bloom * 1.15));
+					// From the room's home colour up toward its bright read, never from its shadow.
+					const slot = lerp(SLOT.base, SLOT.glow, clamp(bloom * 1.15));
 					setSample(buf, i, palette, slot + hueShift, gain * petal);
 				}
 

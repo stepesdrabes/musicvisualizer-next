@@ -7,6 +7,16 @@ import type { TempoGrid } from './contracts/analysis.ts';
 export const PHRASE_BARS = 4;
 
 /**
+ * A whole phrase, which is what `f.phraseStart` fires on and what `tempo.barsPerPhrase` ships.
+ *
+ * Twice `PHRASE_BARS`, and the two are not interchangeable. The anchor is fitted to the 4-bar
+ * grid because that is where changes land, and then resolved to whichever of the two phases mod
+ * 8 agrees with it: an anchor fitted only mod 4 leaves the mod-8 phase a coin toss, and half
+ * the section starts then fire on the answering bar of the phrase instead of the asking one.
+ */
+export const BARS_PER_PHRASE = 8;
+
+/**
  * When a bar starts, in seconds.
  *
  * Read from `tempo.barTimes` rather than reconstructed from a period, because a constant

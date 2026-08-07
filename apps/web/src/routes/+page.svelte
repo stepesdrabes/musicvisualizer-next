@@ -101,15 +101,34 @@
 		return () => clearInterval(timer);
 	});
 
-	async function loadTrack(source: string) {
+	let relevelling = $state(false);
+
+	/**
+	 * Re-read the track at a different metrical level.
+	 *
+	 * The whole show is re-composed rather than rescaled, because every cue is addressed by bar
+	 * and the bars have moved: a rescaled show would point the entire night at the wrong music.
+	 */
+	async function relevel(level: number) {
+		const source = meta?.source;
+		if (!source || relevelling) return;
+		relevelling = true;
+		try {
+			await loadTrack(source, level);
+		} finally {
+			relevelling = false;
+		}
+	}
+
+	async function loadTrack(source: string, metricalLevel?: number) {
 		if (!viz) return;
 		warnings = [];
 		show = null;
 		setPhase(/^https?:/.test(source) ? 'resolving' : 'analysing', 'Resolving');
-		note(`load ${source}`);
+		note(metricalLevel ? `re-reading ${source} at ${metricalLevel}x` : `load ${source}`);
 
 		try {
-			const res = await postJson('/api/ingest', { source });
+			const res = await postJson('/api/ingest', { source, metricalLevel });
 			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
 
 			const data = (await res.json()) as {
@@ -340,7 +359,9 @@
 			{previewing}
 			{previewParams}
 			onpreview={preview}
-			onparam={previewParam} />
+			onparam={previewParam}
+			onrelevel={relevel}
+			{relevelling} />
 	</div>
 
 	<PlayerBar

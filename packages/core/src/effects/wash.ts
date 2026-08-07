@@ -28,7 +28,10 @@ export const wash: EffectDef = {
 			render(out, ctx) {
 				const { f, g, p, palette } = ctx;
 				const breathe = Math.pow(sinewave(f.barPhase), 1.8);
-				const target = clamp(0.35 + 0.65 * f.energy) * p.intensity;
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				const target = clamp(0.55 + 0.45 * f.energy) * p.intensity;
 				level = envelope(level, target, f.dt, 0.08, 0.5);
 
 				const bright = level * lerp(1 - p.breath, 1, breathe);

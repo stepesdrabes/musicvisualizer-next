@@ -15,22 +15,32 @@ import type { RequestHandler } from './$types';
  * Claude has already revised, and overwriting that would throw the work away.
  */
 export const POST: RequestHandler = async ({ request }) => {
-	const { source } = (await request.json()) as { source?: string };
+	const { source, metricalLevel } = (await request.json()) as {
+		source?: string;
+		metricalLevel?: number;
+	};
 	if (!source?.trim()) error(400, 'source required');
+	if (metricalLevel !== undefined && !(metricalLevel > 0.2 && metricalLevel < 5)) {
+		error(400, 'metricalLevel must be between 0.2 and 5');
+	}
 
 	try {
-		const result = await ingest(source.trim());
+		const result = await ingest(source.trim(), { metricalLevel });
 
+		// A corrected grid is a different show: every cue is addressed by bar and the bars have
+		// moved, so keeping the old one would leave the whole night pointing at the wrong music.
 		let show: Show | null = null;
 		try {
-			const existing = JSON.parse(await readFile(showPath(result.id), 'utf8')) as Show;
-			if (existing.analysisHash === result.analysis.hash) show = existing;
+			if (metricalLevel === undefined) {
+				const existing = JSON.parse(await readFile(showPath(result.id), 'utf8')) as Show;
+				if (existing.analysisHash === result.analysis.hash) show = existing;
+			}
 		} catch {
 			// No show yet, or one written against a grid that has since been re-analysed.
 		}
 
 		if (!show) {
-			show = composeShow(result.analysis);
+			show = composeShow(result.analysis, { artHue: result.meta.artHue });
 			const verdict = lintShow(show, {
 				analysis: result.analysis,
 				effects: new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]))

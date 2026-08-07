@@ -8,7 +8,7 @@ import {
 	type Show,
 	type TrackAnalysis
 } from '@mv/core';
-import { analysisPath, findAudioFile, isValidId, showPath } from '@mv/analysis';
+import { analysisPath, findAudioFile, isValidId, readMeta, showPath } from '@mv/analysis';
 import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
 import { reviseShow, type AuthorEvent } from '@mv/author-ai';
 import type { RequestHandler } from './$types';
@@ -30,6 +30,7 @@ export const GET: RequestHandler = async ({ url, request }) => {
 	}
 
 	const audioPath = (await findAudioFile(id)) ?? undefined;
+	const artHue = (await readMeta(id))?.artHue;
 	const geometry = buildGeometry(DEFAULT_ROOM);
 
 	// The engine's show is the starting point. Handing the agent a draft that already covers
@@ -38,9 +39,9 @@ export const GET: RequestHandler = async ({ url, request }) => {
 	let draft: Show;
 	try {
 		const existing = JSON.parse(await readFile(showPath(id), 'utf8')) as Show;
-		draft = existing.analysisHash === analysis.hash ? existing : composeShow(analysis);
+		draft = existing.analysisHash === analysis.hash ? existing : composeShow(analysis, { artHue });
 	} catch {
-		draft = composeShow(analysis);
+		draft = composeShow(analysis, { artHue });
 	}
 	const encoder = new TextEncoder();
 

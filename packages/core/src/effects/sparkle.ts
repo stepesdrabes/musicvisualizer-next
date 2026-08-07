@@ -16,7 +16,9 @@ export const sparkle: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// Isolated points on black; between them the room is unlit.
+		carries: false
 	},
 	params: [
 		INTENSITY,

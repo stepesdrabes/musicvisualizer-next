@@ -11,7 +11,13 @@ import type {
 	ShowPalette,
 	TrackAnalysis
 } from '@mv/core';
-import { BUILT_IN_EFFECTS, PHRASE_BARS, SHOW_VERSION, Rng } from '@mv/core';
+import {
+	BUILT_IN_EFFECTS,
+	PHRASE_BARS,
+	SHOW_VERSION,
+	Rng,
+	nearestPhraseBar
+} from '@mv/core';
 import { choosePalette, lerpHue } from './palette.ts';
 import { EffectPicker } from './select.ts';
 
@@ -20,10 +26,18 @@ export interface EngineOptions {
 	effects?: readonly EffectDef[];
 	/** Overrides the seed taken from the analysis hash. */
 	seed?: number;
+	/** Dominant hue of the cover art, degrees. The room takes the record's own colour. */
+	artHue?: number | null;
 }
 
-/** No cue holds the room longer than this before something has to change. */
-const MAX_CUE_BARS = 16;
+/**
+ * No cue holds the room longer than this before something has to change.
+ *
+ * Two phrases, not four. At sixteen a long groove held one look for a minute at 120 bpm, which
+ * is most of the reason a show that reaches for half the catalog still feels like it reaches
+ * for none of it: the variety was there and the room never got to it.
+ */
+const MAX_CUE_BARS = 8;
 /** Matches the linter: punctuation inside this many bars spends the biggest card too early. */
 const SETTLE_BARS = 16;
 
@@ -60,7 +74,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	const effects = opts.effects ?? BUILT_IN_EFFECTS;
 	const rng = new Rng(opts.seed ?? seedFrom(analysis.hash));
 	const picker = new EffectPicker(effects, rng);
-	const palette = choosePalette(analysis, rng);
+	const palette = choosePalette(analysis, rng, opts.artHue);
 
 	const peakSpan = analysis.sections.find((s) => s.energyRank === 1) ?? null;
 
@@ -78,6 +92,11 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	// second one right behind it for the rest of the section, which is how a desk would run it.
 	const slots = buildSlots(analysis, peakMaster?.taste.maxBars ?? 0);
 
+	// A squashed master has almost no per-bar level left to read, so the arrangement has to
+	// supply the dynamics the waveform no longer does. Under about 8 LU of peak-to-loudness the
+	// track is limited hard enough that its own energy curve is nearly flat.
+	const spread = analysis.peakToLoudness > 0 ? clamp01((10 - analysis.peakToLoudness) / 6) : 0;
+
 	const cues: Cue[] = [];
 	let grooveIndex = 0;
 
@@ -89,16 +108,27 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 			layers[role] = params ? { effect: def.id, params } : { effect: def.id };
 		};
 
-		const bedEnergy = Math.min(slot.energy, 0.75);
-		add('bed', picker.pick({ role: 'bed', section: slot.section, lengthBars: slot.endBar - slot.bar, energy: bedEnergy }));
-
 		const length = slot.endBar - slot.bar;
+		// The bed a repeat shares is the one its FIRST cue opened with; interior cues pick freely,
+		// or a long section would hold one look for its whole length again by another route.
+		const bedEnergy = Math.min(slot.energy, 0.75);
+		// A quiet section is a bed and one texture, so the bed genuinely is the room.
+		const bare = slot.section === 'intro' || slot.section === 'outro';
+		add('bed', picker.pick({ role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: bare, group: slot.index === 0 ? slot.span.group : undefined }));
 		switch (slot.section) {
 			case 'void':
 				break;
 
 			case 'intro':
 			case 'outro':
+				// One texture over the bed, as a breakdown gets. A bed is written to sit UNDER
+				// something, so a cue carrying nothing else asks the dimmest layer in the system to
+				// hold the room alone, and the room stays dark.
+				//
+				// Deliberately NOT filtered to effects that carry: only one accent in the catalog
+				// does, so requiring it left most of these cues with no accent at all, which is
+				// worse than a sparse one. The bed is what has to hold this cue up.
+				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy }));
 				break;
 
 			case 'breakdown':
@@ -111,6 +141,9 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 
 			case 'build':
 				add('rhythm', picker.pick({ role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy }));
+				// A build is the one place an accent belongs before the drop rather than in it, and
+				// without one the two effects written for exactly this moment were unreachable.
+				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy }));
 				break;
 
 			case 'groove':
@@ -138,7 +171,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 			section: slot.section,
 			layers,
 			palette: paletteFor(slot, palette),
-			intensity: intensityFor(slot),
+			intensity: intensityFor(slot, spread),
 			motion: motionFor(slot),
 			fadeBeats: fadeFor(slot),
 			note: noteFor(slot)
@@ -184,13 +217,20 @@ function buildSlots(analysis: TrackAnalysis, peakMasterBars: number): Slot[] {
 			const remaining = span.endBar - bar;
 			// The peak's opening cue is only as long as the burst it carries, so a master effect
 			// written to hold the room for a bar is never asked to hold it for eight.
-			const take =
+			// Interior changes land on the phrase grid, not on a multiple of the section's own
+			// start: a section may begin off-grid where the music moved off it, and its interior
+			// cues have no such excuse. A look that arrives mid-phrase reads as a mistake.
+			let take =
 				isPeak && index === 0 && peakMasterBars > 0
 					? Math.min(peakMasterBars, remaining)
 					: // Leaving a stub shorter than a phrase behind is worse than one long cue.
 						remaining > MAX_CUE_BARS + PHRASE_BARS
 						? MAX_CUE_BARS
 						: remaining;
+			if (take < remaining) {
+				const landed = nearestPhraseBar(bar + take, analysis.tempo.phraseAnchorBar);
+				if (landed > bar && landed < span.endBar) take = landed - bar;
+			}
 
 			slots.push({
 				bar,
@@ -214,23 +254,43 @@ function buildSlots(analysis: TrackAnalysis, peakMasterBars: number): Slot[] {
 	return slots;
 }
 
-function intensityFor(slot: Slot): number {
+function clamp01(v: number): number {
+	return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+
+/**
+ * `spread` widens the gap between the quiet sections and the loud ones, for a master with none
+ * of its own left. It only ever pushes the quiet end down: the loud end is already at the top
+ * of the range and the peak owns 1.0.
+ *
+ * Deliberately NOT corrected for how thin the stack is, though it was tried. Compensating a
+ * one-layer cue back up to what a four-layer cue delivers takes the drop-to-quiet ratio from
+ * 8.5x to 2.8x, which is the same contrast collapse the auto-exposure fix existed to undo. The
+ * intro was black because two beds emitted a twentieth of what their peers did and the cue had
+ * nothing else in it, and both of those are fixed where they were: in the effects, and in the
+ * plan.
+ */
+function intensityFor(slot: Slot, spread = 0): number {
 	const base: Record<SectionKind, number> = {
-		intro: 0.4,
+		intro: 0.46,
 		groove: 0.68,
 		breakdown: 0.42,
 		build: 0.62,
 		void: 0.05,
 		drop: 0.9,
-		outro: 0.32
+		// Not 0.32. "Letting the room go dark" is not the same instruction as "off", and gamma
+		// 2.2 leaves very little room below byte 10 to say the difference in.
+		outro: 0.5
 	};
 	// The peak is the only cue allowed the top of the range, because the linter checks that the
 	// brightest thing in the show happens in the biggest moment of the track.
 	if (slot.peak) return 1;
+	const floor = base[slot.section] * (1 - spread * 0.35);
 	// A build that sits at one level is not a build. Climbing across its cues is what makes the
 	// drop feel arrived at rather than merely loud.
 	const climb = slot.section === 'build' && slot.of > 1 ? (slot.index / (slot.of - 1)) * 0.16 : 0;
-	return Math.min(0.92, base[slot.section] + slot.energy * 0.08 + climb);
+	return Math.min(0.92, floor + slot.energy * 0.08 + climb);
 }
 
 function motionFor(slot: Slot): number {
@@ -343,7 +403,7 @@ function noteFor(slot: Slot): string {
 	if (slot.peak) return 'the peak: full stack, palette swapped, biggest look of the night';
 	switch (slot.section) {
 		case 'intro':
-			return 'bed only, the room waking up';
+			return 'the room waking up, bed and one texture';
 		case 'groove':
 			return 'the groove: bed and pulse, drums held back';
 		case 'breakdown':
@@ -445,9 +505,14 @@ function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
 		}
 	}
 
-	// Inside the loud passages, on the phrase. A drop that strobes once on its downbeat and
-	// then runs eight bars of steady wash is the definition of a show going flat: the genre
+	// Inside the loud passages, on the phrase. A drop that slams once on its downbeat and then
+	// runs eight bars of steady wash is the definition of a show going flat: the genre
 	// punctuates all the way through, and the energy of the passage is what says how often.
+	//
+	// Alternating rather than repeating, because the second strobe of a drop is worth much less
+	// than the first. A colour flood is the same size of gesture reached by a different route,
+	// so the passage keeps being punctuated without any one card being spent twice running.
+	let phraseIndex = 0;
 	for (const slot of slots) {
 		if (slot.section !== 'drop' && slot.section !== 'groove') continue;
 		if (slot.bar < SETTLE_BARS) continue;
@@ -464,14 +529,48 @@ function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
 		for (let bar = slot.bar + every; bar < slot.endBar; bar += every) {
 			if (hits.some((h) => Math.abs(h.bar - bar) < 2)) continue;
 			const heavy = slot.energy > 0.8 && rng.float() < 0.5;
-			hits.push({
-				bar: bar - 1,
-				kind: 'strobe',
-				beats: heavy ? beatsPerBar : Math.max(1, Math.round(beatsPerBar / 2)),
-				params: { perBeat },
-				note: 'punctuating the phrase'
-			});
+			// A bump lands ON the phrase downbeat; a strobe runs INTO it and stops there, which
+			// is why one is placed a bar early and the other is not.
+			const bump = phraseIndex++ % 2 === 1;
+			hits.push(
+				bump
+					? {
+							bar,
+							kind: 'bump',
+							beats: Math.max(1, Math.round(beatsPerBar / 2)),
+							note: 'colour flood on the phrase'
+						}
+					: {
+							bar: bar - 1,
+							kind: 'strobe',
+							beats: heavy ? beatsPerBar : Math.max(1, Math.round(beatsPerBar / 2)),
+							params: { perBeat },
+							note: 'strobing into the phrase'
+						}
+			);
 		}
+	}
+
+	// A cymbal crash is a hit the arrangement already contains, and the analyser has been
+	// tagging them all along with nothing reading the tag. Outside a drop downbeat, which has a
+	// slam of its own, one is worth a bump: it is the one moment the room can answer something
+	// the track did rather than something the grid predicted.
+	const dropStarts = new Set(
+		analysis.sections.filter((s) => s.kind === 'drop').map((s) => s.startBar)
+	);
+	for (const row of analysis.bars) {
+		if (!row.events.includes('crash') || dropStarts.has(row.bar)) continue;
+		if (row.bar < SETTLE_BARS) continue;
+		// Last in, so the bigger cards are already placed: a crash landing under a slam or a
+		// blackout is answered by those, and planning a hit that can never fire is a lie about
+		// what the show does.
+		if (hits.some((h) => Math.abs(h.bar - row.bar) < 2)) continue;
+		hits.push({
+			bar: row.bar,
+			kind: 'bump',
+			beats: Math.max(1, Math.round(beatsPerBar / 2)),
+			note: 'answering the crash'
+		});
 	}
 
 	return hits.sort((a, b) => a.bar - b.bar || a.kind.localeCompare(b.kind));

@@ -36,7 +36,10 @@ export const lavaBlobs: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
-				level = envelope(level, clamp(0.3 + f.energy * 0.8), f.dt, 0.2, 1.1);
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				level = envelope(level, clamp(0.55 + f.energy * 0.45), f.dt, 0.2, 1.1);
 				const gain = level * (0.4 + p.intensity * 0.8);
 				const clock = (f.barIndex + f.barPhase) * 0.03;
 				const sigma = 0.03 + p.size * 0.05;

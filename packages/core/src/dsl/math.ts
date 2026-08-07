@@ -1,3 +1,5 @@
+import { SLOT } from '../contracts/palette.ts';
+
 export function clamp(v: number, lo = 0, hi = 1): number {
 	return v < lo ? lo : v > hi ? hi : v;
 }
@@ -14,6 +16,22 @@ export function frac(v: number): number {
 export function smoothstep(edge0: number, edge1: number, v: number): number {
 	const t = clamp((v - edge0) / (edge1 - edge0));
 	return t * t * (3 - 2 * t);
+}
+
+/**
+ * Spread a 0..1 sweep across the lit part of the palette, base through accent and back.
+ *
+ * What an effect reaches for when it wants variety rather than one colour, and the answer to
+ * why six effects were calling `hsv2rgb` with hues of their own: the spectrum is the only
+ * continuous colour space an effect has unless something hands it one, and the show's own hues
+ * are that space. Sampling the whole ring would not do, because `deep` and `accentDeep` are
+ * near-black by design and a sweep through them flickers dark twice a cycle.
+ *
+ * Ping-pongs rather than wraps, so a rotating look has no seam where accent jumps back to base.
+ */
+export function paletteArc(u: number): number {
+	const t = frac(u) * 2;
+	return SLOT.base + (t <= 1 ? t : 2 - t) * (SLOT.accent - SLOT.base);
 }
 
 /** Frame-rate independent exponential coefficient for a time constant. */

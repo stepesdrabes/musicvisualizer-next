@@ -22,7 +22,9 @@ export const subThrob: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// Driven entirely by the sub band, so a passage with no bass renders nothing.
+		carries: false
 	},
 	params: [INTENSITY],
 	create(g) {

@@ -10,7 +10,8 @@ import type {
 } from './contracts/effect.ts';
 import { LAYER_ROLES } from './contracts/effect.ts';
 import type { Palette } from './contracts/palette.ts';
-import { makePalette } from './color/palette.ts';
+import { SLOT } from './contracts/palette.ts';
+import { makePalette, sample } from './color/palette.ts';
 import {
 	BrightnessSlew,
 	FlashLimiter,
@@ -82,10 +83,25 @@ export class Mixer {
 	intensity = 1;
 	/** User master fader, 0..1. */
 	brightness = 1;
+	/**
+	 * House floor: the level the room sits at when the cue's own layers are not carrying it.
+	 *
+	 * Every venue has one and this room did not, which is why its quiet passages measured byte 3
+	 * with 5% of the LEDs lit. The cause is structural rather than a bad number somewhere: a bed
+	 * is written to sit UNDER something, so an intro carrying a bed and one texture emits about
+	 * 0.2 before the output chain, and gamma 2.2 turns that into nothing at any intensity the
+	 * cue is allowed to ask for. No dimmer can lift a room that is not being lit.
+	 *
+	 * Added after the cue's intensity rather than before it, because it is a floor and not a
+	 * layer: a breakdown asking for 40% is asking for 40% of its LOOK, not for the room to go
+	 * out. A void sets this to zero, which is what makes a void still mean darkness.
+	 */
+	floor = 0;
 
 	readonly flashLimiter: FlashLimiter;
 	private readonly meanLevel = new MeanLevel();
 	private readonly slew: BrightnessSlew;
+	private readonly floorRgb: [number, number, number] = [0, 0, 0];
 	private readonly ctx: RenderCtx;
 	readonly geometry: Geometry;
 
@@ -137,6 +153,22 @@ export class Mixer {
 		// LED. Clipping here instead would make them read as flat stickers.
 		const scale = this.intensity * this.brightness * 1.4;
 		if (scale !== 1) for (let i = 0; i < this.frame.length; i++) this.frame[i] *= scale;
+
+		if (this.floor > 0) {
+			// The room's own home colour, so the floor reads as the show being lit rather than as
+			// a grey wash somebody forgot to turn off.
+			sample(this.palette, SLOT.base, this.brightness, this.floorRgb);
+			// A black-level lift, not a clamp. Clamping to the floor erases everything the cue's
+			// own layers are doing below it, and a quiet passage is exactly where they are all
+			// below it: the outro came out a dead flat wash whose peak equalled its floor. This
+			// way the layers still ride on top, compressed into the headroom that is left.
+			for (let i = 0; i < this.frame.length; i += 3) {
+				for (let c = 0; c < 3; c++) {
+					const lift = this.floorRgb[c] * this.floor;
+					this.frame[i + c] = lift + this.frame[i + c] * (1 - lift);
+				}
+			}
+		}
 
 		this.slew.apply(this.frame, f.dt);
 		this.flashLimiter.apply(this.frame, f.t, f.dt);

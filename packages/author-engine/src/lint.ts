@@ -84,7 +84,15 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// A void is the exception, and necessarily so: it is phrase-TERMINAL, occupying the last
 	// bar or two before a drop, so its start is never on a phrase multiple. What has to be
 	// on-grid is where it ends, which is the drop cue that follows it.
-	const onPhrase = (bar: number) => onPhraseGrid(bar, tempo.phraseAnchorBar);
+	//
+	// A bar the analyser named as a section start is the other exception, and the rule is about
+	// invention rather than about the grid: music does move off a four-bar phrase, after an
+	// inserted break or a bar of 2/4, and a global anchor cannot follow it. Dragging those
+	// boundaries onto the grid anyway cost 1.7 points of boundary F0.5 across 374 annotated
+	// tracks. What this still forbids is a cue placed off-phrase where nothing changed.
+	const measured = new Set(analysis.sections.map((s) => s.startBar));
+	const onPhrase = (bar: number) =>
+		onPhraseGrid(bar, tempo.phraseAnchorBar) || measured.has(bar);
 
 	for (let i = 1; i < cues.length; i++) {
 		const cue = cues[i];
@@ -99,8 +107,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 					next.bar
 				);
 			}
+			// Only when something follows it. A track that ends in silence ends in a void, and
+			// that is the track ending rather than a held breath that outstayed its welcome.
 			const lengthBars = (next ? next.bar : lastBar + 1) - cue.bar;
-			if (lengthBars > 2) {
+			if (next && lengthBars > 2) {
 				warn(
 					'void-too-long',
 					`the void at bar ${cue.bar} runs ${lengthBars} bars; past two it stops reading as a held breath`,

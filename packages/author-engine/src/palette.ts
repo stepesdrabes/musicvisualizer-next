@@ -56,7 +56,7 @@ const PALETTES: PaletteChoice[] = [
  * The choice is then weighted-random rather than nearest, so the seed genuinely decides among
  * everything plausible. Nearest-heat is what made ten palettes behave like three.
  */
-export function choosePalette(analysis: TrackAnalysis, rng: Rng): ShowPalette {
+export function choosePalette(analysis: TrackAnalysis, rng: Rng, artHue?: number | null): ShowPalette {
 	const bpm = analysis.tempo.bpm;
 
 	// Tempo carries most of it. 90 is a room at rest and 175 is one that is not, and unlike
@@ -90,18 +90,38 @@ export function choosePalette(analysis: TrackAnalysis, rng: Rng): ShowPalette {
 		}
 	}
 	const choice = PALETTES[index];
+	const fromArt = artHue !== undefined && artHue !== null;
 
-	// The tonic rotates the whole story by up to fifteen degrees, so two tracks that land on
-	// the same palette in different keys still light the room differently.
-	const shift = analysis.key.confidence > 0.5 ? (analysis.key.tonic / 12) * 30 - 15 : 0;
+	// The cover wins when there is one. The whole palette rotates rather than the base being
+	// overwritten, so the 140-180 degrees between base and accent survive exactly: a yellow
+	// sleeve gets a yellow room with the same complementary answer the palette was built with.
+	// Without a cover the tonic rotates the story by up to fifteen degrees instead, so two
+	// tracks landing on the same palette in different keys still light the room differently.
+	const shift = fromArt
+		? (((artHue as number) - choice.base) % 360 + 360) % 360
+		: analysis.key.confidence > 0.5
+			? (analysis.key.tonic / 12) * 30 - 15
+			: 0;
 	return {
-		name: choice.name,
+		// The curated name describes a hue the palette no longer sits on once it has been turned
+		// onto the cover, and that name is what the brief tells a reader the room looks like.
+		name: fromArt ? `${hueName(wrapHue(choice.base + shift))} from the cover` : choice.name,
 		base: wrapHue(choice.base + shift),
 		accent: wrapHue(choice.accent + shift),
 		third: wrapHue(choice.third + shift),
 		sat: choice.sat,
 		shade: choice.shade
 	};
+}
+
+const HUE_NAMES = [
+	[15, 'red'], [45, 'orange'], [70, 'yellow'], [100, 'lime'], [150, 'green'], [175, 'sea green'],
+	[200, 'cyan'], [225, 'azure'], [255, 'blue'], [280, 'violet'], [310, 'purple'], [340, 'magenta']
+] as const;
+
+function hueName(h: number): string {
+	for (const [edge, name] of HUE_NAMES) if (h < edge) return name;
+	return 'red';
 }
 
 /** Shortest way round the wheel, so a midpoint stays saturated instead of passing through grey. */

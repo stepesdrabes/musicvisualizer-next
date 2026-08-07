@@ -1,15 +1,20 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hsv2rgb } from '../color/hsv.ts';
+import { sample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
-import { alphaFor, clamp, envelope, frac, lerp } from '../dsl/math.ts';
+import { alphaFor, clamp, envelope, frac, lerp, paletteArc } from '../dsl/math.ts';
 import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { ringU } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
-/** Aurora range in the rainbow hue ramp: green through aqua to violet. */
-const HUE_LO = 0.36;
-const HUE_HI = 0.72;
+/**
+ * The stretch of the palette a curtain walks as it thins, dense edge to faint tail.
+ *
+ * An aurora is two neighbouring colours shading into each other rather than a spectrum, so a
+ * short arc is the honest translation: the show supplies which two.
+ */
+const CURTAIN_LO = 0.05;
+const CURTAIN_HI = 0.42;
 
 /**
  * The northern lights are the one natural licence for green light in a dark room. Two
@@ -26,7 +31,9 @@ export const auroraBorealis: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// Curtains over black. Between them the room is unlit by construction.
+		carries: false
 	},
 	params: [INTENSITY, param('drift', 'Drift speed', 0.4)],
 	create(g) {
@@ -42,10 +49,13 @@ export const auroraBorealis: EffectDef = {
 				buf.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, hueShift } = ctx;
+				const { f, p, palette, hueShift } = ctx;
 
-				level = envelope(level, clamp(0.3 + f.energy * 0.7), f.dt, 0.2, 1.2);
-				const gain = level * (0.35 + p.intensity * 0.85);
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				level = envelope(level, clamp(0.55 + f.energy * 0.45), f.dt, 0.2, 1.2);
+				const gain = level * (0.55 + p.intensity * 1.1);
 				const clock = (f.barIndex + f.barPhase) * (0.02 + p.drift * 0.03);
 
 				for (let i = 0; i < g.count; i++) {
@@ -60,8 +70,8 @@ export const auroraBorealis: EffectDef = {
 					// Solar-wind shimmer: a fixed spatial texture scanned, never re-rolled -
 					// flicker with structure rather than noise.
 					const shimmer = 0.75 + 0.25 * sinewave(shimmerPhase[i] + clock * 30);
-					const hue = lerp(HUE_LO, HUE_HI, 1 - curtain);
-					hsv2rgb(frac(hue + hueShift), 0.88, curtain * shimmer * gain, rgb);
+					const arc = lerp(CURTAIN_LO, CURTAIN_HI, 1 - curtain);
+					sample(palette, paletteArc(arc + hueShift), curtain * shimmer * gain, rgb);
 					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 

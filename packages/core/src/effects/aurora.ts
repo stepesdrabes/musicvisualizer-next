@@ -48,7 +48,10 @@ export const aurora: EffectDef = {
 				ph[2] += (f.dt / (32 * bp)) * motion;
 
 				airEnv = envelope(airEnv, f.bands[Band.Air], f.dt, 0.05, 0.6);
-				const gain = (0.3 + p.intensity * 0.8) * clamp(0.35 + f.energy * 0.85);
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				const gain = (0.3 + p.intensity * 0.8) * clamp(0.6 + f.energy * 0.4);
 				const scale = 1.5 + p.waves * 3.5;
 				// Busy top end lowers the bar for a highlight, so dense passages shimmer.
 				const threshold = 0.62 - airEnv * 0.2;

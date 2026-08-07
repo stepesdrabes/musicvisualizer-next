@@ -20,7 +20,7 @@ export interface TimelineCue {
 }
 
 export interface TimelineMarker {
-	kind: 'strobe' | 'blackout' | 'slam';
+	kind: 'strobe' | 'blackout' | 'slam' | 'bump';
 	start: number;
 	/** Where the hit stops. A two-bar strobe has to read as longer than a one-bar one. */
 	end: number;

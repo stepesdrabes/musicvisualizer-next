@@ -61,6 +61,9 @@ Colour (address by slot, never by hue)
 			.join(', ')} }
   sample(palette, u, brightness) -> [r,g,b] · setSample(buf, i, palette, u, brightness)
   addSample(buf, i, palette, u, brightness)
+  paletteArc(u) - spread a 0..1 sweep across the lit palette, base through accent and back.
+    What to reach for instead of hsv2rgb when an effect wants VARIETY rather than one colour.
+    Ping-pongs, so a rotating look has no seam, and never passes through the near-black slots.
 
 Space
   ringU(g, i) - one LED's position around the perimeter, or along the beam

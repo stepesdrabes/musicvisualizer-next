@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import type { TrackAnalysis } from '@mv/core';
 import { ANALYSIS_VERSION } from '@mv/core';
 import { analyzeTrack } from './analyze.ts';
+import { artworkHue } from './artwork.ts';
 import { decodeAudio, downloadAudio, probe } from './decode.ts';
 
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -42,6 +43,12 @@ export interface TrackMeta {
 	thumbnail: string;
 	webpageUrl: string;
 	source: string;
+	/**
+	 * Dominant hue of the cover, degrees, or null when it has no colour worth taking. Cached
+	 * here because it is a property of the artwork rather than of the audio, so re-analysing
+	 * the track should not re-download the image.
+	 */
+	artHue?: number | null;
 }
 
 export async function readMeta(id: string): Promise<TrackMeta | null> {
@@ -72,6 +79,12 @@ export interface IngestResult {
 export interface IngestOptions {
 	/** Re-analyse even when a current cached analysis exists. */
 	force?: boolean;
+	/**
+	 * Re-read the beats at a different metrical level: 2 doubles, 0.5 halves, 1.5 reads three
+	 * where the tracker read two. Implies `force`, since the cached grid is what is being
+	 * disagreed with.
+	 */
+	metricalLevel?: number;
 	onProgress?: (stage: string) => void;
 }
 
@@ -122,9 +135,17 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		meta = { id, title, uploader: 'local file', thumbnail: '', webpageUrl: '', source };
 	}
 
+	// Read from the previous meta rather than re-fetched: the image has not changed and the
+	// network is the slowest thing in this function.
+	const previous = await readMeta(id);
+	meta.artHue =
+		previous?.artHue !== undefined
+			? previous.artHue
+			: ((await artworkHue(meta.thumbnail)).hue ?? null);
 	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 
-	if (!opts.force) {
+	const relevel = opts.metricalLevel !== undefined && Math.abs(opts.metricalLevel - 1) > 1e-6;
+	if (!opts.force && !relevel) {
 		try {
 			const cached = JSON.parse(await readFile(analysisPath(id), 'utf8')) as TrackAnalysis;
 			// A stale blob is silently wrong rather than obviously broken: same shape, different
@@ -169,7 +190,8 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		trackId: id,
 		title,
 		beats: tracked?.beats,
-		downbeats: tracked?.downbeats
+		downbeats: tracked?.downbeats,
+		metricalLevel: opts.metricalLevel
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));

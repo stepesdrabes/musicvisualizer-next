@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hsv2rgb } from '../color/hsv.ts';
-import { alphaFor, clamp, frac } from '../dsl/math.ts';
+import { sample } from '../color/palette.ts';
+import { SLOT } from '../contracts/palette.ts';
+import { alphaFor, clamp, frac, lerp, paletteArc } from '../dsl/math.ts';
 import { nblend, setPixel } from '../dsl/buffer.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -38,7 +39,7 @@ export const vortex: EffectDef = {
 				buf.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, hueShift } = ctx;
+				const { f, p, palette, hueShift } = ctx;
 
 				surge += f.kickEnv * f.dt * 1.8;
 				surge *= Math.exp(-f.dt / 1.4);
@@ -52,7 +53,10 @@ export const vortex: EffectDef = {
 					const w = Math.pow(sinewave(s * 2), 2);
 					// Near the axis, brightness lifts toward white-hot: the eye of the vortex.
 					const eye = Math.max(0, 1 - g.r[i] * 3.2);
-					hsv2rgb(frac(s + hueShift), 0.92 - eye * 0.5, (0.2 + 0.8 * w + eye * 0.6) * gain, rgb);
+					// The eye reads toward white by moving up the palette rather than by desaturating,
+					// which is the same gesture without leaving the show's colours.
+					const u = eye > 0 ? lerp(paletteArc(s + hueShift), SLOT.white, eye * 0.7) : paletteArc(s + hueShift);
+					sample(palette, u, (0.2 + 0.8 * w + eye * 0.6) * gain, rgb);
 					setPixel(buf, i, rgb[0], rgb[1], rgb[2]);
 				}
 

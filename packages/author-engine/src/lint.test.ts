@@ -72,6 +72,8 @@ function fixture(): TrackAnalysis {
 			barsPerPhrase: 8,
 			constant: true,
 			meterConfidence: 0.9,
+			ambiguous: false,
+			alternativeBpm: [],
 			barTimes: Array.from({ length: 64 + 1 }, (_, i) => i * barLength)
 		},
 		key: { tonic: 0, name: 'C minor', mode: 'minor', confidence: 0.7 },
@@ -79,8 +81,13 @@ function fixture(): TrackAnalysis {
 		sections,
 		moments: [],
 		beats: [],
+		envelopes: { energy: [], bands: [] },
 		stereo: { fps: 25, pan: [], width: [] },
-		onsets: { kick: [], snare: [], hat: [] },
+		onsets: {
+			kick: { times: [], levels: [] },
+			snare: { times: [], levels: [] },
+			hat: { times: [], levels: [] }
+		},
 		integratedLufs: -14,
 		loudnessRange: 6,
 		peakToLoudness: 12

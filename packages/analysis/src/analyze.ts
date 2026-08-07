@@ -1,21 +1,23 @@
 import {
 	ANALYSIS_VERSION,
+	BARS_PER_PHRASE,
 	NUM_BANDS,
 	type BarRow,
 	type Moment,
+	type OnsetStream,
 	type SectionSpan,
 	type TrackAnalysis
 } from '@mv/core';
-import { arrange } from './arrange.ts';
+import { arrange, bandLevels, levelEnvelopes } from './arrange.ts';
 import { detectBeats, type BeatGrid } from './beats.ts';
 import { beatSynchronous } from './beatsync.ts';
 import { chromagram, estimateKey } from './chroma.ts';
-import { detectDrums } from './drums.ts';
+import { detectDrums, type DrumStream } from './drums.ts';
 import { extractFeatures } from './features.ts';
 import { detectMeter, type Meter } from './downbeats.ts';
 import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
-import { quantiseOnsets } from './quantise.ts';
+import { barGroups, quantiseOnsets } from './quantise.ts';
 import { analyseStereo } from './stereo.ts';
 import { barSynchronous, groupSegments, segmentBars, similarityMatrix } from './structure.ts';
 
@@ -33,6 +35,12 @@ export interface AnalyzeInput {
 	/** Constrain the tempo search to within 6% of a known value. */
 	bpmHint?: number;
 	/**
+	 * Re-read the beats at a different metrical level: 2 doubles the tempo, 0.5 halves it, 1.5
+	 * reads three where the tracker read two. Applied to whatever grid is used, so it corrects
+	 * the model and the in-repo tracker alike.
+	 */
+	metricalLevel?: number;
+	/**
 	 * Beat and downbeat times from a tracker that has already run, seconds.
 	 *
 	 * Passed in rather than fetched here because the model is asynchronous and this is not, and
@@ -47,7 +55,6 @@ export interface AnalyzeInput {
 const TARGET_LUFS = -14;
 /** What a silent track reports rather than negative infinity, which is not JSON. */
 const SILENCE_LUFS = -70;
-const BARS_PER_PHRASE = 8;
 
 export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	const { sampleRate, duration } = input;
@@ -78,6 +85,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			? gridFromBeats(input.beats, features.odf, features.curves.fps)
 			: detectBeats(features.odf, features.curves.fps, duration, { bpmHint: input.bpmHint });
 
+	if (input.metricalLevel && Math.abs(input.metricalLevel - 1) > 1e-6) {
+		relevel(grid, input.metricalLevel);
+	}
+
 	const beatFeatures = beatSynchronous(
 		features.spec,
 		chroma,
@@ -94,31 +105,34 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			: detectMeter(beatFeatures);
 	const bars = barSynchronous(beatFeatures, meter.beatsPerBar, meter.phase);
 
-	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod });
-	// Snapped to the grid and completed, because a missed kick reads as a missed flash and the
-	// music put it exactly where the grid says.
-	const quantise = (times: number[]) =>
-		quantiseOnsets(times, {
+	// Structure before drums, because the drum correction wants to know which bars repeat which
+	// and nothing in the segmentation looks at percussion.
+	const sim = similarityMatrix(bars);
+	const bounds = segmentBars(sim, bars);
+	const groups = groupSegments(sim, bars.count, bounds);
+	const barGroup = barGroups(bounds, groups.group, bars.count);
+
+	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod, odf: features.odf });
+	const quantise = (stream: DrumStream) =>
+		quantiseOnsets(stream, {
 			beats: grid.beats,
 			beatsPerBar: meter.beatsPerBar,
 			downbeatPhase: meter.phase,
+			barGroup,
 			duration
 		});
 	const drums = {
-		kick: quantise(detected.kick).times,
-		snare: quantise(detected.snare).times,
-		hat: quantise(detected.hat).times
+		kick: quantise(detected.kick),
+		snare: quantise(detected.snare),
+		hat: quantise(detected.hat)
 	};
-	const kicks = countPerBar(drums.kick, bars.time, bars.count);
-	const snares = countPerBar(drums.snare, bars.time, bars.count);
-	const hats = countPerBar(drums.hat, bars.time, bars.count);
+	const kicks = countPerBar(drums.kick.times, bars.time, bars.count);
+	const snares = countPerBar(drums.snare.times, bars.time, bars.count);
+	const hats = countPerBar(drums.hat.times, bars.time, bars.count);
 
-	const sim = similarityMatrix(bars);
-	const bounds = segmentBars(sim, bars.count);
-	const groups = groupSegments(sim, bars.count, bounds);
-
+	const barsDb = bandLevels(features.spec, bars.time, bars.count);
 	const plan = arrange(
-		features.spec,
+		barsDb,
 		bars,
 		bounds,
 		groups,
@@ -195,6 +209,27 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			sections[s.index].energyRank = i + 1;
 		});
 
+	// The light moves at beat resolution, not bar resolution. Same arithmetic, finer grid: a
+	// per-bar mean hides between 12% and 43% of the band envelope's true variance, and reading
+	// it by interpolating between bar centres also leads the audio by half a bar.
+	const beatCount = Math.max(0, beatFeatures.count);
+	const beatDb = bandLevels(features.spec, beatFeatures.time, beatCount);
+	const beat = levelEnvelopes(
+		beatDb,
+		loudness.shortTerm,
+		loudness.shortTermFps,
+		beatFeatures.time,
+		beatCount
+	);
+
+	// Assessed on the grid that is actually shipping, so a track corrected once does not keep
+	// offering the correction it already took.
+	const level = assessMetricalLevel(
+		Array.from(grid.beats),
+		features.odf,
+		features.curves.fps
+	);
+
 	const key = estimateKey(chroma);
 
 	return {
@@ -218,6 +253,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			barsPerPhrase: BARS_PER_PHRASE,
 			constant: grid.constant,
 			meterConfidence: round2(meter.confidence),
+			ambiguous: level.ambiguous,
+			alternativeBpm: level.alternatives,
 			barTimes
 		},
 		key: {
@@ -230,20 +267,54 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		sections,
 		moments: buildMoments(barRows, sections),
 		beats: Array.from(grid.beats, round3),
+		envelopes: {
+			energy: Array.from(beat.energy, pct),
+			bands: Array.from(beat.bands, pct)
+		},
 		stereo: {
 			fps: round3(stereo.fps),
 			pan: Array.from(stereo.pan, round2),
 			width: Array.from(stereo.width, round2)
 		},
 		onsets: {
-			kick: drums.kick.map(round3),
-			snare: drums.snare.map(round3),
-			hat: drums.hat.map(round3)
+			kick: roundStream(drums.kick),
+			snare: roundStream(drums.snare),
+			hat: roundStream(drums.hat)
 		},
 		integratedLufs: round1(Math.max(loudness.integrated, SILENCE_LUFS)),
 		loudnessRange: round1(loudness.range),
 		peakToLoudness: round1(Number.isFinite(loudness.peakToLoudness) ? loudness.peakToLoudness : 0)
 	};
+}
+
+/**
+ * Re-read the same beats at a different metrical level, in place.
+ *
+ * A half-time reading is a subset of the true beats and a double-time reading is a superset, so
+ * neither is a re-detection: the phase the tracker found is the reliable part and only how many
+ * beats there are to a bar is in doubt. Resampling in beat-index space covers the two-against-
+ * three case as well, which a half/double control alone cannot repair and which is exactly what
+ * a listening test caught on one of the cached tracks.
+ */
+function relevel(grid: BeatGrid, level: number): void {
+	const source = grid.beats;
+	const last = source.length - 1;
+	if (last < 1 || !(level > 0)) return;
+
+	const out: number[] = [];
+	for (let k = 0; ; k++) {
+		const x = k / level;
+		if (x > last) break;
+		const i = Math.floor(x);
+		const f = x - i;
+		out.push(i >= last ? source[last] : source[i] + (source[i + 1] - source[i]) * f);
+	}
+	if (out.length < 2) return;
+
+	grid.beats = Float64Array.from(out);
+	grid.beatPeriod = (out[out.length - 1] - out[0]) / (out.length - 1);
+	grid.bpm = grid.beatPeriod > 1e-6 ? 60 / grid.beatPeriod : grid.bpm;
+	grid.firstBeat = out[0];
 }
 
 /**
@@ -379,6 +450,10 @@ function describe(ev: string, row: BarRow): string {
 		default:
 			return '';
 	}
+}
+
+function roundStream(stream: { times: number[]; levels: number[] }): OnsetStream {
+	return { times: stream.times.map(round3), levels: stream.levels.map(round2) };
 }
 
 function pct(v: number): number {

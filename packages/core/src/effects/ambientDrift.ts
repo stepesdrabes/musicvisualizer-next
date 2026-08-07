@@ -32,12 +32,12 @@ export const ambientDrift: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 				phase += f.dt / (30 + p.period * 30);
-				const gain = 0.15 + p.intensity * 0.3;
+				const gain = 0.32 + p.intensity * 0.5;
 
 				for (let i = 0; i < g.count; i++) {
 					const u = ringU(g, i);
 					const v = 0.35 + 0.65 * sinewave(u * 0.7 + phase);
-					const slot = lerp(SLOT.deep, SLOT.base, v);
+					const slot = lerp(SLOT.deep, SLOT.glow, v);
 					setSample(out, i, palette, slot + frac(phase * 0.3) * 0.06 + hueShift, v * gain);
 				}
 			}

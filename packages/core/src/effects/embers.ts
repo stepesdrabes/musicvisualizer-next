@@ -20,7 +20,9 @@ export const embers: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// A twinkle field: 22% of the room is lit at any instant and the rest is dark.
+		carries: false
 	},
 	params: [INTENSITY, param('pool', 'Pool size', 0.4)],
 	create(g) {
@@ -58,7 +60,11 @@ export const embers: EffectDef = {
 						v *= v;
 					}
 					const slot = h2[i] < 0.6 ? lerp(SLOT.deep, SLOT.base, h1[i]) : SLOT.third;
-					setSample(buf, i, palette, slot + hueShift, v * gain * (0.3 + 0.7 * h1[i]));
+					// A bed under the sparks. Twinkles alone light 22% of the room at any instant and
+					// average 0.02 across it, which after gamma is byte zero: a bed is the FLOOR of a
+					// cue and has to hold the room on its own, however sparse the thing on top is.
+					const glow = 0.22 * (0.55 + 0.45 * level);
+					setSample(buf, i, palette, slot + hueShift, glow + v * gain * (0.3 + 0.7 * h1[i]));
 				}
 
 				nblend(out, buf, alphaFor(f.dt, 0.09));

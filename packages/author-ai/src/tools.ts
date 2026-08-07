@@ -87,7 +87,7 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			const { tempo, onsets } = session.analysis;
 			const from = barTimeAt(session.analysis.tempo, fromBar);
 			const to = barTimeAt(session.analysis.tempo, toBar + 1);
-			const hits = onsets[instrument].filter((t) => t >= from && t < to);
+			const hits = onsets[instrument].times.filter((t) => t >= from && t < to);
 			if (hits.length === 0) return text(`No ${instrument} onsets in bars ${fromBar}-${toBar}.`);
 			const lines = hits.map((t) => {
 				const beats = (t - tempo.firstBeat) / tempo.beatPeriod;

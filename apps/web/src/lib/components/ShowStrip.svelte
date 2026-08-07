@@ -69,9 +69,9 @@
 		if (!a || duration <= 0) return;
 
 		const rows: [readonly number[], string][] = [
-			[a.onsets.kick, '#ff6a1a'],
-			[a.onsets.snare, '#5aa9ff'],
-			[a.onsets.hat, '#8f8fa6']
+			[a.onsets.kick.times, '#ff6a1a'],
+			[a.onsets.snare.times, '#5aa9ff'],
+			[a.onsets.hat.times, '#8f8fa6']
 		];
 		const rowH = h / rows.length;
 

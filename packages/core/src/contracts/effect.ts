@@ -59,6 +59,16 @@ export interface EffectTaste {
 	maxBars: number;
 	/** Usable at most once per show. */
 	peakReserved: boolean;
+	/**
+	 * False when this cannot hold a room on its own.
+	 *
+	 * A bed is the floor of a cue, and most beds are written to sit under something: some are
+	 * spatially sparse, some scale themselves by the very energy the cue's intensity is already
+	 * scaling. Either way they emit almost nothing in a quiet passage, and gamma 2.2 sends
+	 * anything under 0.08 to byte zero, so a cue whose only substantial layer is one of these
+	 * comes out black rather than dim. Absent means it carries.
+	 */
+	carries?: boolean;
 }
 
 export interface EffectDef {

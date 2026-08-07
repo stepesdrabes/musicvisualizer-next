@@ -1,13 +1,16 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hsv2rgb } from '../color/hsv.ts';
-import { frac } from '../dsl/math.ts';
+import { sample } from '../color/palette.ts';
+import { paletteArc } from '../dsl/math.ts';
 import { setPixel } from '../dsl/buffer.ts';
 import { Edge, INTENSITY, param } from './helpers.ts';
 
 /**
- * The rationed full-spectrum special: three concentric shells carrying a slice of the
- * spectrum by radius, two beats of glory, then gone. A rainbow that appears for one
- * breath at the biggest moment stays special all night.
+ * The rationed special: three concentric shells carrying a slice of the palette by radius,
+ * two beats of glory, then gone.
+ *
+ * This is the effect the picker hands the peak of nearly every track, which is exactly why it
+ * may not have colours of its own: the biggest moment of a show is the last place the room
+ * should stop being the colour it has been all night.
  */
 export const chromaBurst: EffectDef = {
 	id: 'chromaBurst',
@@ -35,7 +38,7 @@ export const chromaBurst: EffectDef = {
 				edge.reset();
 			},
 			render(out, ctx) {
-				const { f, p, hueShift } = ctx;
+				const { f, p, palette, hueShift } = ctx;
 
 				if (f.section === 'drop' && f.downbeat) {
 					const impact = f.timeSinceDrop < 0.3;
@@ -68,7 +71,7 @@ export const chromaBurst: EffectDef = {
 						const d = Math.abs(g.dist[i] * maxR - radius);
 						if (d > 0.28) continue;
 						const v = Math.pow(1 - d / 0.28, 2);
-						hsv2rgb(frac(g.dist[i] * 0.8 + s * 0.33 + hueShift), 0.9, v * gain, rgb);
+						sample(palette, paletteArc(g.dist[i] * 0.8 + s * 0.33 + hueShift), v * gain, rgb);
 						r += rgb[0];
 						gr += rgb[1];
 						b += rgb[2];

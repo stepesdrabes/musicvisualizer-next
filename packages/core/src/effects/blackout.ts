@@ -13,7 +13,9 @@ export const blackout: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 1,
 		maxBars: 4,
-		peakReserved: false
+		peakReserved: false,
+		// Darkness is the whole instruction.
+		carries: false
 	},
 	params: [param('keepAlive', 'Keep-alive', 0.02, 0, 0.15)],
 	create() {

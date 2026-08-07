@@ -45,8 +45,11 @@ export const nebula: EffectDef = {
 				bassEnv = envelope(bassEnv, clamp(f.kickEnv + f.bands[Band.Low] * 0.5), f.dt, 0.01, 0.35);
 				clock += f.dt * 0.14 * motion * (1 + bassEnv * p.surge * 2.2);
 
-				level = envelope(level, clamp(0.25 + f.energy * 0.9), f.dt, 0.12, 0.7);
-				const bright = level * (0.35 + p.intensity * 0.85);
+				// The floor is high because the cue's own intensity already says the passage is
+				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
+				// of a number under one is how an intro reached byte zero.
+				level = envelope(level, clamp(0.55 + f.energy * 0.45), f.dt, 0.12, 0.7);
+				const bright = level * (0.5 + p.intensity * 1.05);
 				const scale = 1.2 + p.scale * 6;
 				const t = clock;
 

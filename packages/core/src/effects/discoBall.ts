@@ -23,7 +23,9 @@ export const discoBall: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// Discrete beams sweeping over an unlit room.
+		carries: false
 	},
 	params: [INTENSITY, param('density', 'Glint density', 0.5)],
 	create(g) {

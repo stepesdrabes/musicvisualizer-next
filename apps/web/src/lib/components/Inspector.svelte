@@ -19,7 +19,9 @@
 		previewing = null,
 		previewParams = {},
 		onpreview,
-		onparam
+		onparam,
+		onrelevel,
+		relevelling = false
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
@@ -35,6 +37,8 @@
 		previewParams?: Record<string, number>;
 		onpreview: (def: EffectDef | null) => void;
 		onparam: (key: string, value: number) => void;
+		onrelevel: (level: number) => void;
+		relevelling?: boolean;
 	} = $props();
 
 	let tab = $state<'show' | 'cues' | 'effects' | 'design' | 'log'>('show');
@@ -86,7 +90,28 @@
 					<h2 class="caption">Track</h2>
 					<dl class="mono">
 						<dt>tempo</dt>
-						<dd>{analysis.tempo.bpm} bpm · confidence {analysis.tempo.confidence.toFixed(2)}</dd>
+						<dd>
+							{analysis.tempo.bpm} bpm · confidence {analysis.tempo.confidence.toFixed(2)}
+							{#if analysis.tempo.ambiguous}
+								<!-- Only where the evidence really is split. Offering the correction on every
+								     track would teach people to ignore it. -->
+								<span class="ambiguous" title="an unusual tempo for a tactus; a commoner reading of the same beats is offered below"
+									>ambiguous</span>
+							{/if}
+						</dd>
+						{#if analysis.tempo.alternativeBpm.length > 0}
+							<dt>re-read at</dt>
+							<dd class="levels">
+								{#each analysis.tempo.alternativeBpm as alt (alt)}
+									<button
+										type="button"
+										disabled={relevelling}
+										onclick={() => onrelevel(alt / analysis.tempo.bpm)}>
+										{Math.round(alt)} bpm
+									</button>
+								{/each}
+							</dd>
+						{/if}
 						<dt>grid</dt>
 						<dd>
 							{analysis.tempo.beatsPerBar}/4 · phrase {analysis.tempo.barsPerPhrase} · anchor {analysis
@@ -220,6 +245,38 @@
 </aside>
 
 <style>
+	.ambiguous {
+		font-size: 10px;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--warn, #d8a33a);
+		border: 1px solid currentColor;
+		padding: 0 4px;
+		margin-left: 6px;
+	}
+	.levels {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+	.levels button {
+		font: inherit;
+		font-size: 11px;
+		color: inherit;
+		background: transparent;
+		border: 1px solid currentColor;
+		padding: 2px 7px;
+		cursor: pointer;
+		opacity: 0.75;
+	}
+	.levels button:hover:not(:disabled) {
+		opacity: 1;
+	}
+	.levels button:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+
 	aside {
 		width: 336px;
 		flex: none;

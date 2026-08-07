@@ -5,6 +5,8 @@ export interface TrackMeta {
 	title: string;
 	uploader: string;
 	thumbnail: string;
+	/** Dominant hue of the cover, degrees, or null when it has none worth taking. */
+	artHue?: number | null;
 	webpageUrl: string;
 	source: string;
 }

@@ -1,5 +1,6 @@
 import type { BeatFeatures } from './beatsync.ts';
 import { PITCH_CLASSES } from './chroma.ts';
+import { quantile } from './dsp/stats.ts';
 
 /**
  * How many sub-frames each bar is resampled to. Keeping a time axis inside the bar is what
@@ -115,11 +116,47 @@ export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: num
 	return { count, time, pattern, patternDim, chroma, rms, low, mid, high, floor };
 }
 
+/**
+ * Under this the track has no dynamics to read and a level term would only amplify noise.
+ * Six dB is about the range a heavily limited master still has left between its verse and its
+ * chorus, so it is the point below which "louder" stops carrying structure.
+ */
+const MIN_LEVEL_SPREAD_DB = 6;
+/**
+ * How far apart in level two bars may sit, as a fraction of the track's own p10-p90 range,
+ * before they stop reading as the same passage.
+ */
+const LEVEL_TOL = 0.2;
+/** The most of a pair's similarity that a level difference is allowed to withdraw. */
+const LEVEL_DEPTH = 0.55;
+
+/** Bar levels in dB, floored so a digitally silent bar cannot stretch the track's range. */
+function barLevels(bars: BarFeatures): Float32Array {
+	const db = new Float32Array(bars.count);
+	for (let b = 0; b < bars.count; b++) db[b] = 20 * Math.log10(Math.max(bars.rms[b], 1e-5));
+	return db;
+}
+
+/** The track's own working range in dB, floored so a flat master cannot divide by nothing. */
+function levelSpread(db: Float32Array): number {
+	return Math.max(MIN_LEVEL_SPREAD_DB, quantile(db, 0.9) - quantile(db, 0.1));
+}
+
 /** Cosine similarity matrix over bars, count * count, values in 0..1. */
 export function similarityMatrix(bars: BarFeatures): Float32Array {
 	const n = bars.count;
 	const dim = bars.patternDim;
 	const sim = new Float32Array(n * n);
+
+	// Amplitude has to re-enter somewhere. `barSynchronous` L2-normalises each bar's pattern,
+	// which is what lets a repeat match its original at any level, and is also why a drop and
+	// the groove behind it playing the same figure were literally identical rows: a 1.6 dB step
+	// scored 1.000. It re-enters as a multiplier rather than a summand, because two bars playing
+	// different figures are different whatever their levels, so level may only ever withdraw
+	// similarity and never supply it.
+	const db = barLevels(bars);
+	const tol = LEVEL_TOL * levelSpread(db);
+
 	for (let i = 0; i < n; i++) {
 		sim[i * n + i] = 1;
 		for (let j = i + 1; j < n; j++) {
@@ -131,7 +168,9 @@ export function similarityMatrix(bars: BarFeatures): Float32Array {
 			for (let k = 0; k < PITCH_CLASSES; k++) {
 				cdot += bars.chroma[i * PITCH_CLASSES + k] * bars.chroma[j * PITCH_CLASSES + k];
 			}
-			const v = Math.max(0, 0.75 * dot + 0.25 * cdot);
+			const d = (db[i] - db[j]) / tol;
+			const level = 1 - LEVEL_DEPTH + LEVEL_DEPTH * Math.exp(-d * d);
+			const v = Math.max(0, (0.75 * dot + 0.25 * cdot) * level);
 			sim[i * n + j] = v;
 			sim[j * n + i] = v;
 		}
@@ -146,16 +185,14 @@ export function similarityMatrix(bars: BarFeatures): Float32Array {
  */
 const BAND = 7;
 /**
- * Two phrases. Higher recovers longer sections on synthetic block structure, and costs the
- * fixture's peak: at 32 the segmenter fuses the drop with the groove behind it, because the
- * bar patterns are L2-normalised and the two play the same figure at different levels, so
- * nothing in the similarity matrix separates them. Raising this wants a level term in
- * `similarityMatrix` first, measured against SALAMI rather than against one fixture.
+ * Six phrases. Reachable only because `similarityMatrix` now sees level: while it did not, a
+ * ceiling above 16 fused a drop with the groove behind it, since the two play the same figure
+ * and the L2-normalised patterns were identical rows.
  */
-const MAX_SEGMENT_BARS = 16;
+const MAX_SEGMENT_BARS = 24;
 const MIN_SEGMENT_BARS = 2;
 /** Weight of the length prior, in units of one bar's worth of banded pairs. */
-const LAMBDA = 0.35;
+const LAMBDA = 1.1;
 
 /** 0 for eight bars, then progressively worse for four, two and anything else. */
 function lengthPenalty(bars: number): number {
@@ -219,7 +256,8 @@ function bandedMean(sim: Float32Array, n: number): number {
  * structure entirely. Expressing it as a cost lets the evidence overrule it when the music
  * really does move at seven bars, and lets it win when the evidence is a coin toss.
  */
-export function segmentBars(sim: Float32Array, n: number): number[] {
+export function segmentBars(sim: Float32Array, bars: BarFeatures): number[] {
+	const n = bars.count;
 	if (n < MIN_SEGMENT_BARS * 2) return [0, n];
 
 	const baseline = bandedMean(sim, n);

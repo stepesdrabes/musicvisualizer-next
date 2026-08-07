@@ -74,7 +74,7 @@ export const showSchema = z.object({
 			z.object({
 				bar: z.number().int(),
 				beat: z.number().optional(),
-				kind: z.enum(['slam', 'strobe', 'blackout']),
+				kind: z.enum(['slam', 'strobe', 'blackout', 'bump']),
 				beats: z.number().min(0.25).max(16),
 				params: numbers.optional(),
 				note: z.string().optional()

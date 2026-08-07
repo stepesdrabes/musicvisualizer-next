@@ -1,4 +1,4 @@
-import type { BarRow, TrackAnalysis, TempoGrid } from './contracts/analysis.ts';
+import type { BarRow, OnsetStream, TrackAnalysis, TempoGrid } from './contracts/analysis.ts';
 import type { Cue, Hit, Show } from './contracts/show.ts';
 import { LAYER_ROLES } from './contracts/effect.ts';
 import type { Palette, ShowPalette } from './contracts/palette.ts';
@@ -37,6 +37,67 @@ interface BuildSpan {
 	end: number;
 }
 
+/**
+ * The dimmest a hit may fire at. A ghost note is quiet, not absent, and an envelope that can
+ * reach zero turns "the detector was unsure" into "nothing happened".
+ */
+const MIN_HIT_LEVEL = 0.35;
+
+/**
+ * How much house floor each section gets, before the cue's own layers.
+ *
+ * A void is zero because darkness is its whole instruction, and the quiet sections get the most
+ * because they are the ones whose layers do not carry the room: a bed is written to sit under
+ * something and a breakdown has almost nothing on top of it. A drop needs none - it is already
+ * four bright layers - and giving it one would only eat the headroom the highlight compressor
+ * needs.
+ */
+const SECTION_FLOOR: Record<SectionKind, number> = {
+	void: 0,
+	intro: 0.72,
+	outro: 0.6,
+	breakdown: 0.64,
+	build: 0.38,
+	groove: 0.32,
+	drop: 0.09
+};
+
+function floorFor(section: SectionKind): number {
+	return Math.min(1, SECTION_FLOOR[section] ?? 0);
+}
+
+/**
+ * Which effect each punctuation kind installs in the master layer.
+ *
+ * A table rather than using the kind as the id directly, so the show's vocabulary is a small
+ * closed set of gestures and the catalog is free to rename what performs one.
+ */
+const HIT_EFFECT: Record<Hit['kind'], string | null> = {
+	blackout: null,
+	slam: 'slam',
+	strobe: 'strobe',
+	bump: 'colorBump'
+};
+
+/**
+ * Which punctuation wins when two overlap.
+ *
+ * They overlap by design: the strobe runs out of the build and the held-breath blackout is cut
+ * from its last bar, so the two are live at the same instant on purpose. Resolving that by
+ * taking whichever started first handed it to the strobe every time, and 9 of 117 planned hits
+ * across the corpus never fired - every one of them the blackout before a drop, which is the
+ * single strongest move in the vocabulary.
+ *
+ * A cut beats a flash because a cut is the absence of light and cannot be expressed by adding
+ * any; a slam beats a bump because it is the bigger card.
+ */
+const HIT_PRIORITY: Record<Hit['kind'], number> = {
+	blackout: 3,
+	slam: 2,
+	bump: 1,
+	strobe: 0
+};
+
 function resolvePalette(base: ShowPalette, cue: Cue): Palette {
 	const p = cue.palette;
 	if (!p || p === 'inherit') return makePalette(base);
@@ -59,8 +120,11 @@ export class ShowPlayer {
 	private widthCurve = new Float32Array(0);
 	private stereoFps = 25;
 
-	private barEnergy = new Float32Array(0);
-	private barBands = new Float32Array(0);
+	private beatEnergy = new Float32Array(0);
+	private beatBands = new Float32Array(0);
+	private beatOffset = 0;
+	/** Envelope entries per bar: the meter on the beat grid, 1 on the bar-table fallback. */
+	private entriesPerBar = 1;
 	private barSection: SectionKind[] = [];
 	private sectionBounds: { start: number; end: number }[] = [];
 
@@ -104,18 +168,32 @@ export class ShowPlayer {
 		const tempo = analysis.tempo;
 		const nBars = analysis.bars.length;
 
-		this.barEnergy = new Float32Array(nBars);
-		this.barBands = new Float32Array(nBars * NUM_BANDS);
 		this.barSection = new Array<SectionKind>(nBars);
-		for (let i = 0; i < nBars; i++) {
-			const row: BarRow = analysis.bars[i];
-			this.barEnergy[i] = row.energy / 100;
-			const o = i * NUM_BANDS;
-			this.barBands[o] = row.sub / 100;
-			this.barBands[o + 1] = row.low / 100;
-			this.barBands[o + 2] = row.mid / 100;
-			this.barBands[o + 3] = row.air / 100;
-			this.barSection[i] = row.section;
+		for (let i = 0; i < nBars; i++) this.barSection[i] = analysis.bars[i].section;
+
+		// Beat resolution where the analysis has it, falling back to the bar table for a blob
+		// written before it did. Bar 0 begins at beat `downbeatPhase`, so that is what turns a
+		// bar position into an index into the beat-aligned arrays.
+		const env = analysis.envelopes;
+		if (env && env.energy.length > 0) {
+			this.beatEnergy = Float32Array.from(env.energy, (v) => v / 100);
+			this.beatBands = Float32Array.from(env.bands, (v) => v / 100);
+			this.beatOffset = tempo.downbeatPhase;
+			this.entriesPerBar = Math.max(1, tempo.beatsPerBar);
+		} else {
+			this.beatEnergy = new Float32Array(nBars);
+			this.beatBands = new Float32Array(nBars * NUM_BANDS);
+			this.beatOffset = 0;
+			this.entriesPerBar = 1;
+			for (let i = 0; i < nBars; i++) {
+				const row: BarRow = analysis.bars[i];
+				this.beatEnergy[i] = row.energy / 100;
+				const o = i * NUM_BANDS;
+				this.beatBands[o] = row.sub / 100;
+				this.beatBands[o + 1] = row.low / 100;
+				this.beatBands[o + 2] = row.mid / 100;
+				this.beatBands[o + 3] = row.air / 100;
+			}
 		}
 
 		this.panCurve = Float32Array.from(analysis.stereo?.pan ?? []);
@@ -171,7 +249,7 @@ export class ShowPlayer {
 					start: t,
 					end: t + h.beats * beat,
 					kind: h.kind,
-					effect: h.kind === 'blackout' ? null : h.kind,
+					effect: HIT_EFFECT[h.kind] ?? null,
 					params: h.params
 				};
 			})
@@ -227,9 +305,9 @@ export class ShowPlayer {
 		this.hatEnv.reset();
 		const a = this.analysis;
 		if (a) {
-			this.kickCursor = seekCursor(a.onsets.kick, t);
-			this.snareCursor = seekCursor(a.onsets.snare, t);
-			this.hatCursor = seekCursor(a.onsets.hat, t);
+			this.kickCursor = seekCursor(a.onsets.kick.times, t);
+			this.snareCursor = seekCursor(a.onsets.snare.times, t);
+			this.hatCursor = seekCursor(a.onsets.hat.times, t);
 		}
 		this.cueCursor = 0;
 		this.appliedCue = -1;
@@ -277,21 +355,31 @@ export class ShowPlayer {
 
 	private updateEnergy(): void {
 		const f = this.frame;
-		const n = this.barEnergy.length;
-		if (n === 0) return;
+		const n = this.beatEnergy.length;
+		const bars = this.barSection.length;
+		if (n > 0) {
+			// Minus half an entry, because an entry is the MEAN over its span and therefore
+			// describes its centre. Reading it at the span's start is what put the whole envelope
+			// half a bar ahead of the audio.
+			const at = clamp(
+				this.beatOffset + (f.barIndex + f.barPhase) * this.entriesPerBar - 0.5,
+				0,
+				n - 1
+			);
+			const i0 = Math.floor(at);
+			const i1 = Math.min(i0 + 1, n - 1);
+			const w = at - i0;
 
-		const barsF = clamp(f.barIndex + f.barPhase, 0, n - 1);
-		const i0 = Math.floor(barsF);
-		const i1 = Math.min(i0 + 1, n - 1);
-		const w = barsF - i0;
-
-		f.energy = this.barEnergy[i0] + (this.barEnergy[i1] - this.barEnergy[i0]) * w;
-		for (let b = 0; b < NUM_BANDS; b++) {
-			const v0 = this.barBands[i0 * NUM_BANDS + b];
-			const v1 = this.barBands[i1 * NUM_BANDS + b];
-			f.bands[b] = v0 + (v1 - v0) * w;
+			f.energy = this.beatEnergy[i0] + (this.beatEnergy[i1] - this.beatEnergy[i0]) * w;
+			for (let b = 0; b < NUM_BANDS; b++) {
+				const v0 = this.beatBands[i0 * NUM_BANDS + b];
+				const v1 = this.beatBands[i1 * NUM_BANDS + b];
+				f.bands[b] = v0 + (v1 - v0) * w;
+			}
 		}
-		f.section = this.barSection[Math.min(Math.max(f.barIndex, 0), n - 1)] ?? 'intro';
+		if (bars > 0) {
+			f.section = this.barSection[Math.min(Math.max(f.barIndex, 0), bars - 1)] ?? 'intro';
+		}
 	}
 
 	/** Linear between samples, so a hard pan flick arrives as a ramp rather than a step. */
@@ -313,13 +401,20 @@ export class ShowPlayer {
 
 	private updateDrums(t: number, dt: number, a: TrackAnalysis): void {
 		const f = this.frame;
-		f.kick = advance(a.onsets.kick, t, this.kickCursor, (c) => (this.kickCursor = c));
-		f.snare = advance(a.onsets.snare, t, this.snareCursor, (c) => (this.snareCursor = c));
-		f.hat = advance(a.onsets.hat, t, this.hatCursor, (c) => (this.hatCursor = c));
+		// Fired at the hit's own strength, floored so the quietest ghost note still registers as
+		// an event. Firing every hit at 1.0 made `kickEnv` exactly 1.0 on every kick frame in the
+		// corpus, which gave `kickTunnel` one ring size for every track ever played.
+		const kick = advance(a.onsets.kick, t, this.kickCursor, (c) => (this.kickCursor = c));
+		const snare = advance(a.onsets.snare, t, this.snareCursor, (c) => (this.snareCursor = c));
+		const hat = advance(a.onsets.hat, t, this.hatCursor, (c) => (this.hatCursor = c));
 
-		if (f.kick) this.kickEnv.fire(1);
-		if (f.snare) this.snareEnv.fire(1);
-		if (f.hat) this.hatEnv.fire(1);
+		f.kick = kick > 0;
+		f.snare = snare > 0;
+		f.hat = hat > 0;
+
+		if (kick > 0) this.kickEnv.fire(kick);
+		if (snare > 0) this.snareEnv.fire(snare);
+		if (hat > 0) this.hatEnv.fire(hat);
 
 		f.kickEnv = this.kickEnv.update(dt);
 		f.snareEnv = this.snareEnv.update(dt);
@@ -385,10 +480,12 @@ export class ShowPlayer {
 			this.mixer.palette = this.paletteScratch;
 			this.mixer.intensity = active.intensity + (next.intensity - active.intensity) * u;
 			this.mixer.motion = active.motion + (next.motion - active.motion) * u;
+			this.mixer.floor = lerpFloor(active, next, u);
 		} else {
 			this.mixer.palette = active.palette;
 			this.mixer.intensity = active.intensity;
 			this.mixer.motion = active.motion;
+			this.mixer.floor = floorFor(active.section);
 		}
 	}
 
@@ -411,7 +508,14 @@ export class ShowPlayer {
 
 	private applyHits(t: number): void {
 		const master = this.mixer.layers.master;
-		const live = this.hits.find((h) => t >= h.start && t < h.end);
+
+		let live: CompiledHit | null = null;
+		for (const h of this.hits) {
+			if (h.start > t) break;
+			if (t >= h.end) continue;
+			// Later wins among equals, so a second slam supersedes the tail of the first.
+			if (!live || HIT_PRIORITY[h.kind] >= HIT_PRIORITY[live.kind]) live = h;
+		}
 
 		if (!live) {
 			if (this.activeHitMaster) {
@@ -424,6 +528,9 @@ export class ShowPlayer {
 
 		if (live.kind === 'blackout') {
 			this.mixer.intensity *= 0.02;
+			// The floor goes with it, or the room would sit at its resting level through the one
+			// move whose whole point is that the room does not.
+			this.mixer.floor = 0;
 			return;
 		}
 
@@ -437,24 +544,44 @@ export class ShowPlayer {
 	}
 }
 
+/** The floor across a cue fade, so the room does not step as one look hands over to the next. */
+function lerpFloor(from: CompiledCue, to: CompiledCue, u: number): number {
+	const a = floorFor(from.section);
+	const b = floorFor(to.section);
+	return a + (b - a) * u;
+}
+
 function seekCursor(times: readonly number[], t: number): number {
 	let i = 0;
 	while (i < times.length && times[i] < t) i++;
 	return i;
 }
 
+/**
+ * How hard the loudest hit crossed since the last frame was struck, 0 when none did.
+ *
+ * The loudest rather than the last: at 30 fps a frame can span two sixteenths, and letting a
+ * ghost note that happened to be second overwrite the accent that opened the frame is exactly
+ * the wrong way round.
+ */
 function advance(
-	times: readonly number[],
+	stream: OnsetStream,
 	t: number,
 	cursor: number,
 	store: (c: number) => void
-): boolean {
-	let fired = false;
+): number {
+	const { times, levels } = stream;
+	let loudest = 0;
 	let i = cursor;
 	while (i < times.length && times[i] <= t) {
-		fired = true;
+		const level = levels[i] ?? 1;
+		if (level > loudest) loudest = level;
 		i++;
 	}
-	if (i !== cursor) store(i);
-	return fired;
+	if (i !== cursor) {
+		store(i);
+		// A hit with no level recorded is still a hit; only an empty span reports nothing.
+		if (loudest <= 0) loudest = MIN_HIT_LEVEL;
+	}
+	return loudest > 0 ? Math.max(MIN_HIT_LEVEL, loudest) : 0;
 }

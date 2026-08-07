@@ -54,8 +54,32 @@ export function compressHighlights(buf: Float32Array, knee = 0.78, desat = 0.05)
 	}
 }
 
+const MEAN_TARGET = 0.36;
 /**
- * Auto-exposure both ways, so a breakdown reads dark and a drop reads full-scale.
+ * How far auto-exposure may move, and how fast.
+ *
+ * Both were set as if this were a camera pointed at a room, and the show is not a room: it is
+ * a composition whose dynamics are the point. At a range of 0.45 to 3.2 with a one-second
+ * attack the gain fully tracked every section change, and an authored eight-to-one drop against
+ * breakdown reached the wall as two-to-one - three quarters of the loudest structural gesture
+ * a show has, removed after it was written.
+ *
+ * The job auto-exposure is actually for is the other one: an effect whose absolute output
+ * happens to sit low should not make the whole track dim. That is a property of the track, so
+ * the time constant belongs at the scale of a track and not of a section. Half a minute is
+ * longer than any section and shorter than any set.
+ *
+ * It may now only ever lift. Once the mixer has a house floor there is a defined level the room
+ * sits at, and an exposure that pulls a correctly lit room back toward its own target is just
+ * undoing that decision somewhere the show cannot see.
+ */
+const MEAN_MIN_GAIN = 1;
+const MEAN_MAX_GAIN = 1.7;
+const MEAN_TAU_DOWN = 12;
+const MEAN_TAU_UP = 30;
+
+/**
+ * Auto-exposure both ways, so a track whose effects sit dim still fills the room.
  *
  * Frozen while `alive` is false: a silent passage would otherwise be pumped back up to
  * the target and stop reading as silence.
@@ -66,7 +90,7 @@ export class MeanLevel {
 	private readonly minGain: number;
 	private readonly maxGain: number;
 
-	constructor(target = 0.36, minGain = 0.45, maxGain = 3.2) {
+	constructor(target = MEAN_TARGET, minGain = MEAN_MIN_GAIN, maxGain = MEAN_MAX_GAIN) {
 		this.target = target;
 		this.minGain = minGain;
 		this.maxGain = maxGain;
@@ -81,7 +105,7 @@ export class MeanLevel {
 
 		if (alive) {
 			const wanted = mean > 1e-4 ? clamp(this.target / mean, this.minGain, this.maxGain) : 1;
-			const tau = wanted < this.gain ? 0.12 : 1;
+			const tau = wanted < this.gain ? MEAN_TAU_DOWN : MEAN_TAU_UP;
 			this.gain += (wanted - this.gain) * alphaFor(dt, tau);
 		}
 

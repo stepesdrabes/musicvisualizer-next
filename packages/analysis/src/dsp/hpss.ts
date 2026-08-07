@@ -19,8 +19,17 @@ export interface Separation {
 	harmonic: Float32Array;
 }
 
-/** How much one side has to beat the other before a cell is assigned to it at all. */
-const BETA = 2;
+/**
+ * Sharpness of the split.
+ *
+ * A soft Wiener mask rather than a hard gate. The gate this replaces required one side to beat
+ * the other by a factor before a cell went anywhere at all, which sent 46% of kick-band cells
+ * to neither side and left about 6% of the band's magnitude in `percussive`: a kick is
+ * broadband and short, so half its cells look like a draw at any one band. Splitting every cell
+ * in proportion keeps the two shares summing to the input, and the exponent decides how
+ * decisive a small lead is.
+ */
+const MASK_POWER = 2;
 
 export function separate(
 	mag: Float32Array,
@@ -51,11 +60,12 @@ export function separate(
 	const percussive = new Float32Array(frames * bands);
 	const harmonic = new Float32Array(frames * bands);
 	for (let i = 0; i < percussive.length; i++) {
-		const h = harmonicEnhanced[i];
-		const p = percussiveEnhanced[i];
-		// Neither side winning by the factor means the cell is noise, and it goes to neither.
-		if (p >= BETA * h) percussive[i] = mag[i];
-		else if (h > BETA * p) harmonic[i] = mag[i];
+		const h = Math.pow(harmonicEnhanced[i], MASK_POWER);
+		const p = Math.pow(percussiveEnhanced[i], MASK_POWER);
+		const total = h + p;
+		if (!(total > 0)) continue;
+		percussive[i] = (mag[i] * p) / total;
+		harmonic[i] = (mag[i] * h) / total;
 	}
 
 	return { percussive, harmonic };

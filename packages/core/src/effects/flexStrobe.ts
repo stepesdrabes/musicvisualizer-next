@@ -22,7 +22,9 @@ export const flexStrobe: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// A flash is an event, not a level: it is dark most of the time.
+		carries: false
 	},
 	params: [INTENSITY],
 	create(g) {

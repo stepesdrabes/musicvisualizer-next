@@ -21,10 +21,30 @@ import { sampleAt } from './dsp/stats.ts';
 /** Where the perceptual tactus sits, and how wide in octaves. Matches `tempo.ts`. */
 const PRIOR_BPM = 120;
 const PRIOR_OCTAVES = 0.6;
-/** Above this, the beats a doubled reading would add are carrying real onsets. */
-const MIDPOINT_SUPPORTED = 0.5;
-/** Below this, alternate beats are weak enough that a halved reading is arguable. */
-const ALTERNATE_WEAK = 0.6;
+/**
+ * The relatives of a reading that a listener might have counted instead.
+ *
+ * Offered on the evidence of the tempo prior alone, and NOT gated on any local discriminator.
+ * That is the finding of the listening test, not laziness: the obvious test - do the midpoints
+ * between beats carry onsets of their own - came out anti-correlated with the truth, and it is
+ * also structurally wrong for the case that matters most. A double-time reading of a rock track
+ * has real hats on the beats a halved reading would drop, so "alternate beats are weak" is
+ * never true and halving was never offered on the one track that needed it.
+ *
+ * Two thirds is here because the error is not always an octave. A track counted in six where it
+ * is played in four is out by exactly this, and offering only half and double left the listener
+ * with no way to say so.
+ */
+const RELATIVES = [1 / 2, 2 / 3, 3 / 2, 2];
+/**
+ * Below this the reading sits somewhere a tactus rarely does, and the app says so.
+ *
+ * It means exactly that and nothing more. A prior cannot adjudicate metrical level - the
+ * listening test settled that - so this decides how PROMINENTLY to offer the correction, never
+ * whether to offer it. The alternatives are there on every track either way, because the only
+ * reliable judge of this is the person in the room.
+ */
+const UNUSUAL_TACTUS = 0.6;
 
 function prior(bpm: number): number {
 	return Math.exp(-0.5 * (Math.log2(bpm / PRIOR_BPM) / PRIOR_OCTAVES) ** 2);
@@ -76,32 +96,22 @@ export function assessMetricalLevel(
 	for (let i = 1; i < beats.length; i++) mids.push((beats[i - 1] + beats[i]) / 2);
 	const midRatio = meanAt(odf, fps, mids) / onBeat;
 
-	const even = beats.filter((_, i) => i % 2 === 0);
-	const odd = beats.filter((_, i) => i % 2 === 1);
-	const a = meanAt(odf, fps, even);
-	const b = meanAt(odf, fps, odd);
-	const strong = Math.max(a, b);
-	const altRatio = strong > 1e-9 ? Math.min(a, b) / strong : 1;
+	const alternatives = RELATIVES.map((r) => bpm * r)
+		.filter((alt) => alt >= MIN_BPM && alt <= MAX_BPM)
+		.sort((x, y) => prior(y) - prior(x));
 
-	const alternatives: number[] = [];
-	if (bpm * 2 <= MAX_BPM && midRatio >= MIDPOINT_SUPPORTED) alternatives.push(bpm * 2);
-	if (bpm / 2 >= MIN_BPM && altRatio <= ALTERNATE_WEAK) alternatives.push(bpm / 2);
-	// A shuffle read straight, or a straight groove read as a shuffle, is a two-against-three
-	// disagreement rather than an octave, and it happens often enough to be worth naming.
-	if (bpm * 1.5 <= MAX_BPM && midRatio >= MIDPOINT_SUPPORTED) alternatives.push(bpm * 1.5);
-
-	alternatives.sort((x, y) => prior(y) - prior(x));
-
-	const rivalled = alternatives.some((alt) => prior(alt) > prior(bpm));
-	const confidence = rivalled
-		? Math.max(0, Math.min(1, prior(bpm) / Math.max(...alternatives.map(prior), 1e-9)))
-		: Math.max(0, Math.min(1, 1 - Math.max(0, midRatio - MIDPOINT_SUPPORTED)));
+	// A rival reading almost always exists, so "a rival exists" would flag everything and mean
+	// nothing. What is worth saying is that this reading is an unusual place for a tactus.
+	const support = prior(bpm);
+	const ambiguous = support < UNUSUAL_TACTUS;
 
 	return {
 		bpm,
-		ambiguous: alternatives.length > 0,
-		confidence,
+		ambiguous,
+		confidence: Math.max(0, Math.min(1, support)),
 		alternatives: alternatives.map((x) => Math.round(x * 100) / 100),
-		reason: `midpoints ${(midRatio * 100).toFixed(0)}% of beat strength, alternates ${(altRatio * 100).toFixed(0)}%`
+		reason: ambiguous
+			? `${Math.round(bpm)} bpm is an unusual tactus; ${Math.round(alternatives[0])} is a commoner reading of the same beats`
+			: `midpoints ${(midRatio * 100).toFixed(0)}% of beat strength`
 	};
 }

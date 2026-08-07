@@ -1,14 +1,18 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { hsv2rgb } from '../color/hsv.ts';
-import { frac } from '../dsl/math.ts';
+import { sample } from '../color/palette.ts';
+import { frac, paletteArc } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
 import { stampOnStrip } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param, WallDrops } from './helpers.ts';
 
 /**
- * Successive droplets walk the hue wheel in golden-angle steps, the trick sunflowers
- * use: maximum colour separation between neighbours, no repetition, fully deterministic.
+ * Successive droplets walk the palette in golden-angle steps, the trick sunflowers use:
+ * maximum separation between neighbours, no repetition, fully deterministic.
+ *
+ * The wheel they walk is the show's, not the spectrum's, so the name is now about the shape
+ * rather than the colour. A room lit in two hues reads as designed; one lit in twelve reads
+ * as a screensaver, whatever the droplets are doing.
  */
 export const rainbowRain: EffectDef = {
 	id: 'rainbowRain',
@@ -40,7 +44,7 @@ export const rainbowRain: EffectDef = {
 				landHue.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, hueShift } = ctx;
+				const { f, p, palette, hueShift } = ctx;
 				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.3));
 
 				const gain = 0.6 + p.intensity * 1.4;
@@ -51,7 +55,7 @@ export const rainbowRain: EffectDef = {
 					f,
 					p.fallBeats,
 					(drop, u, pos, wall) => {
-						hsv2rgb(frac(drop.tint + hueShift), 0.92, gain * (0.5 + 0.5 * u), rgb);
+						sample(palette, paletteArc(drop.tint + hueShift), gain * (0.5 + 0.5 * u), rgb);
 						stampOnStrip(out, g.count, wall, pos, 1.1, rgb);
 					},
 					(drop) => {
@@ -64,7 +68,7 @@ export const rainbowRain: EffectDef = {
 					const v = landGlow[w].decay(f.dt, f.beatPeriod, 3);
 					if (v < 0.02) continue;
 					const wall = rain.walls[w];
-					hsv2rgb(frac(landHue[w] + hueShift), 0.7, v * gain * 0.8, rgb);
+					sample(palette, paletteArc(landHue[w] + hueShift), v * gain * 0.8, rgb);
 					stampOnStrip(out, g.count, wall, wall.count / 2, 3.2, rgb);
 				}
 			}
