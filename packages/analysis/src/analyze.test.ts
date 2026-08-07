@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SECTION_KINDS, barTimeAt } from '@mv/core';
+import { SECTION_KINDS, SPECTRUM_BANDS, barTimeAt, decodeBase64, encodeBase64 } from '@mv/core';
 import { analyzeTrack } from './analyze.ts';
 import { dominantHue } from './artwork.ts';
 import { detectBeats } from './beats.ts';
@@ -98,6 +98,65 @@ describe('bar table', () => {
 		const quiet = analysis.bars.filter((b) => b.section === 'intro' || b.section === 'breakdown');
 		expect(perBar(drop)).toBeGreaterThan(3);
 		expect(perBar(quiet)).toBeLessThan(perBar(drop) * 0.5);
+	});
+});
+
+describe('spectrum', () => {
+	const spectrum = analysis.spectrum;
+	const bytes = decodeBase64(spectrum.data);
+
+	it('covers the track at the declared rate and band count', () => {
+		expect(spectrum.bands).toBe(SPECTRUM_BANDS);
+		expect(spectrum.centreHz).toHaveLength(SPECTRUM_BANDS);
+		const frames = bytes.length / spectrum.bands;
+		expect(Number.isInteger(frames)).toBe(true);
+		expect(frames / spectrum.fps).toBeCloseTo(analysis.duration, 0);
+	});
+
+	it('names its band centres in ascending order across the audible range', () => {
+		for (let i = 1; i < spectrum.centreHz.length; i++) {
+			expect(spectrum.centreHz[i]).toBeGreaterThan(spectrum.centreHz[i - 1]);
+		}
+		expect(spectrum.centreHz[0]).toBeGreaterThan(20);
+		expect(spectrum.centreHz[spectrum.centreHz.length - 1]).toBeLessThan(16000);
+	});
+
+	it('uses the whole byte range in every band rather than one flat level', () => {
+		for (let k = 0; k < spectrum.bands; k++) {
+			let lo = 255;
+			let hi = 0;
+			for (let f = 0; f < bytes.length / spectrum.bands; f++) {
+				const v = bytes[f * spectrum.bands + k];
+				if (v < lo) lo = v;
+				if (v > hi) hi = v;
+			}
+			expect(hi - lo).toBeGreaterThan(64);
+		}
+	});
+
+	it('puts more energy low where the fixture plays a kick and a bass than where it does not', () => {
+		// Stage 5 is the loudest thing in the arrangement; stage 2 has no kick and no bass.
+		const meanLow = (stage: number) => {
+			const from = barTimeAt(analysis.tempo, fixture.stageBars[stage]);
+			const to = barTimeAt(analysis.tempo, fixture.stageBars[stage] + ARRANGEMENT[stage].bars);
+			let acc = 0;
+			let n = 0;
+			for (let f = Math.round(from * spectrum.fps); f < Math.round(to * spectrum.fps); f++) {
+				for (let k = 0; k < 4; k++) acc += bytes[f * spectrum.bands + k];
+				n += 4;
+			}
+			return acc / Math.max(1, n);
+		};
+		expect(meanLow(5)).toBeGreaterThan(meanLow(2));
+	});
+
+	it('round-trips its own encoding exactly', () => {
+		const sample = Uint8Array.from({ length: 500 }, (_, i) => (i * 37) % 256);
+		expect([...decodeBase64(encodeBase64(sample))]).toEqual([...sample]);
+		for (const n of [0, 1, 2, 3, 4, 5]) {
+			const bit = sample.subarray(0, n);
+			expect([...decodeBase64(encodeBase64(bit))]).toEqual([...bit]);
+		}
 	});
 });
 

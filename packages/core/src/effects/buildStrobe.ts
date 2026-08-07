@@ -20,7 +20,9 @@ export const buildStrobe: EffectDef = {
 		sections: ['build'],
 		minBars: 2,
 		maxBars: 16,
-		peakReserved: false
+		peakReserved: false,
+		// A strobe cannot be the thing a room is lit by; it is what happens to a lit room.
+		carries: false
 	},
 	params: [INTENSITY],
 	create(g) {

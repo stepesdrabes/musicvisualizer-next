@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
-import { readdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { availableParallelism } from 'node:os';
 import { analysisPath, analyzeTrack, decodeAudio, showPath } from '@mv/analysis';
+import type { TrackAnalysis } from '@mv/core';
 import { composeShow } from '@mv/author-engine';
 
 /**
@@ -14,7 +15,11 @@ import { composeShow } from '@mv/author-engine';
  * deliberately not `ingest()` itself: that treats a path as a new local file and re-keys the
  * track by the hash of the path, which writes a duplicate under a different id.
  *
- *   node bench/reingest.ts [--shards 2]
+ * `--compose-only` skips the DSP and re-runs `composeShow` over the cached analyses, which is
+ * seconds rather than ten minutes. Correct for any change below the contract - the plan, the
+ * catalog, the picker - and wrong the moment the analysis itself moves.
+ *
+ *   node bench/reingest.ts [--shards 2] [--compose-only]
  */
 const CACHE = join(import.meta.dirname, '..', 'cache');
 const AUDIO = /\.(m4a|webm|opus|mp3|wav)$/;
@@ -27,7 +32,14 @@ const flag = (n: string) => {
 const files = readdirSync(CACHE).filter((f) => AUDIO.test(f));
 const shardAt = argv.indexOf('--shard');
 
-if (shardAt >= 0) {
+if (argv.includes('--compose-only')) {
+	for (const file of files) {
+		const id = file.replace(AUDIO, '');
+		const analysis = JSON.parse(readFileSync(analysisPath(id), 'utf8')) as TrackAnalysis;
+		writeFileSync(showPath(id), JSON.stringify(composeShow(analysis), null, '\t'));
+	}
+	console.error(`re-composed ${files.length} shows`);
+} else if (shardAt >= 0) {
 	const shard = Number(argv[shardAt + 1]);
 	const shards = Number(argv[shardAt + 2]);
 

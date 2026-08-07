@@ -21,7 +21,10 @@ export const lavaBlobs: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// Blobs, by construction: 37% of its light in a tenth of the pixels, and where the
+		// blobs are not is unlit room.
+		carries: false
 	},
 	params: [INTENSITY, param('size', 'Blob size', 0.5)],
 	create(g) {

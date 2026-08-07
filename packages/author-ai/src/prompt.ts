@@ -128,7 +128,7 @@ Submit with submit_show. One cue and one hit, as the shape:
   "note": "Final chorus, colours swap." }
 </example>
 <example>
-{ "bar": 69, "beat": 0, "kind": "slam", "beats": 1, "note": "Blinder." }
+{ "bar": 69, "beat": 0, "kind": "slam", "beats": 4, "note": "Blinder." }
 </example>
 
 The whole object: version, trackId, title, analysisHash, brief, palette
@@ -139,6 +139,9 @@ the examples: it says why the cue exists, not what the effect does.
 
 What the validator holds you to:
 - Cue and hit bars are integers in the bar table. Never seconds.
+- A hit starts on a downbeat and lasts a whole number of bars, so beats is a multiple of the
+  meter. It also has to be anchored: it starts on the 4-bar grid or a measured boundary, ends
+  on one, or ends where the next hit begins.
 - A layer's role matches its effect's role.
 - fadeBeats 0 snaps; voids and drops want that.
 - Omitting a layer leaves it dark, which is often right.

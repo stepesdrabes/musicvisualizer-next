@@ -1,5 +1,5 @@
-import type { EffectDef, LayerRole, Show, TrackAnalysis } from '@mv/core';
-import { LAYER_ROLES, PHRASE_BARS, onPhraseGrid, phraseOffset } from '@mv/core';
+import type { EffectDef, Hit, LayerRole, Show, TrackAnalysis } from '@mv/core';
+import { HIT_RULES, LAYER_ROLES, PHRASE_BARS, hitSeconds, onPhraseGrid, phraseOffset } from '@mv/core';
 
 export type Severity = 'error' | 'warning';
 
@@ -24,10 +24,14 @@ export interface LintContext {
 }
 
 /**
- * There is deliberately no flash-rate ceiling, no strobe budget and no minimum gap between
+ * There is deliberately no flash-RATE ceiling, no strobe budget and no minimum gap between
  * strobes. A room this size is one person's, the strobe is half the point of the genre, and a
  * linter that refuses the biggest card in the deck is a linter people route around. Anyone
- * fitting this in a public space owns that decision.
+ * fitting this in a public space owns that decision; `FlashLimiter` is the safety side of it.
+ *
+ * How LONG a gesture holds the room is a separate question and is capped, in `HIT_RULES`. That
+ * is taste rather than safety: a strobe that outlasts the phrase it points at has stopped
+ * being punctuation whatever rate it runs at.
  */
 const SETTLE_BARS = 16;
 /** Distinct hues across the whole show, not at once. See the colour section below. */
@@ -278,6 +282,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// --- punctuation and safety ---------------------------------------------------------
 
 	const hits = [...show.hits].sort((a, b) => a.bar - b.bar);
+	const hitBars = (hit: Hit) => hit.beats / tempo.beatsPerBar;
+	/** Where a hit finishes, in fractional bars. Whole whenever it ends on a downbeat. */
+	const hitEnd = (hit: Hit) => hit.bar + ((hit.beat ?? 0) + hit.beats) / tempo.beatsPerBar;
+	const whole = (v: number) => Math.abs(v - Math.round(v)) < 1e-9;
 
 	for (const hit of hits) {
 		if (!Number.isInteger(hit.bar) || hit.bar < 0 || hit.bar > lastBar) {
@@ -285,6 +293,60 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			continue;
 		}
 		if (hit.beats <= 0) err('hit-zero-length', `hit at bar ${hit.bar} has no duration`, hit.bar);
+
+		// Punctuation is counted in whole BEATS and must touch a downbeat at one end or the
+		// other. A gesture that starts on one is the ordinary case; one that only ends on one is
+		// a gesture whose whole job is the thing that follows it, and the held breath before a
+		// drop is exactly that: at a whole bar it is four beats of nothing, and the only way to
+		// be shorter and still finish on the downbeat is to start inside the bar.
+		//
+		// What this still forbids is a hit that touches a downbeat at neither end, which lands
+		// the room back mid-bar with nothing to have marked.
+		const beat = hit.beat ?? 0;
+		if (!Number.isInteger(beat) || beat < 0 || beat >= tempo.beatsPerBar) {
+			err(
+				'hit-off-beat',
+				`hit at bar ${hit.bar} starts on beat ${beat}; a hit starts on a beat of its bar, 0 to ${tempo.beatsPerBar - 1}`,
+				hit.bar
+			);
+		}
+		if (!Number.isInteger(hit.beats)) {
+			err(
+				'hit-part-beat',
+				`${hit.kind} at bar ${hit.bar} runs ${hit.beats} beats; punctuation is counted in whole beats`,
+				hit.bar
+			);
+		}
+		const bars = hitBars(hit);
+		if (beat !== 0 && !whole(hitEnd(hit))) {
+			err(
+				'hit-part-bar',
+				`${hit.kind} at bar ${hit.bar} beat ${beat} runs ${bars.toFixed(2)} bars and so touches a downbeat at neither end; start it on one or land it on one`,
+				hit.bar
+			);
+		}
+
+		const rule = HIT_RULES[hit.kind];
+		if (bars > rule.maxBars + 1e-9) {
+			err(
+				'hit-too-long',
+				`${hit.kind} at bar ${hit.bar} runs ${bars} bars; ${rule.maxBars} is the longest it holds the room`,
+				hit.bar
+			);
+		}
+		// Length in seconds, not only in bars: a bar is 1.4 s at 175 bpm and 3 s at 80, so the
+		// same bar count is a flourish at one tempo and an ordeal at the other. This caps how
+		// long a flash lasts and says nothing about how fast it flashes.
+		if (rule.maxSeconds !== undefined) {
+			const seconds = hitSeconds(tempo, hit.bar, beat, hit.beats);
+			if (seconds > rule.maxSeconds + 1e-6) {
+				err(
+					'hit-too-long-in-seconds',
+					`${hit.kind} at bar ${hit.bar} runs ${seconds.toFixed(1)}s at ${Math.round(tempo.bpm)} bpm; past ${rule.maxSeconds}s it stops reading as punctuation`,
+					hit.bar
+				);
+			}
+		}
 
 		if (hit.bar < SETTLE_BARS && (hit.kind === 'slam' || hit.kind === 'strobe')) {
 			warn(
@@ -295,14 +357,6 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 		}
 
 		if (hit.kind === 'blackout') {
-			const bars = hit.beats / tempo.beatsPerBar;
-			if (bars > 2) {
-				err(
-					'blackout-too-long',
-					`blackout at bar ${hit.bar} runs ${bars} bars; an unintended black stage reads as failure, so keep it to 2`,
-					hit.bar
-				);
-			}
 			const section = analysis.bars[hit.bar]?.section;
 			// A build is on the list because cutting the room to black on the last bar before a
 			// drop is one of the oldest moves there is, not a mistake.
@@ -314,6 +368,49 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 					hit.bar
 				);
 			}
+
+			// The held breath exists to set up the downbeat after it. Ending anywhere else hands
+			// the room back before the thing the silence was for.
+			//
+			// Only where the room would otherwise come back UP. A blackout cut from a void is
+			// already inside darkness - the void cue runs at 0.05 with no house floor - so its
+			// length decides how hard the cut is, not whether the room returns.
+			const inVoid = section === 'void';
+			const next = analysis.sections.find((s) => s.startBar > hit.bar);
+			if (!inVoid && next && next.kind === 'drop' && next.startBar - hit.bar <= HIT_RULES.blackout.maxBars) {
+				const end = hitEnd(hit);
+				if (Math.abs(end - next.startBar) > 1e-9) {
+					err(
+						'blackout-ends-early',
+						`the blackout at bar ${hit.bar} ends at bar ${end}; before the drop at ${next.startBar} it runs to that downbeat or the room comes back too soon`,
+						hit.bar
+					);
+				}
+			}
+		}
+	}
+
+	// Punctuation is anchored to something an audience can hear: the phrase grid, a boundary the
+	// analyser measured, a crash in the audio, or the gesture it hands over to. The last of those
+	// is what makes strobe-then-black-then-slam one figure rather than three loose hits, and
+	// without it the run into a drop is unplaceable - only its final part lands on a downbeat
+	// anyone is counting.
+	const anchoredStart = new Set<number>();
+	for (const hit of [...hits].sort((a, b) => b.bar - a.bar)) {
+		const end = hitEnd(hit);
+		const ok =
+			onPhrase(hit.bar) ||
+			onPhrase(end) ||
+			anchoredStart.has(end) ||
+			(analysis.bars[hit.bar]?.events.includes('crash') ?? false);
+		if (ok) anchoredStart.add(hit.bar);
+		else {
+			const down = hit.bar - phraseOffset(hit.bar, tempo.phraseAnchorBar);
+			err(
+				'unanchored-hit',
+				`${hit.kind} at bar ${hit.bar} neither starts nor ends on the ${PHRASE_BARS}-bar grid, a measured boundary or another hit; use ${down} or ${down + PHRASE_BARS}`,
+				hit.bar
+			);
 		}
 	}
 

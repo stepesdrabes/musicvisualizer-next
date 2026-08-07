@@ -3,9 +3,11 @@ import type { EffectDef, LayerRole } from '../contracts/effect.ts';
 import { ambientDrift } from './ambientDrift.ts';
 import { aurora } from './aurora.ts';
 import { auroraBorealis } from './auroraBorealis.ts';
+import { bandBloom } from './bandBloom.ts';
 import { bassRing } from './bassRing.ts';
 import { beamFlick } from './beamFlick.ts';
 import { blackout } from './blackout.ts';
+import { breathe } from './breathe.ts';
 import { buildStrobe } from './buildStrobe.ts';
 import { cascade } from './cascade.ts';
 import { chase } from './chase.ts';
@@ -23,7 +25,9 @@ import { feedbackSwell } from './feedbackSwell.ts';
 import { flexStrobe } from './flexStrobe.ts';
 import { glitchScan } from './glitchScan.ts';
 import { gradientSpin } from './gradientSpin.ts';
+import { harmonicRibbon } from './harmonicRibbon.ts';
 import { hatTicker } from './hatTicker.ts';
+import { harmonicHaze } from './harmonicHaze.ts';
 import { headbang } from './headbang.ts';
 import { heartbeat } from './heartbeat.ts';
 import { hueCarousel } from './hueCarousel.ts';
@@ -35,6 +39,7 @@ import { lightning } from './lightning.ts';
 import { meterBuild } from './meterBuild.ts';
 import { moshSlam } from './moshSlam.ts';
 import { nebula } from './nebula.ts';
+import { phraseArc } from './phraseArc.ts';
 import { pixelRain } from './pixelRain.ts';
 import { pump } from './pump.ts';
 import { pyroBursts } from './pyroBursts.ts';
@@ -45,6 +50,8 @@ import { sineRoll } from './sineRoll.ts';
 import { slam } from './slam.ts';
 import { snareWhip } from './snareWhip.ts';
 import { sparkle } from './sparkle.ts';
+import { spectrumBed } from './spectrumBed.ts';
+import { spectrumRings } from './spectrumRings.ts';
 import { splash } from './splash.ts';
 import { stageBlinders } from './stageBlinders.ts';
 import { strobe } from './strobe.ts';
@@ -70,6 +77,9 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	auroraBorealis,
 	chorusBloom,
 	subThrob,
+	spectrumBed,
+	harmonicHaze,
+	phraseArc,
 	// rhythm
 	sweep,
 	chase,
@@ -92,6 +102,7 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	moshSlam,
 	hatTicker,
 	laidbackWave,
+	spectrumRings,
 	// transient
 	shockwave,
 	splash,
@@ -112,6 +123,9 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	buildStrobe,
 	discoBall,
 	emberStorm,
+	harmonicRibbon,
+	bandBloom,
+	breathe,
 	// master
 	slam,
 	strobe,

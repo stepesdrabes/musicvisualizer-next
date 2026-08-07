@@ -4,6 +4,7 @@ import { LAYER_ROLES } from './contracts/effect.ts';
 import type { Palette, ShowPalette } from './contracts/palette.ts';
 import type { SectionKind, ShowFrame } from './contracts/frame.ts';
 import { NUM_BANDS, createShowFrame } from './contracts/frame.ts';
+import { decodeBase64 } from './base64.ts';
 import { blendPalettes, makePalette, swapped } from './color/palette.ts';
 import { FlashEnvelope } from './dsl/env.ts';
 import { clamp, frac } from './dsl/math.ts';
@@ -51,12 +52,18 @@ const MIN_HIT_LEVEL = 0.35;
  * something and a breakdown has almost nothing on top of it. A drop needs none - it is already
  * four bright layers - and giving it one would only eat the headroom the highlight compressor
  * needs.
+ *
+ * The quiet three have come down by more than half from where they were, in two steps, as the
+ * catalog gained layers that carry a room on their own. The floor was compensating for cues
+ * whose second layer emitted nothing, and a compensation left in place after its cause is fixed
+ * is just contrast spent for nothing: the room reads the difference between a verse and a drop,
+ * not the absolute level of either. Every quiet section still lights 98-100% of the LEDs.
  */
 const SECTION_FLOOR: Record<SectionKind, number> = {
 	void: 0,
-	intro: 0.72,
-	outro: 0.6,
-	breakdown: 0.64,
+	intro: 0.42,
+	outro: 0.4,
+	breakdown: 0.44,
 	build: 0.38,
 	groove: 0.32,
 	drop: 0.09
@@ -119,6 +126,11 @@ export class ShowPlayer {
 	private panCurve = new Float32Array(0);
 	private widthCurve = new Float32Array(0);
 	private stereoFps = 25;
+
+	/** frames * spectrumBands, as shipped: bytes, decoded once on load. */
+	private spectrumData: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
+	private spectrumBands = 0;
+	private spectrumFps = 50;
 
 	private beatEnergy = new Float32Array(0);
 	private beatBands = new Float32Array(0);
@@ -195,6 +207,13 @@ export class ShowPlayer {
 				this.beatBands[o + 3] = row.air / 100;
 			}
 		}
+
+		// Decoded once here rather than per frame: it is the largest thing in the analysis and a
+		// blob written before the spectrum existed simply has none, which reads as a flat zero.
+		const spectrum = analysis.spectrum;
+		this.spectrumData = spectrum?.data ? decodeBase64(spectrum.data) : new Uint8Array(0);
+		this.spectrumBands = spectrum?.bands ?? 0;
+		this.spectrumFps = spectrum?.fps || 50;
 
 		this.panCurve = Float32Array.from(analysis.stereo?.pan ?? []);
 		this.widthCurve = Float32Array.from(analysis.stereo?.width ?? []);
@@ -290,6 +309,7 @@ export class ShowPlayer {
 
 		this.updateGrid(t, a.tempo);
 		this.updateEnergy();
+		this.updateSpectrum(t);
 		this.updateStereo(t);
 		this.updateDrums(t, dt, a);
 		this.updateStructure(t);
@@ -379,6 +399,43 @@ export class ShowPlayer {
 		}
 		if (bars > 0) {
 			f.section = this.barSection[Math.min(Math.max(f.barIndex, 0), bars - 1)] ?? 'intro';
+		}
+	}
+
+	/**
+	 * The spectrum at `t`, resampled onto however many bands the frame carries.
+	 *
+	 * Minus half an entry for the same reason the envelopes take it: an entry is the mean over
+	 * its span and so describes the span's centre. The band count is read off the blob rather
+	 * than assumed, so a show authored against a different one still plays.
+	 */
+	private updateSpectrum(t: number): void {
+		const f = this.frame;
+		const bands = this.spectrumBands;
+		if (bands === 0 || this.spectrumData.length === 0) {
+			f.spectrum.fill(0);
+			return;
+		}
+		const frames = Math.floor(this.spectrumData.length / bands);
+		const x = clamp(t * this.spectrumFps - 0.5, 0, frames - 1);
+		const i0 = Math.floor(x);
+		const i1 = Math.min(i0 + 1, frames - 1);
+		const w = x - i0;
+		const out = f.spectrum;
+		const last = bands - 1;
+
+		for (let k = 0; k < out.length; k++) {
+			const pos = out.length > 1 ? (k / (out.length - 1)) * last : 0;
+			const b0 = Math.floor(pos);
+			const b1 = Math.min(b0 + 1, last);
+			const u = pos - b0;
+			const lo =
+				this.spectrumData[i0 * bands + b0] +
+				(this.spectrumData[i0 * bands + b1] - this.spectrumData[i0 * bands + b0]) * u;
+			const hi =
+				this.spectrumData[i1 * bands + b0] +
+				(this.spectrumData[i1 * bands + b1] - this.spectrumData[i1 * bands + b0]) * u;
+			out[k] = (lo + (hi - lo) * w) / 255;
 		}
 	}
 

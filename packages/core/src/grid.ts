@@ -93,6 +93,25 @@ export function barAtTime(tempo: TempoGrid, t: number): number {
 	return span > 1e-6 ? lo + (t - times[lo]) / span : lo;
 }
 
+/**
+ * How long a hit lasts, in seconds, read off the bar table.
+ *
+ * The one place this arithmetic lives, because the planner and the linter have to agree on it
+ * exactly. They did not: the planner sized a strobe against the bar it was measured at and then
+ * placed it a bar earlier, so on a track that drifts by a per cent the two disagreed and the
+ * linter rejected a show the engine had just written. A rejected show is a dark room.
+ */
+export function hitSeconds(
+	tempo: TempoGrid,
+	bar: number,
+	beat: number,
+	beats: number
+): number {
+	const perBar = Math.max(1, tempo.beatsPerBar);
+	const from = bar + beat / perBar;
+	return barTimeAt(tempo, from + beats / perBar) - barTimeAt(tempo, from);
+}
+
 /** How far past the last phrase boundary this bar sits, 0 when it is on one. */
 export function phraseOffset(bar: number, anchorBar: number): number {
 	return (((bar - anchorBar) % PHRASE_BARS) + PHRASE_BARS) % PHRASE_BARS;
@@ -107,4 +126,15 @@ export function nearestPhraseBar(bar: number, anchorBar: number): number {
 	const down = bar - phraseOffset(bar, anchorBar);
 	const up = down + PHRASE_BARS;
 	return bar - down <= up - bar ? down : up;
+}
+
+/**
+ * The first phrase bar strictly after `bar`.
+ *
+ * What punctuation inside a long section is counted from. Counting from the section's own start
+ * instead puts every hit at the same offset from a boundary that is itself allowed to sit off
+ * the grid, so the room answers a downbeat nobody is counting to.
+ */
+export function nextPhraseBar(bar: number, anchorBar: number): number {
+	return bar - phraseOffset(bar, anchorBar) + PHRASE_BARS;
 }

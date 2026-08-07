@@ -5,6 +5,7 @@ import { setSample } from '../color/palette.ts';
 import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
 import { noise3 } from '../dsl/wave.ts';
+import { BeatHold } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -25,6 +26,9 @@ export const nebula: EffectDef = {
 	},
 	params: [INTENSITY, param('scale', 'Scale', 0.4), param('surge', 'Bass surge', 0.6)],
 	create(g) {
+		// The passage's own level, latched on the beat: `f.energy` is beat-resolution data the
+		// player interpolates per frame, so a brightness multiplied by it slides continuously.
+		const passage = new BeatHold(0.45);
 		const buf = new Float32Array(g.count * 3);
 		// The kick pushes the noise clock forward rather than warping the geometry, so
 		// every hit shoves the sky and the motion keeps its inertia.
@@ -34,6 +38,7 @@ export const nebula: EffectDef = {
 
 		return {
 			reset() {
+				passage.reset();
 				clock = 0;
 				bassEnv = 0;
 				level = 0;
@@ -48,7 +53,7 @@ export const nebula: EffectDef = {
 				// The floor is high because the cue's own intensity already says the passage is
 				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
 				// of a number under one is how an intro reached byte zero.
-				level = envelope(level, clamp(0.55 + f.energy * 0.45), f.dt, 0.12, 0.7);
+				level = envelope(level, clamp(0.55 + passage.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.45), f.dt, 0.12, 0.7);
 				const bright = level * (0.5 + p.intensity * 1.05);
 				const scale = 1.2 + p.scale * 6;
 				const t = clock;

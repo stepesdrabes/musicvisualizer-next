@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 6;
+export const ANALYSIS_VERSION = 7;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -143,6 +143,27 @@ export interface Envelopes {
 	bands: number[];
 }
 
+/**
+ * A log-spaced spectrum per frame: the whole of what is playing, not a four-band summary.
+ *
+ * Stored as bytes in one base64 string because this is by far the largest thing in the file. A
+ * four-minute track is a quarter of a million values, which as JSON numbers would be a megabyte
+ * on its own and, pretty-printed the way the rest of the analysis is, a quarter of a million
+ * lines.
+ *
+ * Each band is normalised against its own distribution across the track, exactly as
+ * `Envelopes.bands` is, so an effect reading this and an effect reading `f.bands` are reading
+ * the same kind of number and a quiet track's top octave still reaches 1.0.
+ */
+export interface SpectrumTrack {
+	fps: number;
+	bands: number;
+	/** Band centre frequencies, Hz, ascending. */
+	centreHz: number[];
+	/** `frames * bands` bytes, base64. Entry f covers the span [f/fps, (f+1)/fps). */
+	data: string;
+}
+
 export interface Moment {
 	bar: number;
 	beat: number;
@@ -179,6 +200,7 @@ export interface TrackAnalysis {
 	/** Every tracked beat, seconds. Exact even where the constant grid is only a fit. */
 	beats: number[];
 	envelopes: Envelopes;
+	spectrum: SpectrumTrack;
 	stereo: StereoImage;
 	onsets: {
 		kick: OnsetStream;

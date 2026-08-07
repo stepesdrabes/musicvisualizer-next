@@ -9,6 +9,7 @@ import {
 	type TrackAnalysis
 } from '@mv/core';
 import { arrange, bandLevels, levelEnvelopes } from './arrange.ts';
+import { spectrumTrack } from './spectrum.ts';
 import { detectBeats, type BeatGrid } from './beats.ts';
 import { beatSynchronous } from './beatsync.ts';
 import { chromagram, estimateKey } from './chroma.ts';
@@ -271,6 +272,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			energy: Array.from(beat.energy, pct),
 			bands: Array.from(beat.bands, pct)
 		},
+		spectrum: spectrumTrack(features.spec, input.duration),
 		stereo: {
 			fps: round3(stereo.fps),
 			pan: Array.from(stereo.pan, round2),

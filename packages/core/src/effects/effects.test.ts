@@ -2,6 +2,7 @@ import { makePalette } from '../color/palette.ts';
 import { describe, expect, it } from 'vitest';
 import { quantize } from '../output.ts';
 import { DEFAULT_ROOM, buildGeometry } from '../geometry.ts';
+import { Mixer } from '../mixer.ts';
 import { BUILT_IN_EFFECTS } from './index.ts';
 import { runGate, scriptFrames } from './gate.ts';
 
@@ -30,6 +31,120 @@ describe.each(BUILT_IN_EFFECTS.map((d) => [d.id, d] as const))('%s', (_id, def) 
 it('every effect emits light', () => {
 	const dark = BUILT_IN_EFFECTS.filter((d) => !runGate(d, g).producesLight).map((d) => d.id);
 	expect(dark).toEqual([]);
+});
+
+/**
+ * How much of the room an effect lights, and how much of that is in the brightest tenth of the
+ * pixels. Run through the mixer rather than off the effect's own buffer, so it is gamma and the
+ * output chain that decide what counts as lit.
+ */
+function coverage(def: (typeof BUILT_IN_EFFECTS)[number]): {
+	fill: number;
+	top10: number;
+	balance: number;
+} {
+	const mixer = new Mixer(g);
+	mixer.palette = makePalette({ base: 0, accent: 180, third: 60 });
+	mixer.intensity = 1;
+	mixer.floor = 0;
+	mixer.layers[def.role].setEffect(def, g);
+
+	let lit = 0;
+	let pixels = 0;
+	let concentration = 0;
+	let counted = 0;
+	const levels: number[] = [];
+	const perStrip = new Float64Array(g.strips.length);
+
+	for (const f of scriptFrames()) {
+		mixer.render(f);
+		const n = mixer.bytes.length / 3;
+		levels.length = 0;
+		let total = 0;
+		for (let k = 0; k < n; k++) {
+			const i = k * 3;
+			const v = Math.max(mixer.bytes[i], mixer.bytes[i + 1], mixer.bytes[i + 2]);
+			pixels++;
+			// Byte 24, not byte 8: gamma 2.2 leaves byte 8 barely distinguishable from off, and
+			// a spotlight in a black room scores full marks against it.
+			if (v >= 24) lit++;
+			levels.push(v);
+			total += v;
+		}
+		if (total < 1) continue;
+		levels.sort((a, b) => b - a);
+		const tenth = Math.max(1, Math.round(n / 10));
+		let top = 0;
+		for (let k = 0; k < tenth; k++) top += levels[k];
+		concentration += top / total;
+		counted++;
+
+		for (const [si, strip] of g.strips.entries()) {
+			let sum = 0;
+			for (let k = 0; k < strip.count; k++) {
+				const i = (strip.offset + k) * 3;
+				sum += Math.max(mixer.bytes[i], mixer.bytes[i + 1], mixer.bytes[i + 2]);
+			}
+			perStrip[si] += sum / strip.count;
+		}
+	}
+
+	// Dimmest wall against brightest. Neither `fill` nor `top10` can see a field that lights
+	// half the room perfectly evenly and leaves the other half dark, which is what a waterline
+	// or a front-of-room spotlight does and what a photograph of an intro showed as a bright
+	// beam over near-black walls.
+	let dimmest = Infinity;
+	let brightest = 0;
+	for (const v of perStrip) {
+		if (v < dimmest) dimmest = v;
+		if (v > brightest) brightest = v;
+	}
+	return {
+		fill: pixels > 0 ? lit / pixels : 0,
+		top10: counted > 0 ? concentration / counted : 1,
+		balance: brightest > 1e-6 ? dimmest / brightest : 0
+	};
+}
+
+/**
+ * `carries` is what the planner trusts when it picks the one texture over a bed in a quiet cue,
+ * so an effect claiming it and not meaning it is not a documentation slip: it is a dark room.
+ * Three accents claimed it by omission and could not, and one of them was what lit an intro as
+ * a single bright wall with the rest of the room at byte 20.
+ */
+it('every effect claiming to carry a room can actually fill one', () => {
+	// Beds and accents only: those are the two layers a quiet cue is made of, and the only two
+	// the planner ever asks to carry. A transient is a one-shot by definition and a master is
+	// fired by punctuation the gate script does not contain.
+	const liars = BUILT_IN_EFFECTS.filter(
+		(d) => (d.role === 'bed' || d.role === 'accent') && d.taste.carries !== false && d.id !== 'blackout'
+	)
+		.map((d) => ({ id: d.id, role: d.role, ...coverage(d) }))
+		// A bed IS the room in a quiet cue, so what it owes is evenness: a third of its light in
+		// a tenth of the pixels means the rest of the room is the dark between the bright parts,
+		// which is what a photograph of an intro showed. An accent sits on top of a bed, so it is
+		// held to reaching the room rather than to filling it evenly.
+		.filter((r) =>
+			r.role === 'bed'
+				? r.top10 > 0.32 || r.fill < 0.22 || r.balance < 0.35
+				: r.top10 > 0.55 || r.fill < 0.22
+		)
+		.map(
+			(r) =>
+				`${r.id} (fills ${(100 * r.fill).toFixed(0)}%, ${(100 * r.top10).toFixed(0)}% of it in a tenth of the pixels, dimmest wall ${(100 * r.balance).toFixed(0)}% of the brightest)`
+		);
+	expect(liars).toEqual([]);
+});
+
+it('offers more than one carrying accent for the passages that need one', () => {
+	// A quiet cue is a bed and one texture, and the planner requires that texture to carry.
+	// With a single candidate every intro in every show gets the same one.
+	for (const section of ['intro', 'outro', 'breakdown'] as const) {
+		const pool = BUILT_IN_EFFECTS.filter(
+			(d) => d.role === 'accent' && d.taste.carries !== false && d.taste.sections.includes(section)
+		);
+		expect(pool.length, `carrying accents for ${section}`).toBeGreaterThanOrEqual(2);
+	}
 });
 
 it('blackout reads as darkness next to the wash it replaces', () => {

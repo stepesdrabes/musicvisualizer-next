@@ -17,10 +17,16 @@ export const vocalGlow: EffectDef = {
 	blurb: 'A front-of-room spotlight breathing with the vocal band.',
 	taste: {
 		energy: 2,
-		sections: ['intro', 'groove', 'breakdown', 'build', 'drop'],
+		// An outro is where a vocal most often is the whole arrangement, and leaving it off the
+		// list was what left one carrying accent for the end of a track.
+		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 4,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// A spotlight on the front wall by design: 28% of the room lit and nearly half its
+		// output in the brightest tenth of the pixels. Beautiful over a bed, and the reason a
+		// quiet cue carrying it and nothing else showed as one lit wall in a dark room.
+		carries: false
 	},
 	params: [INTENSITY, param('width', 'Spot width', 0.4)],
 	create(g) {

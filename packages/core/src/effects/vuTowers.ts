@@ -5,11 +5,16 @@ import { addSample, sample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
 import { clamp, envelope, lerp } from '../dsl/math.ts';
 import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { bandAt } from '../dsl/spectrum.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 /**
  * Volume changes LENGTH, not brightness - that is the difference between a meter and a
  * wall that pulses. Falling peak dots under gravity make it legible as a measurement.
+ *
+ * Every strip owns a different slice of the spectrum, so the room is an analyser rather than a
+ * row of identical meters. It used to drive all of them off the same three numbers and tell
+ * them apart with a hashed bias, which looks like variety and measures nothing.
  */
 export const vuTowers: EffectDef = {
 	id: 'vuTowers',
@@ -23,14 +28,16 @@ export const vuTowers: EffectDef = {
 		maxBars: 32,
 		peakReserved: false
 	},
-	params: [INTENSITY, param('gravity', 'Peak fall', 0.4)],
+	params: [INTENSITY, param('gravity', 'Peak fall', 0.4), param('span', 'Spectrum across the room', 1)],
 	create(g) {
 		const n = g.strips.length;
 		const level = new Float32Array(n);
 		const peak = new Float32Array(n);
 		const vel = new Float32Array(n);
-		const bias = new Float32Array(n);
-		for (let s = 0; s < n; s++) bias[s] = 0.8 + 0.3 * hash01(s * 31);
+		// Which slice of the spectrum each strip meters, spread across the room in strip order
+		// with a little jitter so two adjacent strips on one wall are not the same column.
+		const slice = new Float32Array(n);
+		for (let s = 0; s < n; s++) slice[s] = n > 1 ? (s + 0.35 * hash01(s * 31)) / n : 0.5;
 
 		return {
 			reset() {
@@ -49,8 +56,11 @@ export const vuTowers: EffectDef = {
 
 				for (let s = 0; s < n; s++) {
 					const strip = g.strips[s];
-					// A slightly different mix per strip, so the room does not move as one slab.
-					const mix = clamp(drive * bias[s] + f.bands[Band.Low] * 0.12 * (s % 2));
+					// This strip's own column of the spectrum, blended toward the shared kick drive
+					// so the room still moves together on the downbeat. At span 0 it is the old
+					// behaviour: one mix everywhere, told apart by nothing but a hashed bias.
+					const own = bandAt(f, slice[s] * clamp(p.span));
+					const mix = clamp(lerp(drive, own * 1.15 + f.kickEnv * 0.3, clamp(p.span) * 0.8));
 					level[s] = envelope(level[s], mix, f.dt, 0, rel);
 
 					const lvl = clamp(level[s] * gain);

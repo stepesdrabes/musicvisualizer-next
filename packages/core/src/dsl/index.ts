@@ -5,3 +5,4 @@ export * from './wave.ts';
 export * from './buffer.ts';
 export * from './env.ts';
 export * from './space.ts';
+export * from './spectrum.ts';

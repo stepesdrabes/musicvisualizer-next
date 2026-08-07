@@ -1,5 +1,5 @@
 import type { EffectDef, TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS, LAYER_ROLES, SLOT } from '@mv/core';
+import { BUILT_IN_EFFECTS, LAYER_ROLES, SLOT, SPECTRUM_BANDS } from '@mv/core';
 
 /**
  * One line per effect. With forty of them a three-line entry each is a thousand tokens of
@@ -83,6 +83,19 @@ Frame (ctx.f)
   t dt · beat downbeat phraseStart · beatIndex barIndex · beatPhase barPhase phrasePhase
   beatPeriod bpm · section sectionProgress buildProgress timeToDrop timeSinceDrop
   energy · bands[0..3] = sub low mid air
+  spectrum - ${SPECTRUM_BANDS} log-spaced bands, 0..1, lowest first, each normalised across the
+    track exactly as bands[] is. The only field with enough resolution to carry a melody, and
+    the reason a passage with no drums in it can still look like something. Address it through
+    the helpers rather than by index:
+      bandAt(f, u) - the level at 0 (bottom of the range) to 1 (top), interpolated. Mapping a
+        pixel's own ringU straight onto u is the idiom: the room becomes an analyser.
+      bandBetween(f, from, to) - mean over a slice
+      spectrumPeak(f) - the loudest band right now; what to scale a meter's ceiling against
+      spectralTilt(f) - where the energy is sitting, 0 low to 1 high. Says "this passage is
+        bright" without saying how loud it is; 0.5 on silence. Drive a hue walk or a position
+        with it and the room follows a filter opening rather than a level.
+      spectrumFocus(f) - 0 when every band is level, 1 when one band has it all. What separates
+        a lone sustained note from a full arrangement at the same loudness.
   pan (-1 left .. +1 right) · panWidth (0 mono .. 1 fully decorrelated)
     Where the mix is sitting across the room, from the stereo file. Use it to BIAS a position
     an effect is already choosing, multiplied by panWidth so a mono passage does not move:

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BarRow, SectionSpan, TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS, LAYER_ROLES, PHRASE_BARS } from '@mv/core';
+import { BUILT_IN_EFFECTS, HIT_RULES, LAYER_ROLES, PHRASE_BARS, barDurationAt } from '@mv/core';
 import { composeShow } from './plan.ts';
 import { lintShow } from './lint.ts';
 
@@ -22,9 +22,15 @@ const PLAN: [number, number, SectionSpan['kind']][] = [
 	[120, 128, 'outro']
 ];
 
-function fixture(): TrackAnalysis {
-	const beatPeriod = 60 / 128;
+function fixture(bpm = 128, drift = 0): TrackAnalysis {
+	const beatPeriod = 60 / bpm;
 	const barLength = beatPeriod * 4;
+	// Deterministic, and irrational enough per bar that no two neighbours are alike.
+	const barTimeOf = (bar: number) => {
+		let t = 0;
+		for (let i = 0; i < bar; i++) t += barLength * (1 + drift * Math.sin(i * 2.399));
+		return t;
+	};
 	const energyOf = (kind: SectionSpan['kind']) =>
 		({ intro: 20, groove: 62, breakdown: 30, build: 55, void: 4, drop: 92, outro: 18 })[kind];
 
@@ -33,7 +39,7 @@ function fixture(): TrackAnalysis {
 		for (let b = from; b < to; b++) {
 			bars.push({
 				bar: b,
-				t: b * barLength,
+				t: barTimeOf(b),
 				section: kind,
 				energy: energyOf(kind),
 				sub: energyOf(kind),
@@ -53,8 +59,8 @@ function fixture(): TrackAnalysis {
 		kind,
 		startBar: from,
 		endBar: to,
-		startTime: from * barLength,
-		endTime: to * barLength,
+		startTime: barTimeOf(from),
+		endTime: barTimeOf(to),
 		lengthBars: to - from,
 		meanEnergy: energyOf(kind),
 		peakEnergy: energyOf(kind),
@@ -84,7 +90,11 @@ function fixture(): TrackAnalysis {
 			meterConfidence: 0.9,
 			ambiguous: false,
 			alternativeBpm: [],
-			barTimes: Array.from({ length: 129 }, (_, i) => i * barLength)
+			// `drift` jitters each bar a few per cent either way, which is what a real grid does
+			// and what a smooth ramp does not: the caps are read off this table, and a planner
+			// that sizes a hit at one bar and places it at another only fails where neighbouring
+			// bars fall on OPPOSITE sides of a cap.
+			barTimes: Array.from({ length: 129 }, (_, i) => barTimeOf(i))
 		},
 		key: { tonic: 9, name: 'A minor', mode: 'minor', confidence: 0.8 },
 		bars,
@@ -92,6 +102,7 @@ function fixture(): TrackAnalysis {
 		moments: [],
 		beats: [],
 		envelopes: { energy: [], bands: [] },
+		spectrum: { fps: 50, bands: 0, centreHz: [], data: '' },
 		stereo: { fps: 25, pan: [], width: [] },
 		onsets: {
 			kick: { times: [], levels: [] },
@@ -284,6 +295,76 @@ describe('punctuation', () => {
 			expect(show.hits[i].bar).toBeGreaterThanOrEqual(show.hits[i - 1].bar);
 		}
 	});
+
+	it('counts every hit in whole beats and touches a downbeat at one end', () => {
+		const { beatsPerBar } = analysis.tempo;
+		for (const hit of show.hits) {
+			expect(Number.isInteger(hit.beats)).toBe(true);
+			const beat = hit.beat ?? 0;
+			const end = hit.bar + (beat + hit.beats) / beatsPerBar;
+			expect(beat === 0 || Number.isInteger(end)).toBe(true);
+		}
+	});
+
+	it('runs the held breath before a drop all the way to its downbeat', () => {
+		const { beatsPerBar } = analysis.tempo;
+		const drops = new Set(analysis.sections.filter((s) => s.kind === 'drop').map((s) => s.startBar));
+		for (const hit of show.hits) {
+			// Only the ones cut from a build and aimed at a drop. A blackout inside a void is
+			// already surrounded by darkness, so where it stops decides nothing.
+			if (hit.kind !== 'blackout' || analysis.bars[hit.bar]?.section === 'void') continue;
+			if (![...drops].some((b) => b > hit.bar && b - hit.bar <= 2)) continue;
+			expect(drops.has(hit.bar + ((hit.beat ?? 0) + hit.beats) / beatsPerBar)).toBe(true);
+		}
+	});
+
+	it('keeps a blackout short enough to read as a breath rather than a fault', () => {
+		for (const hit of show.hits) {
+			if (hit.kind !== 'blackout') continue;
+			const beat = barDurationAt(analysis.tempo, hit.bar) / analysis.tempo.beatsPerBar;
+			expect(hit.beats * beat).toBeLessThanOrEqual(HIT_RULES.blackout.maxSeconds ?? Infinity);
+		}
+	});
+
+	it('keeps a strobe short enough to still read as punctuation', () => {
+		for (const hit of show.hits) {
+			if (hit.kind !== 'strobe') continue;
+			const bars = hit.beats / analysis.tempo.beatsPerBar;
+			expect(bars * barDurationAt(analysis.tempo, hit.bar)).toBeLessThanOrEqual(
+				HIT_RULES.strobe.maxSeconds ?? Infinity
+			);
+		}
+	});
+});
+
+/**
+ * The engine and the linter are the same codebase, so a show the engine writes and the linter
+ * refuses is not a difference of opinion, it is a bug. It is also the worst kind: the app
+ * discards a rejected show, so the room goes dark with nothing on screen to say why. This
+ * happened for real on a 79 bpm track, because the planner sized a strobe against one bar and
+ * placed it at another.
+ */
+describe('the engine never writes a show its own linter refuses', () => {
+	const effectMap = new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
+
+	// Slow tempos are where the seconds caps bite, and a drifting grid is where sizing a hit at
+	// the wrong bar shows up. 58 bpm with 2% drift is inside the range real tracks reach.
+	// 80 bpm puts one bar at exactly the 3 s strobe cap and 110 puts two bars there, which is
+	// where an off-by-one-bar measurement shows up at all.
+	for (const bpm of [58, 70, 80, 96, 110, 128, 175]) {
+		for (const drift of [0, 0.03]) {
+			it(`at ${bpm} bpm${drift ? ' on a drifting grid' : ''}`, () => {
+				const track = fixture(bpm, drift);
+				for (let seed = 0; seed < 12; seed++) {
+					const verdict = lintShow(composeShow(track, { seed: 1 + seed * 7919 }), {
+						analysis: track,
+						effects: effectMap
+					});
+					expect(verdict.errors.map((e) => `${e.rule}: ${e.message}`)).toEqual([]);
+				}
+			});
+		}
+	}
 });
 
 describe('determinism', () => {

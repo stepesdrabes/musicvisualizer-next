@@ -161,7 +161,9 @@ function buildShow(): Show {
 			}
 		],
 		cues,
-		hits: [{ bar: peak.startBar, beat: 0, kind: 'slam', beats: 1, note: 'Peak.' }]
+		hits: [
+			{ bar: peak.startBar, beat: 0, kind: 'slam', beats: analysis.tempo.beatsPerBar, note: 'Peak.' }
+		]
 	};
 }
 

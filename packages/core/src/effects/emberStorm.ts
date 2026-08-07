@@ -25,7 +25,9 @@ export const emberStorm: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// Sparks. 19% of the room, three quarters of its light in a tenth of the pixels.
+		carries: false
 	},
 	params: [INTENSITY, param('count', 'Ember count', 0.5)],
 	create(g) {

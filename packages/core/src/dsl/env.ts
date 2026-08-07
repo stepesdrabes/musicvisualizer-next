@@ -94,3 +94,47 @@ export function ratchet(current: number, target: number, dt: number, riseTau: nu
 	if (target <= current) return target;
 	return clamp(current + (target - current) * alphaFor(dt, riseTau));
 }
+
+/**
+ * Reads its input once per beat and holds it until the next one.
+ *
+ * What anything driven by the music should pass through before it reaches the room. The
+ * spectrum moves continuously and its own frame-to-frame noise is several per cent, so an
+ * effect that follows it directly shimmers at the frame rate against a beat it has no
+ * relationship to. Latched here, every change the room makes lands ON a beat by construction,
+ * and the ones between beats simply do not happen.
+ *
+ * The glide is a small fraction of a beat, not zero: a hard step is right for a colour and
+ * wrong for a position, and at an eighth of a beat the arrival still reads as on the beat while
+ * nothing in the room teleports. Pass 0 for a true sample and hold.
+ */
+export class BeatHold {
+	private held = Number.NaN;
+	private shown = Number.NaN;
+	/** In beats. A constructor parameter property would not survive type stripping. */
+	private readonly glide: number;
+
+	constructor(glide = 0.12) {
+		this.glide = glide;
+	}
+
+	reset(): void {
+		this.held = Number.NaN;
+		this.shown = Number.NaN;
+	}
+
+	update(target: number, beat: boolean, dt: number, beatPeriod: number): number {
+		if (Number.isNaN(this.held)) {
+			this.held = target;
+			this.shown = target;
+			return this.shown;
+		}
+		if (beat) this.held = target;
+		if (this.glide <= 0) {
+			this.shown = this.held;
+			return this.shown;
+		}
+		this.shown += (this.held - this.shown) * alphaFor(dt, Math.max(1e-3, this.glide * beatPeriod));
+		return this.shown;
+	}
+}

@@ -6,6 +6,7 @@ export {
 	Band,
 	NUM_BANDS,
 	SECTION_KINDS,
+	SPECTRUM_BANDS,
 	createShowFrame
 } from './contracts/frame.ts';
 export type {
@@ -29,13 +30,23 @@ export type {
 	Moment,
 	OnsetStream,
 	SectionSpan,
+	SpectrumTrack,
 	StereoImage,
 	TempoGrid,
 	TrackAnalysis
 } from './contracts/analysis.ts';
 export { ANALYSIS_VERSION } from './contracts/analysis.ts';
-export type { Cue, CuePalette, GeneratedEffect, Hit, LayerSpec, Show } from './contracts/show.ts';
-export { SHOW_VERSION } from './contracts/show.ts';
+export { decodeBase64, encodeBase64 } from './base64.ts';
+export type {
+	Cue,
+	CuePalette,
+	GeneratedEffect,
+	Hit,
+	HitRule,
+	LayerSpec,
+	Show
+} from './contracts/show.ts';
+export { HIT_RULES, SHOW_VERSION } from './contracts/show.ts';
 export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 
 export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
@@ -47,7 +58,9 @@ export {
 	barAtTime,
 	barDurationAt,
 	barTimeAt,
+	hitSeconds,
 	nearestPhraseBar,
+	nextPhraseBar,
 	onPhraseGrid,
 	phraseOffset
 } from './grid.ts';

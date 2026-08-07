@@ -82,6 +82,7 @@ function fixture(): TrackAnalysis {
 		moments: [],
 		beats: [],
 		envelopes: { energy: [], bands: [] },
+		spectrum: { fps: 50, bands: 0, centreHz: [], data: '' },
 		stereo: { fps: 25, pan: [], width: [] },
 		onsets: {
 			kick: { times: [], levels: [] },
@@ -182,8 +183,8 @@ function goodShow(): Show {
 			}
 		],
 		hits: [
-			{ bar: 32, beat: 0, kind: 'slam', beats: 1, note: 'The blinder.' },
-			{ bar: 48, beat: 0, kind: 'strobe', beats: 2, params: { perBeat: 2 }, note: 'Second peak.' }
+			{ bar: 32, beat: 0, kind: 'slam', beats: 4, note: 'The blinder.' },
+			{ bar: 48, beat: 0, kind: 'strobe', beats: 4, params: { perBeat: 2 }, note: 'Second peak.' }
 		]
 	};
 }
@@ -266,19 +267,18 @@ describe('effect rules', () => {
 });
 
 describe('safety rules', () => {
-	it('does not limit the flash rate, the strobe length or the strobe budget', () => {
+	it('does not limit the flash rate, the strobe budget or how often one fires', () => {
 		// Deliberate: this room is one person's, and a linter that refuses the biggest card in
 		// the deck is a linter people route around. Anyone fitting this in a public space owns
-		// that decision.
+		// that decision. How LONG one runs is a separate, musical question - see below.
 		const show = goodShow();
 		show.hits = [
-			{ bar: 40, kind: 'strobe', beats: 32, params: { perBeat: 8 }, note: 'as fast and long as it likes' },
-			{ bar: 44, kind: 'strobe', beats: 16, params: { perBeat: 8 }, note: 'and again' }
+			{ bar: 40, kind: 'strobe', beats: 4, params: { perBeat: 8 }, note: 'as fast as it likes' },
+			{ bar: 44, kind: 'strobe', beats: 4, params: { perBeat: 8 }, note: 'and again, right behind' }
 		];
 		const found = rules(lintShow(show, { analysis, effects }));
 		expect(found).not.toContain('flash-rate');
 		expect(found).not.toContain('flash-danger-band');
-		expect(found).not.toContain('strobe-too-long');
 		expect(found).not.toContain('strobe-budget');
 		expect(found).not.toContain('strobe-too-frequent');
 	});
@@ -291,14 +291,89 @@ describe('safety rules', () => {
 
 	it('rejects a blackout longer than two bars', () => {
 		const show = goodShow();
-		show.hits.push({ bar: 31, kind: 'blackout', beats: 20 });
-		expect(rules(lintShow(show, { analysis, effects }))).toContain('blackout-too-long');
+		show.hits.push({ bar: 32, kind: 'blackout', beats: 20 });
+		expect(rules(lintShow(show, { analysis, effects }))).toContain('hit-too-long');
+	});
+
+	it('rejects a strobe that runs too long in seconds even when it fits in bars', () => {
+		// Two bars is legal at 128 bpm and the same two bars are not at 60, which is the whole
+		// reason the cap is stated twice.
+		const slow = fixture();
+		slow.tempo.bpm = 60;
+		slow.tempo.barTimes = slow.tempo.barTimes.map((_, i) => i * 4);
+		const show = goodShow();
+		show.hits = [{ bar: 48, kind: 'strobe', beats: 4, params: { perBeat: 2 }, note: 'one bar' }];
+		expect(rules(lintShow(show, { analysis: slow, effects }))).toContain('hit-too-long-in-seconds');
+		expect(rules(lintShow(show, { analysis, effects }))).not.toContain('hit-too-long-in-seconds');
 	});
 
 	it('warns about a blackout dropped into a drop', () => {
 		const show = goodShow();
-		show.hits.push({ bar: 40, kind: 'blackout', beats: 1 });
+		show.hits.push({ bar: 40, kind: 'blackout', beats: 4 });
 		expect(rules(lintShow(show, { analysis, effects }))).toContain('blackout-placement');
+	});
+});
+
+describe('punctuation timing', () => {
+	it('rejects a hit that touches a downbeat at neither end', () => {
+		const show = goodShow();
+		show.hits[0] = { bar: 32, beat: 1, kind: 'slam', beats: 2, note: 'floating' };
+		expect(rules(lintShow(show, { analysis, effects }))).toContain('hit-part-bar');
+	});
+
+	it('accepts a stab that starts on a downbeat and stops inside the bar', () => {
+		const show = goodShow();
+		show.hits[0].beats = 2;
+		expect(rules(lintShow(show, { analysis, effects }))).not.toContain('hit-part-bar');
+	});
+
+	it('accepts a held breath that starts inside a bar and lands on the downbeat', () => {
+		// The only reason `beat` exists: at a whole bar this gesture is four beats of nothing,
+		// and the only way to be shorter and still finish on the drop is to start late.
+		const show = goodShow();
+		show.hits[0] = { bar: 31, beat: 2, kind: 'blackout', beats: 2, note: 'the held breath' };
+		const found = rules(lintShow(show, { analysis, effects }));
+		expect(found).not.toContain('hit-part-bar');
+		expect(found).not.toContain('blackout-ends-early');
+		expect(found).not.toContain('unanchored-hit');
+	});
+
+	it('rejects a fraction of a beat', () => {
+		const show = goodShow();
+		show.hits[0].beats = 1.5;
+		expect(rules(lintShow(show, { analysis, effects }))).toContain('hit-part-beat');
+	});
+
+	it('rejects a hit anchored to nothing', () => {
+		const show = goodShow();
+		show.hits[0] = { bar: 33, kind: 'bump', beats: 4, note: 'off the grid at both ends' };
+		expect(rules(lintShow(show, { analysis, effects }))).toContain('unanchored-hit');
+	});
+
+	it('accepts a hit that ends where an anchored one begins', () => {
+		// Strobe, then black, then slam: one figure in three parts, only the last of which
+		// lands on a downbeat anyone is counting.
+		const show = goodShow();
+		show.hits = [
+			{ bar: 30, kind: 'strobe', beats: 4, params: { perBeat: 2 }, note: 'out of the build' },
+			{ bar: 31, kind: 'blackout', beats: 4, note: 'the held breath' },
+			{ bar: 32, kind: 'slam', beats: 4, note: 'the drop lands' }
+		];
+		expect(rules(lintShow(show, { analysis, effects }))).not.toContain('unanchored-hit');
+	});
+
+	it('rejects a pre-drop blackout that hands the room back before the downbeat', () => {
+		// No void of its own, so the cut is made in the build. Ending at 31 lights the room for
+		// the one bar the silence existed to set up.
+		const noVoid = fixture();
+		noVoid.sections = noVoid.sections.filter((s) => s.kind !== 'void');
+		const early = goodShow();
+		early.hits.push({ bar: 30, kind: 'blackout', beats: 4, note: 'ends a bar early' });
+		expect(rules(lintShow(early, { analysis: noVoid, effects }))).toContain('blackout-ends-early');
+
+		const held = goodShow();
+		held.hits.push({ bar: 31, kind: 'blackout', beats: 4, note: 'the held breath' });
+		expect(rules(lintShow(held, { analysis: noVoid, effects }))).not.toContain('blackout-ends-early');
 	});
 });
 

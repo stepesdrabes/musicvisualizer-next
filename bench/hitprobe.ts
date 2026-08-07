@@ -45,8 +45,11 @@ for (const id of ids) {
 		const f = player.update(t, dt);
 		mixer.render(f);
 		for (const [i, h] of show.hits.entries()) {
-			const start = barTimeAt(analysis.tempo, h.bar);
-			const beat = (barTimeAt(analysis.tempo, h.bar + 1) - start) / analysis.tempo.beatsPerBar;
+			const bar = barTimeAt(analysis.tempo, h.bar);
+			const beat = (barTimeAt(analysis.tempo, h.bar + 1) - bar) / analysis.tempo.beatsPerBar;
+			// A gesture placed backwards from the boundary it points at starts inside its bar,
+			// so the offset is part of the window rather than an optional extra.
+			const start = bar + (h.beat ?? 0) * beat;
 			const end = start + h.beats * beat;
 			if (t < start || t >= end || seen.has(i)) continue;
 			const master = mixer.layers.master;

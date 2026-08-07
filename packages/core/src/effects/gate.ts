@@ -97,6 +97,17 @@ export function scriptFrames(bpm = 130): ShowFrame[] {
 			f.bands[1] = stage.energy * 0.8;
 			f.bands[2] = stage.energy * 0.6;
 			f.bands[3] = stage.section === 'build' ? f.buildProgress : stage.energy * 0.5;
+			// A spectrum with a shape and a moving tilt, not a flat level: an effect that reads
+			// only the four bands must survive this, and one that reads the spectrum has to be
+			// exercised by it rather than handed silence and marked as emitting no light.
+			for (let k = 0; k < f.spectrum.length; k++) {
+				const u = f.spectrum.length > 1 ? k / (f.spectrum.length - 1) : 0;
+				// Bass-heavy on the groove and drop, walking upward through the build, and gone
+				// in the void, which is the same journey the four bands take.
+				const tilt = stage.section === 'build' ? f.buildProgress : 0.25;
+				const shape = Math.exp(-((u - tilt) ** 2) / 0.12);
+				f.spectrum[k] = clamp(stage.energy * shape * (0.7 + 0.3 * Math.sin(t * 3 + k)));
+			}
 			f.kick = kick;
 			f.snare = snare;
 			f.hat = hat;

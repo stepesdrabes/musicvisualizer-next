@@ -23,7 +23,10 @@ export const aurora: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// Curtains with dark between them: 36% of its light in a tenth of the pixels. Lovely
+		// under something, and a quiet cue lit by this alone shows as bands with gaps.
+		carries: false
 	},
 	params: [INTENSITY, param('waves', 'Wave scale', 0.5)],
 	create(g) {

@@ -13,10 +13,13 @@ import type {
 } from '@mv/core';
 import {
 	BUILT_IN_EFFECTS,
+	HIT_RULES,
 	PHRASE_BARS,
 	SHOW_VERSION,
 	Rng,
-	nearestPhraseBar
+	hitSeconds,
+	nearestPhraseBar,
+	nextPhraseBar
 } from '@mv/core';
 import { choosePalette, lerpHue } from './palette.ts';
 import { EffectPicker } from './select.ts';
@@ -113,7 +116,12 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		// or a long section would hold one look for its whole length again by another route.
 		const bedEnergy = Math.min(slot.energy, 0.75);
 		// A quiet section is a bed and one texture, so the bed genuinely is the room.
-		const bare = slot.section === 'intro' || slot.section === 'outro';
+		// The quiet three. Every layer in one of these has to be able to hold a room on its own,
+		// because there are only two of them and nothing else is running: a breakdown was drawing
+		// from the same accent pool as a drop, which is how a passage with the drums taken out
+		// ended up lit by stage blinders.
+		const bare =
+			slot.section === 'intro' || slot.section === 'outro' || slot.section === 'breakdown';
 		add('bed', picker.pick({ role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: bare, group: slot.index === 0 ? slot.span.group : undefined }));
 		switch (slot.section) {
 			case 'void':
@@ -121,21 +129,21 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 
 			case 'intro':
 			case 'outro':
-				// One texture over the bed, as a breakdown gets. A bed is written to sit UNDER
-				// something, so a cue carrying nothing else asks the dimmest layer in the system to
-				// hold the room alone, and the room stays dark.
+				// One texture over the bed, as a breakdown gets, and it has to be one that carries.
+				// A bed is written to sit UNDER something, so a cue whose other layer contributes
+				// nothing asks the dimmest thing in the system to hold the room alone.
 				//
-				// Deliberately NOT filtered to effects that carry: only one accent in the catalog
-				// does, so requiring it left most of these cues with no accent at all, which is
-				// worse than a sparse one. The bed is what has to hold this cue up.
-				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy }));
+				// This used to be unfiltered, because requiring it once left most of these cues
+				// with no accent at all: only a single accent in the catalog qualified. There are
+				// now enough that the rule can be what it should always have been.
+				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true }));
 				break;
 
 			case 'breakdown':
 				// One texture on top of the bed, and only sometimes: a breakdown that keeps
 				// everything running is not a breakdown.
 				if (rng.float() < 0.5) {
-					add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy }));
+					add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true }));
 				}
 				break;
 
@@ -190,7 +198,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		defaults: { intensity: 0.7, motion: 1, fadeBeats: 2 },
 		generatedEffects: [],
 		cues,
-		hits: planHits(analysis, slots, rng)
+		hits: planHits(analysis, slots)
 	};
 }
 
@@ -293,15 +301,23 @@ function intensityFor(slot: Slot, spread = 0): number {
 	return Math.min(0.92, floor + slot.energy * 0.08 + climb);
 }
 
+/**
+ * How fast a cue's effects are allowed to move, which every effect multiplies its own speeds by.
+ *
+ * The quiet three are far below where they were. A passage with nothing happening in it should
+ * look like the room holding its position, drifting over tens of seconds; at 0.6 an intro was
+ * still moving fast enough to read as restless, and the light was answering noise in the
+ * spectrum rather than anything in the music. The loud sections are untouched.
+ */
 function motionFor(slot: Slot): number {
 	const base: Record<SectionKind, number> = {
-		intro: 0.6,
+		intro: 0.28,
 		groove: 1,
-		breakdown: 0.7,
+		breakdown: 0.34,
 		build: 1.15,
 		void: 0.4,
 		drop: 1.25,
-		outro: 0.55
+		outro: 0.24
 	};
 	const climb = slot.section === 'build' && slot.of > 1 ? (slot.index / (slot.of - 1)) * 0.2 : 0;
 	return Math.round((base[slot.section] + climb) * 100) / 100;
@@ -451,17 +467,59 @@ function countLayers(cue: Cue): number {
  * downbeat. Doing it once and calling it restraint is how a show ends up boring - the move is
  * the vocabulary, not the surprise, and what makes the peak the peak is everything around it.
  */
-function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
+function planHits(analysis: TrackAnalysis, slots: Slot[]): Hit[] {
 	const hits: Hit[] = [];
-	const beatsPerBar = analysis.tempo.beatsPerBar;
-	const perBeat = strobeRate(analysis.tempo.bpm);
+	const { tempo } = analysis;
+	const beatsPerBar = tempo.beatsPerBar;
+	const perBeat = strobeRate(tempo.bpm);
+
+	// Every gesture below is counted in whole bars, so each one starts on a downbeat and ends on
+	// one. Anything shorter came back mid-bar, and a room that comes back mid-bar has answered
+	// nothing: the phrase it was pointing at has not arrived yet.
+	const bars = (n: number) => n * beatsPerBar;
+	// Two bars of clearance either side, so gestures read as separate events rather than one
+	// smear, and so nothing is planned where a bigger card will mask it.
+	const clear = (from: number, to: number) =>
+		!hits.some((h) => from - 2 < h.bar + h.beats / beatsPerBar && h.bar < to + 2);
+	// A strobe is lit for exactly as long as it is held, so its length is capped in seconds as
+	// well as in bars. Whole bars only, and none at all where one bar already runs too long:
+	// a tempo that cannot fit a bar of strobe inside the cap should not be strobing.
+	// Measured over the span the hit will OCCUPY, using the same function the linter checks it
+	// with. Sizing it against one bar and placing it at another is how a show came back failing
+	// its own linter on a track whose tempo drifts by a per cent, and a rejected show is a dark
+	// room rather than a slightly long strobe.
+	const strobeBars = (endBar: number, want: number) => {
+		const cap = HIT_RULES.strobe.maxSeconds ?? Infinity;
+		let bars = Math.min(want, HIT_RULES.strobe.maxBars);
+		while (bars > 0 && hitSeconds(tempo, endBar - bars, 0, bars * beatsPerBar) > cap) bars--;
+		return bars;
+	};
+	// Black is counted in beats rather than bars, because a bar of it is four beats and at the
+	// tempos this repertoire sits at that is three seconds of nothing. Whole beats still, so it
+	// lands on the grid, and never more than the rule allows in either unit.
+	const blackBeats = (atBar: number, wantBars: number) => {
+		const cap = HIT_RULES.blackout.maxSeconds ?? Infinity;
+		let beats = Math.min(HIT_RULES.blackout.maxBars, wantBars) * beatsPerBar;
+		while (beats > 1 && hitSeconds(tempo, atBar, 0, beats) > cap) beats--;
+		return Math.max(1, beats);
+	};
+	/** Placed so it finishes exactly on `endBar`'s downbeat, however few beats long it is. */
+	const endingAt = (endBar: number, beats: number): { bar: number; beat?: number } => {
+		const barsBack = Math.ceil(beats / beatsPerBar);
+		const bar = endBar - barsBack;
+		const beat = barsBack * beatsPerBar - beats;
+		return beat > 0 ? { bar, beat } : { bar };
+	};
 
 	for (const span of analysis.sections) {
 		if (span.kind !== 'void') continue;
+		// Starts where the sound stopped, which is a measurement. Where the cap makes it shorter
+		// than the void, the rest is covered by the void cue itself: its intensity is 0.05 and
+		// its house floor is zero, so the room is already dark there without a hit saying so.
 		hits.push({
 			bar: span.startBar,
 			kind: 'blackout',
-			beats: Math.min(2, span.lengthBars) * beatsPerBar,
+			beats: blackBeats(span.startBar, span.lengthBars),
 			note: 'cut with the bass'
 		});
 	}
@@ -472,35 +530,39 @@ function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
 		hits.push({
 			bar: slot.bar,
 			kind: 'slam',
-			beats: beatsPerBar,
+			beats: bars(1),
 			note: slot.peak ? 'the drop this whole track has been about' : 'the drop lands'
 		});
 
 		const before = slots.find((s) => s.endBar === slot.bar);
 		if (!before || before.section === 'void') continue;
 
-		// The strobe runs out of the build and stops dead on the downbeat, so the slam has a
-		// silence to land in. Two bars on the peak, one elsewhere: the difference is what
-		// tells an audience which of the three drops was the one.
-		const want = slot.peak ? 2 : 1;
-		const runFor = Math.min(want, before.endBar - before.bar - 1);
-		if (perBeat > 0 && runFor > 0) {
-			hits.push({
-				bar: slot.bar - runFor,
-				kind: 'strobe',
-				beats: runFor * beatsPerBar,
-				params: { perBeat },
-				note: 'strobing out of the build'
-			});
+		// The held breath: black ending exactly ON the drop downbeat, and only as many beats of
+		// it as read as a breath rather than as a fault. It used to be half a bar from the START
+		// of the bar before, which handed the room back before the thing the silence set up; a
+		// whole bar fixed that and was four beats long, which is the same mistake at the other
+		// end. Counted in beats and placed backwards from the downbeat, it can be both.
+		const wantsHeld = before.section === 'build' && before.endBar - before.bar >= 2;
+		const heldBeats = wantsHeld ? blackBeats(slot.bar - 1, 1) : 0;
+		const held = heldBeats > 0 ? Math.ceil(heldBeats / beatsPerBar) : 0;
+		if (heldBeats > 0) {
+			hits.push({ ...endingAt(slot.bar, heldBeats), kind: 'blackout', beats: heldBeats, note: 'the held breath' });
 		}
 
-		// No void of its own, so the cut is made here: half a bar of black immediately before.
-		if (before.section === 'build' && before.endBar - before.bar >= 2) {
+		// Strobe, then black, then slam: one figure in three parts, each handing over on a
+		// downbeat. Running the strobe under the blackout instead left the two fighting for the
+		// same bar, which the priority table has to settle and the audience only ever sees one
+		// of. Two bars on the peak, one elsewhere - the difference is what tells an audience
+		// which of the three drops was the one.
+		const room = before.endBar - before.bar - held - 1;
+		const runFor = strobeBars(slot.bar - held, Math.min(slot.peak ? 2 : 1, room));
+		if (perBeat > 0 && runFor > 0) {
 			hits.push({
-				bar: slot.bar - 1,
-				kind: 'blackout',
-				beats: Math.max(1, Math.round(beatsPerBar / 2)),
-				note: 'the held breath'
+				bar: slot.bar - held - runFor,
+				kind: 'strobe',
+				beats: bars(runFor),
+				params: { perBeat },
+				note: 'strobing out of the build'
 			});
 		}
 	}
@@ -524,30 +586,35 @@ function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
 		if (kickDensity(analysis, slot) < 0.6) continue;
 
 		// Every phrase in a drop, every other phrase in a groove, and nothing at all where the
-		// passage is not carrying the track.
+		// passage is not carrying the track. Walked on the phrase grid rather than counted from
+		// the slot's own start, which is allowed to sit off it.
 		const every = slot.section === 'drop' ? PHRASE_BARS : PHRASE_BARS * 2;
-		for (let bar = slot.bar + every; bar < slot.endBar; bar += every) {
-			if (hits.some((h) => Math.abs(h.bar - bar) < 2)) continue;
-			const heavy = slot.energy > 0.8 && rng.float() < 0.5;
+		for (
+			let bar = nextPhraseBar(slot.bar + every - 1, tempo.phraseAnchorBar);
+			bar < slot.endBar;
+			bar += every
+		) {
 			// A bump lands ON the phrase downbeat; a strobe runs INTO it and stops there, which
-			// is why one is placed a bar early and the other is not.
-			const bump = phraseIndex++ % 2 === 1;
-			hits.push(
-				bump
-					? {
-							bar,
-							kind: 'bump',
-							beats: Math.max(1, Math.round(beatsPerBar / 2)),
-							note: 'colour flood on the phrase'
-						}
-					: {
-							bar: bar - 1,
-							kind: 'strobe',
-							beats: heavy ? beatsPerBar : Math.max(1, Math.round(beatsPerBar / 2)),
-							params: { perBeat },
-							note: 'strobing into the phrase'
-						}
-			);
+			// is why one is placed early by its own length and the other is not.
+			if (phraseIndex++ % 2 === 1) {
+				if (clear(bar, bar + 1)) {
+					hits.push({ bar, kind: 'bump', beats: bars(1), note: 'colour flood on the phrase' });
+				}
+				continue;
+			}
+			// One bar, never two. Inside a passage the strobe is a comma, and the long one is
+			// reserved for the run into a drop where it is the whole sentence.
+			// Measured back from the downbeat it runs INTO, which is the span it will occupy.
+			const runFor = strobeBars(bar, 1);
+			if (runFor > 0 && bar - runFor >= slot.bar && clear(bar - runFor, bar)) {
+				hits.push({
+					bar: bar - runFor,
+					kind: 'strobe',
+					beats: bars(runFor),
+					params: { perBeat },
+					note: 'strobing into the phrase'
+				});
+			}
 		}
 	}
 
@@ -564,13 +631,8 @@ function planHits(analysis: TrackAnalysis, slots: Slot[], rng: Rng): Hit[] {
 		// Last in, so the bigger cards are already placed: a crash landing under a slam or a
 		// blackout is answered by those, and planning a hit that can never fire is a lie about
 		// what the show does.
-		if (hits.some((h) => Math.abs(h.bar - row.bar) < 2)) continue;
-		hits.push({
-			bar: row.bar,
-			kind: 'bump',
-			beats: Math.max(1, Math.round(beatsPerBar / 2)),
-			note: 'answering the crash'
-		});
+		if (!clear(row.bar, row.bar + 1)) continue;
+		hits.push({ bar: row.bar, kind: 'bump', beats: bars(1), note: 'answering the crash' });
 	}
 
 	return hits.sort((a, b) => a.bar - b.bar || a.kind.localeCompare(b.kind));

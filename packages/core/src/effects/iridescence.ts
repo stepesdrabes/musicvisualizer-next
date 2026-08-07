@@ -22,7 +22,9 @@ export const iridescence: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		// A thin film reads as a sheen on a lit surface rather than as the light itself.
+		carries: false
 	},
 	params: [INTENSITY, param('scale', 'Fringe scale', 0.45)],
 	create(g) {

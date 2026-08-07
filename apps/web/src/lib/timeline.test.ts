@@ -62,6 +62,7 @@ function analysis(): TrackAnalysis {
 		moments: [],
 		beats: [],
 		envelopes: { energy: [], bands: [] },
+		spectrum: { fps: 50, bands: 0, centreHz: [], data: '' },
 		stereo: { fps: 25, pan: [], width: [] },
 		onsets: {
 			kick: { times: [], levels: [] },

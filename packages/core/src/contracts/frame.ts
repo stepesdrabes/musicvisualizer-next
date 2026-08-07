@@ -30,6 +30,16 @@ export const NUM_BANDS = 4;
 export const BAND_EDGES_HZ = [20, 100, 400, 2600, 16000] as const;
 export const BAND_NAMES = ['sub', 'low', 'mid', 'air'] as const;
 
+/**
+ * How many log-spaced bands the per-frame spectrum carries.
+ *
+ * Twenty over the analysed range is a little over two per octave: enough columns for a meter
+ * to read as a measurement rather than as four lights, and few enough that each one still owns
+ * a musically distinct slice. Effects address it through `bandAt`, so this number is an
+ * implementation detail to everything except the analyser that fills it.
+ */
+export const SPECTRUM_BANDS = 20;
+
 /** Mutated in place by the player. Never retain a reference across frames. */
 export interface ShowFrame {
 	t: number;
@@ -65,6 +75,18 @@ export interface ShowFrame {
 	energy: number;
 	/** Length NUM_BANDS. Index with `Band`. */
 	bands: Float32Array;
+	/**
+	 * The spectrum right now: `SPECTRUM_BANDS` log-spaced values 0..1, lowest band first.
+	 *
+	 * The reason an effect can be a spectrum analyser rather than a field modulated by four
+	 * numbers, and the only thing in the frame with enough resolution to carry a melody. Reach
+	 * for `bandAt(f, u)` rather than indexing it, so an effect keeps working if the band count
+	 * ever moves.
+	 *
+	 * Each band is normalised against its own distribution across the track, exactly as `bands`
+	 * is: a quiet track's top octave still reaches 1.0 when it is that track's brightest.
+	 */
+	spectrum: Float32Array;
 
 	/**
 	 * Where the music is sitting across the room right now: -1 hard left, +1 hard right, and
@@ -112,6 +134,7 @@ export function createShowFrame(): ShowFrame {
 		timeSinceDrop: Infinity,
 		energy: 0,
 		bands: new Float32Array(NUM_BANDS),
+		spectrum: new Float32Array(SPECTRUM_BANDS),
 		pan: 0,
 		panWidth: 0,
 		kick: false,
