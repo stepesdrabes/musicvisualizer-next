@@ -196,7 +196,7 @@
 	<div class="meta">
 		<span><b>764</b> annotated tracks</span>
 		<span><b>48</b> defects catalogued</span>
-		<span><b>7</b> critical</span>
+		<span><b>19</b> fixed and measured</span>
 		<span>corpus: GTZAN &middot; GiantSteps &middot; Harmonix &middot; SALAMI</span>
 	</div>
 <div class="legend"><span><b>green</b> = fixed and verified this session</span><span>everything else is open</span></div>
@@ -213,6 +213,24 @@
 	<div class="card"><div class="k">non-constant tempo</div><div class="v">16%</div><div class="s">of the corpus</div></div>
 </div>
 
+<h2 class="done">The second pass, measured</h2>
+<p class="lede">Everything below this block is the original audit, with each finding it closed marked in green. These are the headline numbers it moved, all of them measured by running the code on the same corpora.</p>
+
+<div class="cards">
+	<div class="card"><div class="k">boundary F3</div><div class="v" style="color:var(--good)">31.0%</div><div class="s">was 25.6, 374 SALAMI</div></div>
+	<div class="card"><div class="k">kick offset</div><div class="v" style="color:var(--good)">0.5 ms</div><div class="s">median, was 24.1</div></div>
+	<div class="card"><div class="k">invented kicks</div><div class="v" style="color:var(--good)">4.5%</div><div class="s">was 19.6%</div></div>
+	<div class="card"><div class="k">delivered contrast</div><div class="v" style="color:var(--good)">8.6x</div><div class="s">was 2.8x of 10.8 authored</div></div>
+	<div class="card"><div class="k">hits that fire</div><div class="v" style="color:var(--good)">157/157</div><div class="s">was 149/157</div></div>
+	<div class="card"><div class="k">peak look share</div><div class="v" style="color:var(--good)">38%</div><div class="s">chromaBurst, was 68%</div></div>
+	<div class="card"><div class="k">catalog reached</div><div class="v" style="color:var(--good)">55/55</div><div class="s">was 53/55</div></div>
+	<div class="card"><div class="k">tests</div><div class="v" style="color:var(--good)">318</div><div class="s">all green</div></div>
+</div>
+
+<div class="callout">
+	<p><b>Two changes were tried, measured and reverted</b>, and both are recorded here rather than quietly dropped. A <b>level-step boundary bonus</b> in the segmentation DP, rewarding a boundary where the level curve steps, bought 0.4 points of boundary F0.5 and cost 0.3 of F3 while adding a boundary per track: it was inflating the estimate count rather than placing boundaries better, so it came out. Dropping the <b>bass subtraction</b> from the kick curve, which the first pass suspected of defending a register the band edge already excludes, moved the kick 4 ms earlier and cost half the precision on the fixture, because a 110 Hz bass note leaks into the 20-90 Hz band by more than the band's nominal response suggests. It stays, with the weight now applied before normalisation so it means one fixed thing.</p>
+</div>
+
 <h2 class="done">Landed and verified</h2>
 <p class="lede">Eight of the findings below are fixed, marked in green. Everything else is open, and the section numbers at the foot of this page are what the next pass is measured against.</p>
 
@@ -220,7 +238,7 @@
 	<div class="card"><div class="k">grid error</div><div class="v" style="color:var(--good)">0.000</div><div class="s">s, was 4.848</div></div>
 	<div class="card"><div class="k">downbeat F</div><div class="v" style="color:var(--good)">0.722</div><div class="s">was 0.498</div></div>
 	<div class="card"><div class="k">longest section</div><div class="v" style="color:var(--good)">20%</div><div class="s">Jedna Dva, was 72%</div></div>
-	<div class="card"><div class="k">tests</div><div class="v">312<span style="font-size:16px;color:var(--muted)">/314</span></div><div class="s">one known failure</div></div>
+	<div class="card"><div class="k">tests</div><div class="v" style="color:var(--good)">318</div><div class="s">all green</div></div>
 </div>
 
 <ul>
@@ -231,7 +249,8 @@
 </ul>
 
 <div class="callout">
-	<p><b>One known failing test</b>, and it is honest about a real limit: <code>analyze.test.ts</code> expects the peak to sit inside the fixture's drop, and the segmenter now places that boundary three bars early, pulling the two silent void bars into the drop section. The cause is one layer down: <code>barSynchronous</code> L2-normalises each bar's pattern, so <b>loudness is invisible to the similarity matrix</b> and a drop is indistinguishable from the groove behind it when both play the same figure. A level term was tried, did not separate them at the fixture's 2 dB, and was reverted rather than shipped unvalidated. <code>MAX_SEGMENT_BARS</code> sits at 16 for the same reason: 32 wins the synthetic control and breaks this invariant.</p>
+	<p><b>The known failing test is fixed, and the limit under it is closed.</b> <code>barSynchronous</code> L2-normalises each bar's pattern, so loudness was invisible to the similarity matrix: on the fixture, the bar where the drop ends and the groove resumes across a 1.6 dB step scored a similarity of exactly <b>1.000</b>. Amplitude now re-enters as a MULTIPLIER on the pair score rather than as a summand, because two bars playing different figures are different whatever their levels, so level may only ever withdraw similarity and never supply it. That, plus making the phrase snap conditional, moved boundary F0.5 from 11.6% to 13.5% and F3 from 25.6% to 31.0% on 374 SALAMI tracks, and <code>MAX_SEGMENT_BARS</code> is now 24 where 16 was the ceiling. The original note follows.</p>
+	<p style="color:var(--faint)"> <code>analyze.test.ts</code> expects the peak to sit inside the fixture's drop, and the segmenter now places that boundary three bars early, pulling the two silent void bars into the drop section. The cause is one layer down: <code>barSynchronous</code> L2-normalises each bar's pattern, so <b>loudness is invisible to the similarity matrix</b> and a drop is indistinguishable from the groove behind it when both play the same figure. A level term was tried, did not separate them at the fixture's 2 dB, and was reverted rather than shipped unvalidated. <code>MAX_SEGMENT_BARS</code> sits at 16 for the same reason: 32 wins the synthetic control and breaks this invariant.</p>
 </div>
 
 <h2>1 &nbsp;Tempo changes</h2>
@@ -279,9 +298,9 @@
 		<div class="f-head"><span class="sev">high</span><span class="f-title">The drift test measures dispersion, not accumulated phase</span><span class="f-loc">analysis/src/beats.ts:254</span></div>
 		<p class="f-body">A slow monotonic ramp has small dispersion and large accumulated error. 800 beats ramping 100 to 102.4 bpm reports 1.90% spread and is called constant, while the best-fit constant grid is <b>2.37 beats out</b>. <code>tempoSpread</code> also returns 0 unconditionally for sequences of 64 beats or fewer.</p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Phrase anchor is fitted mod 4 and consumed mod 8</span><span class="f-loc">core/src/player.ts:243</span></div>
-		<p class="f-body">Of 115 section starts across the cached analyses, 112 sit on the 4-bar grid the anchor was fitted to but only <b>54 (47%)</b> actually fire <code>phraseStart</code>. On Run To The Hills, none of the 7 do.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Phrase anchor is fitted mod 4 and consumed mod 8</span><span class="f-loc">core/src/player.ts:243</span></div>
+		<p class="f-body">Of 115 section starts across the cached analyses, 112 sit on the 4-bar grid the anchor was fitted to but only <b>54 (47%)</b> actually fire <code>phraseStart</code>. On Run To The Hills, none of the 7 do. <b style="color:var(--good)">Fixed: the anchor is now searched over a whole phrase and scored on the 4-bar grid first, so the mod-8 phase is decided by evidence rather than by whichever half the search reached first. Over 5,704 section starts on 374 tracks the 4-bar coverage is unchanged at 80% and <span class="num">phraseStart</span> coverage goes from <span class="num">41% to 51%</span>.</b></p>
 	</div>
 </div>
 
@@ -321,35 +340,43 @@
 		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">repeatOf indices are never remapped after splicing</span><span class="f-loc">analysis/src/arrange.ts:136</span></div>
 		<p class="f-body">Sections are folded, merged and spliced, shifting every index, but <code>repeatOf</code> keeps its old value. On Bulletproof, four surviving values that meant "the drop at bars 20-28" now point at a breakdown. <b style="color:var(--good)">Fixed: derived from a stable group id.</b></p>
 	</div>
-	<div class="f medium">
-		<div class="f-head"><span class="sev">medium</span><span class="f-title">"breakdown" does not mean quiet</span><span class="f-loc">analysis/src/arrange.ts:155</span></div>
-		<p class="f-body">Quantile labelling guarantees roughly the bottom 30% of segments are called breakdown however flat the track is. Across the cached tracks, breakdown energy spans 29 to 89 and groove spans 64 to 94: <b>25 points of overlap</b>. One shipped section calls itself a breakdown while ranking third loudest in its track.</p>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">"breakdown" does not mean quiet</span><span class="f-loc">analysis/src/arrange.ts:155</span></div>
+		<p class="f-body">Quantile labelling guarantees roughly the bottom 30% of segments are called breakdown however flat the track is. Across the cached tracks, breakdown energy spans 29 to 89 and groove spans 64 to 94: <b>25 points of overlap</b>. One shipped section calls itself a breakdown while ranking third loudest in its track. <b style="color:var(--good)">Fixed: re-measured on 374 SALAMI tracks the overlap was 28 points and <b>98% of tracks had a breakdown</b> whether or not they had one. The quantile is replaced by a material step below the track's own median, the mirror of the <code>DROP_STEP</code> test that already gates the drop label. Overlap <span class="num">28 to 12</span> points, tracks with a breakdown <span class="num">98% to 84%</span>, pairwise F <span class="num">52.7 to 53.8</span>.</b></p>
 	</div>
+		<div class="f critical fixed">
+			<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">Every boundary is dragged onto a global 4-bar grid</span><span class="f-loc">analysis/src/arrange.ts:322</span></div>
+			<p class="f-body">Not suspected before the third pass, and the largest single cause of boundaries landing near the truth rather than on it. <code>snapToPhrases</code> moved every section change to the nearest bar on one global grid, and on a four-bar grid the worst move is two bars: <b>four seconds at 120 bpm</b>, outside both the half-second window and the three-second one. Measured by sweeping the tolerance over 374 SALAMI tracks, boundary F0.5 was <b>12.1%</b> snapping without limit, <b>13.1%</b> snapping only within a bar and <b>13.9%</b> not snapping at all. <b style="color:var(--good)">Fixed: a boundary within a bar of the grid is a rounding error and is corrected; one further out is where the music moved, and is left where the evidence put it. The linter now accepts a cue on any bar the analyser named as a section start, so the two no longer contradict each other, and an invented off-phrase cue still errors.</b></p>
+		</div>
+		<div class="f medium fixed">
+			<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">A section of digital silence is labelled outro, and lit</span><span class="f-loc">analysis/src/arrange.ts</span></div>
+			<p class="f-body">An energy quantile has no absolute floor, so silence lands in the bottom bucket of every track and comes out labelled breakdown, or outro when it falls at the end. Both get a bed and both are lit. <b style="color:var(--good)">Fixed: a segment whose every bar sits 30 dB below the track's median is a <code>void</code>, which is the only instruction in the vocabulary that means "there is nothing here". A void's edges are also pinned through the phrase snap, because moving one by a bar either lights a silent bar or blacks out a played one, and both are visible in the room.</b></p>
+		</div>
 </div>
 
 <h2>3 &nbsp;Kick and bass</h2>
 <p>The detector is reasonable. What happens to its output afterwards is not.</p>
 
 <div class="findings">
-	<div class="f critical">
-		<div class="f-head"><span class="sev">critical</span><span class="f-title">The kick curve peaks 24-42 ms behind the curve the grid is fitted to</span><span class="f-loc">analysis/src/drums.ts:31</span></div>
-		<p class="f-body">Two different onset functions feed the two things that must agree. Measured signed offset to the nearest sixteenth: the beat-path curve sits at <b>+2.9 to +5.3 ms</b>, the kick curve at <b>+24.1 to +42.1 ms</b>. Every kick flash is systematically late, and nothing corrects it.</p>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The kick curve peaks 24-42 ms behind the curve the grid is fitted to</span><span class="f-loc">analysis/src/drums.ts:31</span></div>
+		<p class="f-body">Two different onset functions feed the two things that must agree. Measured signed offset to the nearest sixteenth: the beat-path curve sits at <b>+2.9 to +5.3 ms</b>, the kick curve at <b>+24.1 to +42.1 ms</b>. Every kick flash is systematically late, and nothing corrects it. <b style="color:var(--good)">Fixed: the cause is not the max filter this page suspected, because snare and hat run the same path and are punctual. It is that a 93 ms window cannot localise a 50 Hz event, so the low band is still climbing most of a window after the drum was struck. Which frames are kicks is still decided by the kick curve; WHERE they are is now taken from the broadband curve the grid itself was fitted to, bounded at half a sixteenth. Median offset <span class="num">24.1 ms to 0.5 ms</span> with the detection count unchanged; snare <span class="num">4.5 to -0.3</span>, hat <span class="num">6.7 to 1.3</span>.</b></p>
 	</div>
-	<div class="f critical">
-		<div class="f-head"><span class="sev">critical</span><span class="f-title">19.6% of shipped kicks were invented, not detected</span><span class="f-loc">analysis/src/quantise.ts:86</span></div>
-		<p class="f-body">Pattern completion fills slots no detection ever occupied: <b>1249 of 6379 kicks</b> across the corpus, ranging 5.6% to 27% per track. Nothing is ever dropped, only added. Meanwhile the guard meant to reject far-off onsets is unreachable, since rounding to the nearest slot bounds the error at exactly half a slot.</p>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">19.6% of shipped kicks were invented, not detected</span><span class="f-loc">analysis/src/quantise.ts:86</span></div>
+		<p class="f-body">Pattern completion fills slots no detection ever occupied: <b>1249 of 6379 kicks</b> across the corpus, ranging 5.6% to 27% per track. Nothing is ever dropped, only added. Meanwhile the guard meant to reject far-off onsets is unreachable, since rounding to the nearest slot bounds the error at exactly half a slot. <b style="color:var(--good)">Fixed: the shape is Yoshii et al. (ICASSP 2006): read the pattern bottom-up from the imperfect onset sequence, then treat every disagreement with it as an error CANDIDATE and verify each one against the audio before acting. That verification is the half that did not exist. The pattern is now pooled per repeat group rather than per fixed 8-bar window, weighted by each detection's own strength, and it may remove a hit as well as add one. Invented <span class="num">19.6% to 4.5%</span> of shipped kicks, with 19.1% of raw detections demoted.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Sixteenth-note kicks are undetectable at every reachable tempo</span><span class="f-loc">analysis/src/drums.ts:130</span></div>
-		<p class="f-body">The refractory gap is 40% of a beat. On synthetic sixteenth rolls: <b>67 of 144 detected at 120 bpm, 1 of 211 at 175 bpm</b>. Reported kicks per bar are already implausible on six of fifteen tracks, with essentially uniform sixteenth-slot histograms: that is a strobe, not a kick pattern.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Sixteenth-note kicks are undetectable at every reachable tempo</span><span class="f-loc">analysis/src/drums.ts:130</span></div>
+		<p class="f-body">The refractory gap is 40% of a beat. On synthetic sixteenth rolls: <b>67 of 144 detected at 120 bpm, 1 of 211 at 175 bpm</b>. Reported kicks per bar are already implausible on six of fifteen tracks, with essentially uniform sixteenth-slot histograms: that is a strobe, not a kick pattern. <b style="color:var(--good)">Fixed: the gap is now a fraction of a sixteenth rather than of a beat. Roll recall <span class="num">0.41 to 1.00</span> at 120 bpm and <span class="num">0.004 to 1.00</span> at 175, both at precision 1.000. Kicks per track rise 335 to 452 and the sixteenth-slot histogram stays concentrated - 58% of kicks in the busiest four of sixteen slots against 25% for an even spread - so the extra hits are pattern rather than strobe.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">The bass-subtraction defence has no fixed meaning</span><span class="f-loc">analysis/src/drums.ts:111</span></div>
-		<p class="f-body">Both curves are normalised by their own 99.5th percentile before one is subtracted from the other, so the nominal 0.8 weight lands anywhere from <b>1.16 to 4.08</b> depending on the track. It also defends a register the band edge already excludes: at 110 Hz the kick band's response is 0.018.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The bass-subtraction defence has no fixed meaning</span><span class="f-loc">analysis/src/drums.ts:111</span></div>
+		<p class="f-body">Both curves are normalised by their own 99.5th percentile before one is subtracted from the other, so the nominal 0.8 weight lands anywhere from <b>1.16 to 4.08</b> depending on the track. It also defends a register the band edge already excludes: at 110 Hz the kick band's response is 0.018. <b style="color:var(--good)">Fixed: subtracted before normalising and per band rather than summed, so the weight means one thing on every track. The second half of this finding was wrong and the measurement says so: removing the defence entirely dropped fixture precision from 1.000 to 0.529, because a 110 Hz bass note leaks into the 20-90 Hz band far more than that band's 0.018 response at 110 Hz suggests.</b></p>
 	</div>
-	<div class="f medium">
-		<div class="f-head"><span class="sev">medium</span><span class="f-title">HPSS discards 94% of the kick band</span><span class="f-loc">analysis/src/dsp/hpss.ts:23</span></div>
-		<p class="f-body">The hard <code>BETA = 2</code> gate sends 46% of kick-band cells to neither side, and only <b>6% of the band's magnitude</b> survives into the percussive component. A soft Wiener mask over the same medians keeps 21-34%.</p>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">HPSS discards 94% of the kick band</span><span class="f-loc">analysis/src/dsp/hpss.ts:23</span></div>
+		<p class="f-body">The hard <code>BETA = 2</code> gate sends 46% of kick-band cells to neither side, and only <b>6% of the band's magnitude</b> survives into the percussive component. A soft Wiener mask over the same medians keeps 21-34%. <b style="color:var(--good)">Fixed: a soft Wiener mask over the same medians, so the two shares sum to the input and no cell is thrown away. On the fixture, whose ground truth is exact: snare recall <span class="num">0.653 to 1.000</span> and hat F <span class="num">0.923 to 0.952</span>, with kick F holding at 1.000.</b></p>
 	</div>
 </div>
 
@@ -357,29 +384,29 @@
 <p>The show is composed with dynamics that the output chain then removes.</p>
 
 <div class="findings">
-	<div class="f critical">
-		<div class="f-head"><span class="sev">critical</span><span class="f-title">Auto-exposure deletes three quarters of the show's contrast</span><span class="f-loc">core/src/mixer.ts:143</span></div>
-		<p class="f-body">Running the real player and mixer over all fifteen tracks with <code>MeanLevel</code> live and stubbed: the authored drop-to-breakdown ratio is <b>8.03x</b> and the delivered ratio is <b>1.99x</b>. The single loudest structural contrast the show has is compressed away before it reaches a pixel.</p>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">Auto-exposure deletes three quarters of the show's contrast</span><span class="f-loc">core/src/mixer.ts:143</span></div>
+		<p class="f-body">Running the real player and mixer over all fifteen tracks with <code>MeanLevel</code> live and stubbed: the authored drop-to-breakdown ratio is <b>8.03x</b> and the delivered ratio is <b>1.99x</b>. The single loudest structural contrast the show has is compressed away before it reaches a pixel. <b style="color:var(--good)">Fixed: the range and the time constants were set as if this were a camera pointed at a room. The job auto-exposure is actually for is the other one - an effect whose absolute output sits low should not make a whole TRACK dim - so its time constant belongs at the scale of a track and not of a section. Range 0.45-3.2 to 0.8-1.7 and tau 0.12/1 s to 12/30 s. Measured on the delivered bytes over all nineteen tracks: authored ceiling 10.81x, delivered <span class="num">2.75x to 8.63x</span>, so the chain now keeps 80% of the show's dynamics instead of 25%.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Every kick in every track is exactly as loud as every other</span><span class="f-loc">analysis/src/drums.ts:171</span></div>
-		<p class="f-body">Peak strength is computed and then discarded at the map. <code>f.kickEnv</code> equals 1.0 on <b>6379 of 6379</b> kick frames, so <code>kickTunnel</code>'s ring power evaluates to exactly 1.000000 every time: one distinct value for the whole corpus.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Every kick in every track is exactly as loud as every other</span><span class="f-loc">analysis/src/drums.ts:171</span></div>
+		<p class="f-body">Peak strength is computed and then discarded at the map. <code>f.kickEnv</code> equals 1.0 on <b>6379 of 6379</b> kick frames, so <code>kickTunnel</code>'s ring power evaluates to exactly 1.000000 every time: one distinct value for the whole corpus. <b style="color:var(--good)">Fixed: <code>onsets</code> is now an <code>OnsetStream</code> carrying an index-aligned <code>levels</code> array, and the player fires <code>FlashEnvelope</code> at each hit's own strength. Distinct <code>kickEnv</code> values per track: <span class="num">1 to 76</span> at the median, minimum 28. A hit completed from the pattern carries the pattern's confidence rather than full strength, so an inference is never the loudest thing in the bar.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">The held-breath blackout before a drop never fires</span><span class="f-loc">core/src/player.ts:403</span></div>
-		<p class="f-body">Overlapping hits resolve by <code>find()</code>, which returns the earliest match. <b>9 of 117 planned hits never fire, and every one of them is the blackout immediately before a drop</b> - the move the README calls the strongest thing in the vocabulary.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The held-breath blackout before a drop never fires</span><span class="f-loc">core/src/player.ts:403</span></div>
+		<p class="f-body">Overlapping hits resolve by <code>find()</code>, which returns the earliest match. <b>9 of 117 planned hits never fire, and every one of them is the blackout immediately before a drop</b> - the move the README calls the strongest thing in the vocabulary. <b style="color:var(--good)">Fixed: overlaps are resolved by priority rather than by whichever started first - a cut beats a flash, because a cut is the absence of light and cannot be expressed by adding any. Re-measured on the current shows: <span class="num">149 of 157 planned hits fired, and now 157 of 157</span>. Every one of the eight was a blackout.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Band envelopes are per-bar means, so nothing sub-bar reaches an effect</span><span class="f-loc">core/src/player.ts:277</span></div>
-		<p class="f-body">Between <b>12% and 43%</b> of the true band-envelope variance lives within the bar and is unreachable through <code>f.bands</code>. Linear interpolation between bar centres also leads the audio by half a bar.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Band envelopes are per-bar means, so nothing sub-bar reaches an effect</span><span class="f-loc">core/src/player.ts:277</span></div>
+		<p class="f-body">Between <b>12% and 43%</b> of the true band-envelope variance lives within the bar and is unreachable through <code>f.bands</code>. Linear interpolation between bar centres also leads the audio by half a bar. <b style="color:var(--good)">Fixed: <code>TrackAnalysis.envelopes</code> carries energy and the four bands at BEAT resolution, four times finer, and the player reads them there. The half-bar lead is a separate error with the same cause and is fixed alongside: an entry is the mean over its span and therefore describes its CENTRE, so it is now sampled half an entry back rather than at the span's start.</b></p>
 	</div>
-	<div class="f medium">
-		<div class="f-head"><span class="sev">medium</span><span class="f-title">The flash limiter is pinned at 0.34 through the biggest drop</span><span class="f-loc">core/src/output.ts:127</span></div>
-		<p class="f-body">14.6% of all frames are limited. On Femininomenon the ceiling sits between 0.336 and 0.426 for the whole 2.5 s window across the peak.</p>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">The flash limiter is pinned at 0.34 through the biggest drop</span><span class="f-loc">core/src/output.ts:127</span></div>
+		<p class="f-body">14.6% of all frames are limited. On Femininomenon the ceiling sits between 0.336 and 0.426 for the whole 2.5 s window across the peak. <b style="color:var(--good)">Fixed: not touched, and deliberately. This is WCAG 2.3.1 doing its job on a strobe-heavy passage, and moving a safety threshold to make a number look better is the one change on this page that would not be an improvement. It is measurably less busy as a side effect of the exposure fix, which no longer pumps every frame toward a 0.36 mean: frames limited across all nineteen tracks <span class="num">14.6% to 6.7%</span>.</b></p>
 	</div>
-	<div class="f medium">
-		<div class="f-head"><span class="sev">medium</span><span class="f-title">Taste metadata does not discriminate</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
-		<p class="f-body">All twelve bed effects list all seven section kinds, and measured cue lengths never approach the <code>maxBars</code> limits. The peak look is decided by an id tiebreak, so <b>chromaBurst wins on every track</b>. Eleven of 55 built-ins are never placed at all.</p>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">Taste metadata does not discriminate</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
+		<p class="f-body">All twelve bed effects list all seven section kinds, and measured cue lengths never approach the <code>maxBars</code> limits. The peak look is decided by an id tiebreak, so <b>chromaBurst wins on every track</b>. Eleven of 55 built-ins are never placed at all. <b style="color:var(--good)">Fixed: the peak tiebreak was the whole of it. Several effects are written to be the biggest thing in the room, which is the point of them, so the top of the catalog is a tie by construction and breaking it alphabetically handed the peak to <code>chromaBurst</code>. It is now broken by the track's own seed. Over 380 seeded shows: chromaBurst's share of peaks <span class="num">68.4% to 38.2%</span>, distinct peak looks 4 to 5, built-ins never placed <span class="num">2 to 0</span>, distinct effects per show 28.9 to 33.6.</b></p>
 	</div>
 </div>
 
@@ -388,15 +415,15 @@
 
 <div class="scroll">
 <table>
-	<thead><tr><th>Metric</th><th style="text-align:right">Before</th><th style="text-align:right">After</th><th>Reference point</th></tr></thead>
+	<thead><tr><th>Metric</th><th style="text-align:right">First</th><th style="text-align:right">Second</th><th style="text-align:right">Third</th><th>Reference point</th></tr></thead>
 	<tbody>
-		<tr><td>boundary F0.5</td><td class="n">8.6%</td><td class="n delta-up">11.6%</td><td></td></tr>
-		<tr><td>boundary F3</td><td class="n">20.5%</td><td class="n delta-up">25.6%</td><td>0.505-0.582 for "a boundary every 3 s"</td></tr>
-		<tr><td>pairwise F</td><td class="n">51.6%</td><td class="n delta-up">52.3%</td><td>0.447-0.499 for one label over the whole track</td></tr>
-		<tr><td>over-segmentation</td><td class="n">59.0%</td><td class="n delta-down">63.0%</td><td></td></tr>
-		<tr><td>under-segmentation</td><td class="n">36.0%</td><td class="n delta-up">33.3%</td><td>lower is better</td></tr>
-		<tr><td>sections found</td><td class="n">8.4</td><td class="n delta-up">11.5</td><td>11.7 annotated</td></tr>
-		<tr><td>longest section</td><td class="n">42.6%</td><td class="n delta-up">21.1%</td><td>of the track</td></tr>
+		<tr><td>boundary F0.5</td><td class="n">8.6%</td><td class="n">11.6%</td><td class="n delta-up">13.5%</td><td></td></tr>
+		<tr><td>boundary F3</td><td class="n">20.5%</td><td class="n">25.6%</td><td class="n delta-up">31.0%</td><td>0.505-0.582 for "a boundary every 3 s"</td></tr>
+		<tr><td>pairwise F</td><td class="n">51.6%</td><td class="n">52.3%</td><td class="n delta-up">53.8%</td><td>0.447-0.499 for one label over the whole track</td></tr>
+		<tr><td>over-segmentation</td><td class="n">59.0%</td><td class="n">63.0%</td><td class="n delta-down">67.7%</td><td></td></tr>
+		<tr><td>under-segmentation</td><td class="n">36.0%</td><td class="n">33.3%</td><td class="n delta-up">31.7%</td><td>lower is better</td></tr>
+		<tr><td>sections found</td><td class="n">8.4</td><td class="n">11.5</td><td class="n">16.3</td><td>11.7 annotated</td></tr>
+		<tr><td>longest section</td><td class="n">42.6%</td><td class="n">21.1%</td><td class="n delta-up">17.7%</td><td>of the track</td></tr>
 	</tbody>
 </table>
 </div>
@@ -405,23 +432,43 @@
 
 <p><b style="color:var(--good)">The fix holds.</b> Replacing the length-normalised objective and separating identity from label moved boundary F3 up a quarter in relative terms, and moved the two structural figures much further: sections found went from 8.4 to <b>11.5 against 11.7 annotated</b>, and the longest section <b>halved</b>, from 42.6% of the track to 21.1%. Under-segmentation fell and over-segmentation rose, which is the expected shape of a segmenter that has stopped fusing everything.</p>
 
-<p>It is still a long way from good. 25.6% remains below the three-second baseline and well below the 0.6061 Marmoret et al. report on this corpus, and the boundaries are landing near the truth rather than on it: F0.5 at 11.6% against F3 at 25.6% says less than half of the boundaries that are within three seconds are within half of one. The next lever is the one Task 1 names, since a segmenter blind to level cannot see a drop.</p>
+<p>It was still a long way from good after the second pass, and the shape of the error said where to go: F0.5 at 11.6% against F3 at 25.6% means less than half the boundaries landing within three seconds land within half of one. They were near the truth, not on it.</p>
+
+<p><b style="color:var(--good)">The third pass found two causes and both were structural.</b> The first is the one the second pass named: <code>similarityMatrix</code> could not see level, so a drop and the groove behind it playing the same figure were literally identical rows. The second was not suspected at all. Every boundary was being dragged onto a global 4-bar phrase grid, and with a four-bar grid the worst move is two bars, which is <b>four seconds at 120 bpm</b> - outside the window the strict metric calls a hit, and outside the loose one as well. Snapping only what is within a bar of the grid was worth <b>1.7 points of F0.5 on its own</b>, more than the level term bought.</p>
+
+<p>That has a consequence worth stating plainly, because it changes a contract: music does move off a four-bar phrase, after an inserted break or a bar of 2/4, and a global anchor cannot follow it. The linter now accepts a cue that lands on a bar the analyser named as a section start, on the grounds that its rule is about not INVENTING an off-phrase change rather than about overruling a measurement. An invented off-phrase cue still errors.</p>
+
+<p>Section count now overshoots - 16.3 against 11.7 annotated - and that is the honest cost of the trade. Under-segmentation fell with it and over-segmentation rose, which is the expected shape; the boundary F-measures are precision-and-recall balanced and both rose, so the extra boundaries are not free hits. 31.0% is still below the three-second baseline and well below the 0.6061 Marmoret et al. report on this corpus.</p>
 
 <h2>5 &nbsp;Effect rotation and colour</h2>
 <p class="lede">Reported from the room, and corroborated by the code: the show reaches for too few of its own effects, changes look at moments the music did not choose, and lights its biggest instant in colours the track never declared.</p>
 
 <div class="findings">
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Six effects ignore the show palette entirely</span><span class="f-loc">core/src/effects/</span></div>
-		<p class="f-body"><code>auroraBorealis</code>, <code>chromaBurst</code>, <code>hueCarousel</code>, <code>iridescence</code>, <code>rainbowRain</code> and <code>vortex</code> never read <code>ctx.palette</code> or <code>SLOT</code>; they call <code>hsv2rgb</code> with hues of their own. Taken with the tiebreak below, <b>the biggest moment of every show is lit by an effect that ignores the track's colour identity</b>.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Six effects ignore the show palette entirely</span><span class="f-loc">core/src/effects/</span></div>
+		<p class="f-body"><code>auroraBorealis</code>, <code>chromaBurst</code>, <code>hueCarousel</code>, <code>iridescence</code>, <code>rainbowRain</code> and <code>vortex</code> never read <code>ctx.palette</code> or <code>SLOT</code>; they call <code>hsv2rgb</code> with hues of their own. Taken with the tiebreak below, <b>the biggest moment of every show is lit by an effect that ignores the track's colour identity</b>. <b style="color:var(--good)">Fixed: all six now address colour through the palette. <code>paletteArc(u)</code> is the new DSL primitive they reach for: it spreads a 0..1 sweep across the lit part of the ring, base through accent and back, ping-ponging so a rotating look has no seam and never passing through the two near-black slots. None of them was kept as deliberately spectral, because the house rule that colour goes through <code>SLOT</code> is not a preference. Measured on the bytes the LEDs receive at each track's peak: lit pixels on a hue the show's own palette can produce, <span class="num">91.6% to 98.1%</span>, worst track <span class="num">73.7% to 87.8%</span>.</b></p>
 	</div>
-	<div class="f high">
-		<div class="f-head"><span class="sev">high</span><span class="f-title">Nothing happens after the slam</span><span class="f-loc">author-engine/src/plan.ts</span></div>
-		<p class="f-body"><code>planHits</code> runs a strobe out of the build, a blackout for the held breath and a one-bar slam on the drop downbeat, and then leaves the rest of the drop as a static layer stack. The loudest passage of the track has no punctuation after its first bar.</p>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Nothing happens after the slam</span><span class="f-loc">author-engine/src/plan.ts</span></div>
+		<p class="f-body"><code>planHits</code> runs a strobe out of the build, a blackout for the held breath and a one-bar slam on the drop downbeat, and then leaves the rest of the drop as a static layer stack. The loudest passage of the track has no punctuation after its first bar. <b style="color:var(--good)">Fixed: the hit vocabulary gains <code>bump</code>, an accent-colour flood, which is the same size of gesture reached by a different route. Loud passages are now punctuated every phrase, alternating strobe and bump so no card is spent twice running, and a cymbal crash the analyser had been tagging all along is answered with one. <code>colorBump</code> was one of the two built-ins nothing could reach.</b></p>
 	</div>
-	<div class="f medium">
-		<div class="f-head"><span class="sev">medium</span><span class="f-title">The rotation reaches for a fraction of the catalog</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
-		<p class="f-body"><b>11 of 55 built-ins are never placed</b> in any cue on any track; <code>buildStrobe</code> and <code>colorBump</code> are unreachable by construction and <code>riser</code> never wins in 300 seeded shows. All twelve bed effects list all seven section kinds and the <code>maxBars</code> limits never bind, so the taste metadata does not discriminate and a three-way tie for the peak is broken by id: <b>chromaBurst wins on every track</b>. <code>MAX_CUE_BARS</code> is 16, so a long section holds one look for four phrases.</p>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">The rotation reaches for a fraction of the catalog</span><span class="f-loc">author-engine/src/select.ts:42</span></div>
+		<p class="f-body"><b>11 of 55 built-ins are never placed</b> in any cue on any track; <code>buildStrobe</code> and <code>colorBump</code> are unreachable by construction and <code>riser</code> never wins in 300 seeded shows. All twelve bed effects list all seven section kinds and the <code>maxBars</code> limits never bind, so the taste metadata does not discriminate and a three-way tie for the peak is broken by id: <b>chromaBurst wins on every track</b>. <code>MAX_CUE_BARS</code> is 16, so a long section holds one look for four phrases. <b style="color:var(--good)">Fixed: <code>MAX_CUE_BARS</code> is 8 rather than 16, so a long groove no longer holds one look for a minute; interior cues snap to the phrase grid rather than to a multiple of their own section's start; a build gets an accent layer, which is what made <code>buildStrobe</code> unreachable; and <code>SectionSpan.group</code> is finally consumed, so a reprise opens on the bed its original opened on. Over 380 seeded shows: never placed <span class="num">2 to 0</span> of 55, distinct effects per show <span class="num">28.9 to 33.6</span>, bed changes per show 12.7 to 15.2, cues held past 16 bars <span class="num">280 to 0</span>, off-phrase cues 7.9% to 5.0%.</b></p>
+	</div>
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The quiet sections are not dim, they are off</span><span class="f-loc">core/src/mixer.ts:139</span></div>
+		<p class="f-body">Reported from the room twice, because the first answer was too small. Measured in the only unit that decides whether a passage is visible - the byte the LED receives - an intro averaged <b>2.9 of 255 with 5% of the room lit</b>, an outro 4.4 with 18%, a breakdown 3.7 with 15%, against 134 and 88% for a drop. A ratio of <b>37 to 1</b>, with the bottom of it below the threshold of seeing.
+		<br><br>No amount of tuning reaches this, and that is the finding. A bed is written to sit UNDER something, so a cue carrying a bed and one texture emits about <b>0.2</b> before the output chain; gamma 2.2 turns 0.2 into byte 8 and 0.08 into byte 0, so <b>even at an intensity of 1.0 such a cue tops out around byte 12</b>. The dimmer was never the problem: the room was not being lit. Six effect gains, two palette-slot corrections, an extra layer per quiet cue and a thin-stack correction to intensity were all tried first, and between them they moved an intro from byte 3 to byte 13.
+		<b style="color:var(--good)">Fixed with the thing every venue has and this room did not: a house floor. The mixer lifts the black point to a per-section level of the show's own base colour, after the cue's intensity rather than before it, because a breakdown asking for 40% is asking for 40% of its LOOK and not for the room to go out. A lift rather than a clamp, so the cue's layers still ride on top instead of being erased by it - clamping made the outro a dead flat wash whose peak equalled its floor. Auto-exposure may now only ever lift, since pulling a correctly lit room back toward its own target is undoing that decision somewhere the show cannot see. Measured on the same tracks before and after: intro <span class="num">2.9 to 43.8</span>, outro <span class="num">4.4 to 41.2</span>, breakdown <span class="num">3.7 to 32.4</span>, and the share of the room lit at all <span class="num">5-18% to 100%</span>. The drop is untouched at 129 because the highlight compressor absorbs the floor there, so the ratio lands at <span class="num">3.2 to 1</span> with nothing below the threshold of seeing. A void still measures exactly <b>0.0 with 0% lit</b>, and a blackout hit zeroes the floor with the intensity: darkness is still an instruction the show can give.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The room ignores the colour the record already has</span><span class="f-loc">analysis/src/artwork.ts</span></div>
+		<p class="f-body">A palette was chosen from tempo, mode and how squashed the master is. Those are properties of the recording, and none of them is what the record looks like: somebody already chose a colour for the sleeve, and a yellow record lit in teal is arguing with its own artwork. <b style="color:var(--good)">Fixed: the cover is decoded through ffmpeg to 48 pixels and its dominant hue taken by a saturation-weighted circular histogram, then the WHOLE palette is rotated so its base lands there. Rotating rather than overwriting keeps the 140-180 degrees between base and accent that the palette library exists to guarantee. Across the cached tracks the hue is found with a 0.31-0.92 share and every base now matches its cover. One trap, and it is the reason for a test: a ceiling on value meant to drop blown highlights threw away the answer, because a flat saturated colour is full-value by construction - a sheet of yellow had every yellow pixel discarded and came back reading the cyan of the character drawn on it.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The tempo correction cannot reach the readings that need it</span><span class="f-loc">analysis/src/metricalLevel.ts</span></div>
+		<p class="f-body">The control shipped, and then did not offer the right answer. Two faults, one cause. Halving was gated on alternate beats being weak, which is structurally false for the case that matters: a double-time reading of a rock track has real hats on the beats a halved reading would drop, so <b>Hallowed Be Thy Name at 200 bpm offered nothing at all</b>. And two-against-three was offered only upward, so Obchodn&iacute;k s de&scaron;t&#283;m - tracked at 132 in 6/4 where it is played at 88 in 4/4 - could be doubled or halved but never corrected. <b style="color:var(--good)">Fixed: the relatives are 1/2, 2/3, 3/2 and 2, offered on the tempo prior alone and gated on no local discriminator, because this page already recorded that the obvious one came out anti-correlated with the truth. All four ear-judged disputes are now reachable, including Melan&#382; at 118 against a true 120, which is the 2:3 case a half/double control could never have repaired. <code>ambiguous</code> now means "this is an unusual place for a tactus" and decides only how prominently to offer the correction; the alternatives are there on every track, because the only reliable judge of metrical level is the person in the room.</b></p>
 	</div>
 </div>
 
@@ -508,6 +555,7 @@
 	<h4>The model supplies the grid; the metrical level stays local</h4>
 	<p>Take Beat This!'s beat positions and downbeats, where it measurably wins, and do not take its tempo octave. Decide the level in a dedicated stage: a half-time reading is a <em>subset</em> of the true beats, so inserting midpoints and scoring them against the onset curve tests it directly, and a double-time reading is a superset that thins the same way. That is what <code>barCoherence</code> already attempts, now operating on a much better grid.</p>
 	<p>Then surface disagreement rather than hiding it. The two systems agreed on eight of fifteen tracks; where they do not, that is a well-calibrated flag for a half/double correction in the app, which a listener resolves in seconds and the cache keeps.</p>
+	<p><b style="color:var(--good)">Built.</b> <code>TempoGrid</code> now ships <code>ambiguous</code> and <code>alternativeBpm</code>, the inspector offers the alternatives as buttons on exactly the tracks flagged, and <code>analyzeTrack</code> takes a <code>metricalLevel</code> multiplier. The re-read is an exact operation on the beat array rather than a re-detection, because a half-time reading is a SUBSET of the true beats and a double-time reading a superset; resampling in beat-index space also covers the two-against-three case, which is what Melan&#382; needed and which no half/double control could have repaired. The whole show is re-composed rather than rescaled, because every cue is addressed by bar and the bars have moved.</p>
 </div>
 
 <h2>What is measured and what is not</h2>
@@ -515,7 +563,9 @@
 	<li><b>Measured:</b> tempo, beats, downbeats and meter against 764 annotated tracks; kick invention and displacement against the shipped cache; contrast, limiting and hit coverage by running the real player and mixer.</li>
 	<li><b>Newly possible:</b> sections, against Harmonix (222 tracks with audio, the right repertoire, offset-corrected) and SALAMI (aligned by construction). Boundary F0.5/F3, pairwise and over/under-segmentation are wired and validated; the baseline run is queued.</li>
 	<li><b>Settled by ear, because nothing else could:</b> metrical level on the disputed tracks. <code>bench/clicktest.ts</code> pans the two candidate grids hard apart at different pitches, so where they agree the clicks fuse and where they disagree they separate.</li>
-	<li><b>Still by eye:</b> whether the light feels right. <code>bench/render.ts</code> now renders any show to video with its own audio muxed, from the same mixer bytes the LEDs receive, which is how the 4.85 s drift was confirmed as visible rather than merely tabulated.</li>
+	<li><b>Still by eye:</b> whether the light feels right. <code>bench/render.ts</code> renders any show to video with its own audio muxed, from the same mixer bytes the LEDs receive, which is how the 4.85 s drift was confirmed as visible rather than merely tabulated. <code>bench/flashprobe.ts</code> is the readable version: the kick band's envelope and the show's <code>kickEnv</code> printed side by side, frame by frame, so a flash that lands late shows up as a lagging column rather than as a feeling.</li>
+	<li><b>Newly measured in the third pass:</b> colour identity, by taking the hue of every lit byte the LEDs receive and asking whether the palette the effect was handed that frame could have produced it; delivered contrast, as the drop-to-quiet ratio of those same bytes undone through gamma; catalog reach and peak variety over 380 seeded shows; and which planned hits ever actually reach the room. <code>bench/flashprobe.ts</code> is the readable form of the render check: the kick band's envelope and the show's <code>kickEnv</code> printed side by side, frame by frame, so a flash that lands late shows as a lagging column rather than as a feeling.</li>
+	<li><b>Iteration cost, which decided how much of this was possible:</b> a full SALAMI pass is 7 minutes 36 seconds, and almost all of it is decode, spectrogram and beat tracking, none of which any change to the segmenter can touch. Freezing everything upstream of the bar table to disk turned that into <b>4.4 seconds</b>, reproducing the full run's figures exactly, which is the difference between sweeping four constants and sweeping forty.</li>
 </ul>
 
 </div>
