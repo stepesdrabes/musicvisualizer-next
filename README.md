@@ -130,10 +130,12 @@ false and the bar table is the authority.
 
 ## How sections are found
 
-Bar by bar, not frame by frame, and each bar keeps its own time axis: sixteen sub-frames by
+Bar by bar, not frame by frame, and each bar keeps its own time axis: one row per beat across
 thirty-two bands, so two bars match when they play the same pattern rather than merely
 averaging to the same spectrum. That single choice is worth more than the algorithm on top of
-it - published boundary accuracy rises by about a third for the same detector.
+it - published boundary accuracy rises by about a third for the same detector. The vector is
+written with sixteen sub-frames per bar, but the rows underneath it are per beat, so in four-four
+each group of four is a copy: it is beat resolution, not sixteenth.
 
 Boundaries are then chosen by dynamic programming over the whole track at once, maximising
 similarity inside each segment minus a cost for lengths that are not phrase multiples. The

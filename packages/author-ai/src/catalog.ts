@@ -83,10 +83,13 @@ Frame (ctx.f)
   t dt · beat downbeat phraseStart · beatIndex barIndex · beatPhase barPhase phrasePhase
   beatPeriod bpm · section sectionProgress buildProgress timeToDrop timeSinceDrop
   energy · bands[0..3] = sub low mid air
-  spectrum - ${SPECTRUM_BANDS} log-spaced bands, 0..1, lowest first, each normalised across the
-    track exactly as bands[] is. The only field with enough resolution to carry a melody, and
-    the reason a passage with no drums in it can still look like something. Address it through
-    the helpers rather than by index:
+  spectrum - ${SPECTRUM_BANDS} log-spaced bands, 0..1, lowest first. NOT the same kind of number
+    as bands[]: the bands say how LOUD, against their own range across the track, and the
+    spectrum says what SHAPE, against one shared reference per band. 1.0 is as loud as this
+    track's loud passages get and 0.0 is thirty decibels under it, so the relative height
+    between bands is real and a drop does not arrive as a flat plateau of ones. The only field
+    with enough resolution to carry a melody, and the reason a passage with no drums in it can
+    still look like something. Address it through the helpers rather than by index:
       bandAt(f, u) - the level at 0 (bottom of the range) to 1 (top), interpolated. Mapping a
         pixel's own ringU straight onto u is the idiom: the room becomes an analyser.
       bandBetween(f, from, to) - mean over a slice
