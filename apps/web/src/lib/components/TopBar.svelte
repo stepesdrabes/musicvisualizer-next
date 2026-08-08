@@ -48,7 +48,7 @@
 	}
 </script>
 
-<header class="floats" data-tauri-drag-region style:padding-left={`${12 + inset}px`}>
+<header class="floats" data-tauri-drag-region="deep" style:padding-left={`${12 + inset}px`}>
 	<div class="side">
 		<Button
 			variant="ghost"
@@ -191,16 +191,6 @@
 		border: 1px solid var(--border);
 		border-radius: 5px;
 		background: var(--muted);
-	}
-
-	/*
-	 * Everything interactive opts out of the drag region, or a click on it starts a window
-	 * move instead of doing what it says.
-	 */
-	.side,
-	.search,
-	.link {
-		-webkit-app-region: no-drag;
 	}
 
 	.status {

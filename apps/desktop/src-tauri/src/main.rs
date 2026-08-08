@@ -35,19 +35,22 @@ fn main() {
 				.parse()
 				.expect("a url built from a port is a url");
 
-			let window = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
+			let mut builder = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
 				.title("LightningStrike")
 				.inner_size(1440.0, 900.0)
 				.min_inner_size(1024.0, 660.0)
 				.resizable(true)
-				.initialization_script(&shell_hints(&server))
-				.build()?;
+				.initialization_script(&shell_hints(&server));
 
 			#[cfg(target_os = "macos")]
 			{
 				use tauri::TitleBarStyle;
-				window.set_title_bar_style(TitleBarStyle::Overlay)?;
+				// Overlay puts the page under the title bar; without hiding the title as well,
+				// the window's own name is drawn straight through the app's top bar.
+				builder = builder.title_bar_style(TitleBarStyle::Overlay).hidden_title(true);
 			}
+
+			let window = builder.build()?;
 
 			window.show()?;
 			Ok(())
