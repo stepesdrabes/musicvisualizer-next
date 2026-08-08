@@ -187,6 +187,24 @@ Everything else is greyscale, because the LEDs have to be the only saturated thi
 Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s. Cmd-K opens the palette,
 `[` and `]` collapse the two rails.
 
+## The desktop app
+
+`apps/desktop` is a Tauri shell around the same server. The backend stays Node, because the
+analyser needs onnxruntime for Beat This, `child_process` for yt-dlp and ffmpeg, `dgram` for
+DDP, and the Agent SDK spawns the `claude` CLI; so Rust owns the window and the server runs
+beside it as a sidecar on a port chosen at launch.
+
+```sh
+cd apps/desktop
+npm run bundle      # builds the server and assembles the runtime beside it
+npm run build       # produces LightningStrike.app
+```
+
+`ffmpeg`, `ffprobe` and `yt-dlp` are expected on PATH rather than bundled: a bundled yt-dlp
+goes stale the next time YouTube changes, and the app names whatever is missing at startup.
+macOS only so far, and unsigned, so Gatekeeper will refuse it on any machine but the one that
+built it.
+
 ## The queue is server state
 
 It lives in the Node process and is persisted to `cache/queue.json`, not in the browser. The
@@ -199,6 +217,12 @@ Preparing a track - download, analyse, compose - runs one job at a time, and onl
 current row and the one after it. The beat tracker is an ONNX graph that will take every core
 it is offered, so two at once is slower than the same two in sequence and starves the render
 loop besides.
+
+That is also what the QR at the foot of the queue rail is for. Scanning it asks for a name
+once, and a guest can then search, add, and take back something they added that has not
+started playing. Everything else - skipping, reordering, clearing, the hardware, spending
+credits on Claude - is loopback only, so being on the same WiFi is not the same as running
+the night. Guests talk to a separate API that does not implement those verbs at all.
 
 ## Setup
 
