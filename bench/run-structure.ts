@@ -5,6 +5,7 @@ import { availableParallelism } from 'node:os';
 import { analyzeTrack, decodeAudio } from '@mv/analysis';
 import { extractFeatures } from '../packages/analysis/src/features.ts';
 import { loadStructureCorpus, fitOffset, type StructureDataset } from './structure-corpus.ts';
+import { MAX_DURATION_DRIFT } from './kinds.ts';
 import { scoreSegments, type Segment, type SegmentScores } from './segment-metrics.ts';
 
 /**
@@ -48,6 +49,16 @@ if (shardAt >= 0) {
 			const audio = await decodeAudio(ref.audio);
 			let offset = 0;
 			let sharpness = Infinity;
+			// The upload has to be the edit that was annotated before its offset is worth fitting.
+			if (ref.masterDuration !== undefined) {
+				const drift = Math.abs(audio.duration / ref.masterDuration - 1);
+				if (drift > MAX_DURATION_DRIFT) {
+					process.stdout.write(
+						`${JSON.stringify({ key: ref.key, dataset: ref.dataset, skipped: `wrong edit (${(100 * drift).toFixed(0)}% length)` })}\n`
+					);
+					continue;
+				}
+			}
 			if (!ref.aligned) {
 				const f = extractFeatures(audio.mono, audio.sampleRate);
 				const fit = fitOffset(f.odf, f.curves.fps, ref.beats);

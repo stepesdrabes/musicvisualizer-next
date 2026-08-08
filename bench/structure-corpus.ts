@@ -30,6 +30,32 @@ export interface StructureReference {
 	beats: number[];
 	/** True when the audio is the annotated file and no offset fitting is needed. */
 	aligned: boolean;
+	/**
+	 * Length of the master that was annotated, seconds, where the corpus states one.
+	 *
+	 * The gate that makes Harmonix usable at all. Its annotations are of Rock Band edits, which
+	 * are frequently shorter than the release: "1, 2 Step" is annotated as 142 s against the
+	 * 204 s single, and an edit that removes an internal section cannot be reached by any
+	 * constant offset. Comparing this against the decoded length rejects those before the offset
+	 * fit is asked a question it cannot answer.
+	 */
+	masterDuration?: number;
+}
+
+/** One CSV row, honouring quoted fields, because Harmonix titles contain commas. */
+function csvRow(line: string): string[] {
+	const out: string[] = [];
+	let cur = '';
+	let quoted = false;
+	for (const ch of line) {
+		if (ch === '"') quoted = !quoted;
+		else if (ch === ',' && !quoted) {
+			out.push(cur);
+			cur = '';
+		} else cur += ch;
+	}
+	out.push(cur);
+	return out;
 }
 
 function toSegments(rows: [number, string][], stopLabels: readonly string[]): Segment[] {
@@ -48,6 +74,16 @@ function readHarmonix(): StructureReference[] {
 	const root = join(CORPUS_DIR, 'harmonixset-main', 'dataset');
 	const audioDir = join(CORPUS_DIR, 'harmonix', 'audio');
 	if (!existsSync(audioDir)) return [];
+
+	const master = new Map<string, number>();
+	const metaFile = join(root, 'metadata.csv');
+	if (existsSync(metaFile)) {
+		for (const line of readFileSync(metaFile, 'utf8').trim().split('\n').slice(1)) {
+			const f = csvRow(line);
+			const seconds = Number(f[4]);
+			if (f[0] && Number.isFinite(seconds)) master.set(f[0], seconds);
+		}
+	}
 
 	const out: StructureReference[] = [];
 	for (const file of readdirSync(audioDir)) {
@@ -76,7 +112,8 @@ function readHarmonix(): StructureReference[] {
 			audio: join(audioDir, file),
 			segments: [segments],
 			beats,
-			aligned: false
+			aligned: false,
+			masterDuration: master.get(id)
 		});
 	}
 	return out.sort((a, b) => a.key.localeCompare(b.key));
@@ -128,9 +165,25 @@ export function loadStructureCorpus(only?: StructureDataset): StructureReference
 /**
  * The constant offset at which the annotated beats best explain the audio's onsets.
  *
- * Returned with a sharpness figure: the best score divided by the best score at least a
- * quarter-second away. A YouTube upload that is a different edit has no sharp peak, and a
- * track whose offset cannot be pinned should be dropped rather than scored.
+ * Returned with a sharpness figure: the best score divided by the best rival's. A YouTube upload
+ * that is a different edit has no sharp peak, and a track whose offset cannot be pinned should be
+ * dropped rather than scored.
+ *
+ * A rival one beat away is not a rival. Beats are periodic, so shifting the whole train by a beat
+ * period lands every impulse on a different beat of the same music and scores within noise of the
+ * truth by construction. Counting those as rivals capped sharpness at about 1.00 for every track
+ * with a steady tempo, which is all of them: measured across the 115 Harmonix uploads that are
+ * the right edit, the old test rejected 114. That read as "Harmonix does not align" for four
+ * sessions when what it actually said was "a periodic signal cannot pin its own phase".
+ *
+ * What survives is a residual ambiguity of up to half a beat period, and it is the caller's
+ * problem because it lands squarely inside the strict boundary tolerance. Measured: the same
+ * analyser scores Harmonix F3 36.7 against SALAMI's 31.3 - better, on the repertoire it was built
+ * for - while scoring Harmonix F0.5 6.7 against SALAMI's 13.6, half. A quarter-second of offset
+ * cannot move a 3 s window and eats most of a 0.5 s one, which is exactly that shape.
+ *
+ * So from a FITTED track, quote F3, pairwise and function labels; do NOT quote F0.5. SALAMI is
+ * aligned by construction and remains the corpus for anything strict.
  */
 export function fitOffset(
 	odf: Float32Array,
@@ -161,9 +214,18 @@ export function fitOffset(
 		}
 	}
 
+	const period =
+		beats.length > 8 ? (beats[beats.length - 1] - beats[0]) / (beats.length - 1) : 0.5;
+	// Half a beat either side of each alias, which is every offset the evidence cannot separate.
+	const guard = Math.max(0.25, period * 0.5);
+	const aliased = (off: number): boolean => {
+		const k = Math.round((off - best) / period);
+		return Math.abs(off - best - k * period) < guard;
+	};
+
 	let rival = 0;
 	for (let off = -range; off <= range + 1e-9; off += step) {
-		if (Math.abs(off - best) < 0.25) continue;
+		if (aliased(off)) continue;
 		rival = Math.max(rival, score(off));
 	}
 	return { offset: best, sharpness: rival > 1e-9 ? bestScore / rival : Infinity };
