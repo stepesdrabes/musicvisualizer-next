@@ -202,12 +202,292 @@
 <div class="legend"><span><b>green</b> = fixed and verified this session</span><span>everything else is open</span></div>
 </header>
 
+<h2 class="done">The tenth pass: nothing was choosing the effects that show the music</h2>
+<p class="lede">Reported from the room: "Je mi fajn" has almost no movement in its intro or outro. It was not the cache - that track was already on ANALYSIS_VERSION 9. Measured, its intro delivered <span class="num">1.27</span> bytes of movement against a groove's 13.15, and the cause was none of the four things that looked like it.</p>
+
+<div class="callout">
+	<p><b>The signal was there all along.</b> That intro's spectrum carries real content in bands 5 to 13 - 169 Hz to 2 kHz, standard deviation 0.19 to 0.28 - and silence in the rest, 59% of its values under 0.02. Its outro is not even quiet: every band sits between 0.4 and 0.8. So there was plenty to show, and the room was not showing it.</p>
+	<p><b>It was the effect CHOICE.</b> Substituting candidates into that same intro: the pair the picker chose delivered drift 1.27 across 15 bytes of spatial spread, and <code>spectrumBed</code> with <code>bandBloom</code> delivered <span class="num">2.24 across 40</span>. The catalog already had the answer and nothing was reaching for it - <code>EffectPicker</code> scores on energy fit and novelty, and has no notion of whether a layer shows the music.</p>
+</div>
+
+<h3>Four hypotheses tested and abandoned first</h3>
+<table>
+	<thead><tr><th>hypothesis</th><th>swept</th><th>intro drift</th><th>verdict</th></tr></thead>
+	<tbody>
+		<tr><td>Cue <code>motion</code> is throttling it</td><td>0.28 to 1.00</td><td>1.48 to 1.52</td><td>not the lever (tested last pass)</td></tr>
+		<tr><td>The house floor is a constant slab</td><td>0.42 to 0.00</td><td>1.48 to 2.01</td><td>marginal, and costs coverage 100% to 60%</td></tr>
+		<tr><td>Make the floor breathe with the spectrum</td><td>swing 0 to 1.4</td><td>1.27 to 1.52</td><td>marginal, costs brightness. Reverted.</td></tr>
+		<tr><td>Give <code>ambientDrift</code> a per-band relief</td><td>depth 0.8 to 2.4</td><td>1.27 to 1.31</td><td>+11% on the corpus. Kept, but it is not the answer.</td></tr>
+	</tbody>
+</table>
+
+<div class="findings">
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The synthetic quiet metric ranked the candidates backwards</span><span class="f-loc">bench/quietprobe.ts</span></div>
+		<p class="f-body">The obvious fix was to let the planner prefer reactive layers, scored by <code>effectprobe</code>'s <code>quiet</code> column. Built, and it made the room WORSE: it chose <code>nebula</code> and <code>harmonicRibbon</code>, and the delivered intro fell from 1.27 to <span class="num">0.65</span>. The synthetic journey spreads a wandering peak across every band, where a real sparse intro has content in a handful and silence in the rest, so it ranks a broadband-sensitive effect top and a band-selective one fourth. On real audio the order is nearly inverted: <code>nebula</code> 1.41 against <code>spectrumBed</code> 4.71. <b style="color:var(--good)">Fixed: <code>quietprobe</code> substitutes each candidate into the quiet cues of the cached corpus and renders them. A metric that reverses the ranking of the thing it selects for is worse than no metric.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Nothing preferred a layer that shows the music where it is the whole show</span><span class="f-loc">author-engine/src/select.ts</span></div>
+		<p class="f-body">A preference and never a filter: the carrying pool for a quiet section is seven beds and three accents, and a threshold on top of that empties it, which is the mistake this project already made once by requiring <code>carries</code> of an accent. <code>taste.quiet</code> now carries the measured bytes of movement and the picker weights it in intro, outro and breakdown only - in a groove there is a kit and a transient layer doing the reacting, and a bed that fights them is noise. <b style="color:var(--good)">Fixed: corpus intro drift 1.76 to 4.37 at weight 4, and on the reported track 1.27 to 2.85 across 15 to 44 bytes of spatial spread.</b></p>
+	</div>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">The house floor was paying for beds that now carry</span><span class="f-loc">core/src/player.ts:62</span></div>
+		<p class="f-body">The layers a quiet cue now picks are brighter as well as livelier, so leaving the floor where it was pushed drop-to-quiet from 3.43 to <span class="num">2.79</span>, under its 3.2 floor: the same contrast spent twice. <b style="color:var(--good)">Fixed: intro 0.42 to 0.30, breakdown 0.44 to 0.34, outro 0.40 to 0.38 - least, because its bed pool barely changed. Third time this floor has come down for the same reason.</b></p>
+	</div>
+</div>
+
+<table>
+	<thead><tr><th></th><th>before</th><th>after</th></tr></thead>
+	<tbody>
+		<tr><td><b>Je mi fajn intro drift</b></td><td>1.27</td><td><b>2.85</b></td></tr>
+		<tr><td><b>Je mi fajn intro spatial spread</b></td><td>15</td><td><b>44</b></td></tr>
+		<tr><td>corpus quiet drift</td><td>2.82</td><td><b>3.47</b></td></tr>
+		<tr><td>corpus quiet shape</td><td>4.5</td><td><b>6.2</b></td></tr>
+		<tr><td>corpus quiet colour</td><td>5.37</td><td><b>6.80</b></td></tr>
+		<tr><td>drop-to-quiet contrast (floor 3.2)</td><td>3.43</td><td>3.45</td></tr>
+		<tr><td>quiet bytes (floor 32) / lit</td><td>34.5 / 100%</td><td>33.0 / 100%</td></tr>
+		<tr><td>mean flicker / shimmering</td><td>0.48 / 0</td><td>0.48 / 0</td></tr>
+		<tr><td>planned hits that fire</td><td>408/408</td><td>461/461</td></tr>
+	</tbody>
+</table>
+<p>The intro of the reported track is now lit by <code>spectrumBed</code>: the room laid out low to high with each part taking its colour and its relief from what plays there, which is what was asked for.</p>
+
+<h2 class="done">The ninth pass: the spectrum was measuring the wrong thing</h2>
+<p class="lede">Reported from the room: a full-stack drop that is "just colour with basically no reaction". The cue in the screenshot delivered <span class="num">mean byte 212 of 255</span> and moved 4.13 bytes. Two candidate causes, one of which turned out to be a coincidence.</p>
+
+<div class="callout">
+	<p><b>Per-band normalisation across the whole track is why a drop has nothing left to react with.</b> Each band was stretched across its own whole-track range, so every band reads near full whenever it is near its own maximum - and in a drop they all are. Measured: drop mean 0.768, standard deviation <span class="num">0.136</span>, 13.9% of values pinned above 0.93. It also destroys the RELATIVE height between bands, and that relationship is what makes a spectrum look like music rather than like twenty independent meters. LedFx has no per-band normalisation anywhere: it divides the whole melbank by ONE shared rolling peak.</p>
+	<p><b>Flicker and flatness were the same problem.</b> The shipped spectrum's own frame-to-frame acceleration measured <span class="num">8.80 bytes</span> against the 4 bytes at which <code>flickerprobe</code> calls an effect shimmering - half its variance was noise, and every effect reading it was paying for that noise with smoothing it could not afford. An 11-tap CENTRED median removes it at zero group delay, which is the one thing an offline analyser gets for free and a realtime one can never have. Spending the recovered headroom on a wider window raises contrast <b>and</b> lowers noise at the same time.</p>
+</div>
+
+<table>
+	<thead><tr><th>spectrum, pooled over 37 tracks</th><th>SD before</th><th>SD after</th><th></th></tr></thead>
+	<tbody>
+		<tr><td>drop</td><td>0.136</td><td><b>0.248</b></td><td>+82%</td></tr>
+		<tr><td>groove</td><td>0.117</td><td><b>0.320</b></td><td>+174%</td></tr>
+		<tr><td>intro</td><td>0.154</td><td><b>0.347</b></td><td>+125%</td></tr>
+		<tr><td>outro</td><td>0.082</td><td><b>0.354</b></td><td>+332%</td></tr>
+	</tbody>
+</table>
+<p>The window is a fixed 30 dB against one reference per band, the 95th percentile over drop and groove pooled. Section kinds below that reference are lifted toward it by <b>at most 6 dB</b>, pooled across every instance of a kind and never fitted per instance - per-instance AGC is exactly what would make every section look identical. The ordering survives (drop 0.709, groove 0.628, build 0.599, breakdown 0.470, outro 0.395, intro 0.381), so loud still reads as loud and the spectrum is not asked to tell a drop from a groove. It cannot: measured across the corpus those two are genuinely equally loud, 0.769 against 0.750.</p>
+
+<h3>What the effects could then spend</h3>
+<p>With the jitter gone, the depth a latched band may cut into a level is no longer bounded by flicker. Swept on <code>spectrumBed</code> and <code>chorusBloom</code> against the delivered room:</p>
+<table>
+	<thead><tr><th>relief depth</th><th>intro drift</th><th>intro shape</th><th>mean flicker</th><th>shimmering</th></tr></thead>
+	<tbody>
+		<tr><td>0.42</td><td>1.76</td><td>3.1</td><td>0.48</td><td>0</td></tr>
+		<tr><td>1.05</td><td>2.25</td><td>4.1</td><td>0.48</td><td>0</td></tr>
+		<tr><td><b>1.40</b></td><td><b>2.55</b></td><td><b>4.8</b></td><td>0.48</td><td>0</td></tr>
+		<tr><td>1.70</td><td>2.81</td><td>5.4</td><td>0.48</td><td>0</td></tr>
+	</tbody>
+</table>
+<p>Flicker does not move at any depth. What binds instead is coverage: at 1.7 <code>spectrumBed</code> fills 59% of the room against 100% at 0.42, and a bed has to keep filling one. <code>chorusBloom</code> is held to 0.9 because its relief multiplies petal lobes rather than a flat field, and at 1.1 the gate's own carries test refused it - dimmest wall 23% of the brightest against a 35% bar, which is the test doing its job rather than a number to argue with.</p>
+
+<h3>The saturation hypothesis, tested and abandoned</h3>
+<div class="findings">
+	<div class="f high">
+		<div class="f-head"><span class="sev">high</span><span class="f-title">Cue brightness does not predict how much a cue moves</span><span class="f-loc">author-engine/src/select.ts</span></div>
+		<p class="f-body">The screenshot's cue was flat AND bright, and the obvious reading is that four high-coverage layers saturated the room past the point where anything can read as reaction. A coverage budget was built for it - <code>EffectTaste.coverage</code> on all 63 effects, measured, test-asserted against <code>effectprobe</code>, and enforced in the picker. Then the premise was tested directly. Over the corpus's loud cues the <b>correlation between delivered level and delivered movement is 0.007</b>: cues at byte 70-99 move 27.49, cues at 130-159 move 26.89. Brightness is not what kills reaction. The budget also cost real contrast - drop-to-quiet 3.43 down to 2.95 at a budget of 1.3 and 2.31 at 1.0, against a 3.2 floor - so all of it was reverted. What was actually wrong with that cue is that those particular effects were low-movement; the same passage with the current catalog delivers 114 rather than 212 and moves <span class="num">19.80</span> rather than 4.13.</p>
+	</div>
+</div>
+
+<div class="callout">
+	<p><b>Hits are now read slightly ahead of the playhead.</b> An onset is consumed on the first frame at or after it, which at 60 fps is up to 16.7 ms late before anything downstream adds more, and the perceptual tolerance is strongly asymmetric: ITU-R BT.1359-1 puts detectability at 45 ms when the picture leads against 125 ms when it lags, a sound within about 100 ms pulls a flash onto itself, and a listener's own sense of "on the beat" already runs 20-80 ms early. The lead is <code>min(0.045 s, 0.06 x beatPeriod)</code> - 30 ms at 120 bpm, 21 ms at 174 - always well inside a sixteenth, and it is one named constant in <code>player.ts</code> because DDP and WLED add transport delay in the opposite direction that the compiler cannot know. Zero restores the old behaviour exactly.</p>
+</div>
+
+<table>
+	<thead><tr><th>delivered room</th><th>before</th><th>after</th></tr></thead>
+	<tbody>
+		<tr><td>quiet drift</td><td>2.09</td><td><b>2.82</b></td></tr>
+		<tr><td>quiet colour</td><td>3.98</td><td><b>5.37</b></td></tr>
+		<tr><td>quiet shape</td><td>3.0</td><td><b>4.5</b></td></tr>
+		<tr><td>outro drift</td><td>2.03</td><td><b>2.68</b></td></tr>
+		<tr><td>breakdown drift</td><td>2.88</td><td><b>3.25</b></td></tr>
+		<tr><td>drop-to-quiet contrast (floor 3.2)</td><td>3.40</td><td>3.43</td></tr>
+		<tr><td>mean flicker / shimmering</td><td>0.49 / 0</td><td>0.48 / 0</td></tr>
+		<tr><td>planned hits that fire</td><td>385/385</td><td>408/408</td></tr>
+	</tbody>
+</table>
+
+<h2 class="done">The eighth pass: the colour was never the cover's, and the quiet rooms were flat</h2>
+<p class="lede">Four complaints from the room, and two of them turned out to be the same kind of bug: a value measured in one coordinate system and consumed in another, with no conversion and no way to see it from the output.</p>
+
+<div class="callout">
+	<p><b>The palette was never the cover's colour, for two independent reasons.</b> <code>artwork.ts</code> measures a hue in textbook HSV degrees; <code>hsv2rgb</code> is FastLED's rainbow ramp, which is a different curve rather than a rotation of it. Feeding one into the other lands up to <span class="num">30 degrees</span> away - a cover measured at 90 lit the room at 60, a whole colour name. Across the 35 cached covers the mean error was <span class="num">9.4 degrees</span>. <code>rampHueFor()</code> inverts the ramp by search, because it is piecewise and not injective, and the round trip is now accurate to 0.4 degrees.</p>
+	<p><b>And <code>bench/reingest.ts</code> discarded the cover entirely.</b> It called <code>composeShow(analysis)</code> with no <code>artHue</code> at both call sites, so every reingest silently relinked every show to the tempo-derived palette. The app has always passed it, which is what made the difference invisible: same shape, different colour, no error anywhere. Measured end to end, the delivered hue now sits <span class="num">0.1 degrees</span> from the cover's on average, worst case 0.4, against 9.4 and 88.2.</p>
+</div>
+
+<h3>Two instruments had to exist before the quiet-room complaint could be answered</h3>
+<p>The reported fault was that an intro or outro "just stays there". Nothing in bench could see it. <code>scriptFrames</code>, the journey every effect is validated against, runs groove &rarr; build &rarr; void &rarr; drop and <b>contains no intro and no outro at all</b>, so no effect had ever been checked against the one section it was reported dead in. And <code>move</code>, the closest thing to a liveliness number, is a per-<b>frame</b> delta: in a groove it is mostly drum transients, and an intro has no drums by construction, so it reads near zero however alive the room looks.</p>
+
+<div class="findings">
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">No effect was ever validated against a quiet section</span><span class="f-loc">core/src/effects/gate.ts:30</span></div>
+		<p class="f-body"><code>quietFrames()</code> adds an intro and an outro: quiet, <b>no kit at all</b>, but a real spectrum with a wandering peak and a moving tilt. Deliberately not part of <code>SCRIPT</code>, so pass/fail stays comparable across sessions; <code>effectprobe</code>'s new <code>quiet</code> column reads it. <b style="color:var(--good)">Fixed: it immediately separated the 20 "deaf" effects into 10 that are correct by design - a transient with no drums SHOULD be still - and 10 beds and accents that are the actual complaint.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">The liveliness metric could not see musical timescales</span><span class="f-loc">bench/levelprobe.ts:25</span></div>
+		<p class="f-body">Same class of error as judging shimmer by mean level. <code>drift</code> is each pixel's spread around its own half-second average, so a field travelling across a phrase scores and a still one does not; <code>colour</code> is the same question over all three channels, because <code>drift</code> takes the max channel and is blind to a hue rotation at constant luminance - which is exactly what a colour-led bed like <code>spectrumBed</code> does. <b style="color:var(--good)">Fixed: intro drift 1.48 against a groove's 17.94 is the complaint as a number, and it is 12x rather than the 40x that <code>move</code> reported.</b></p>
+	</div>
+</div>
+
+<h3>Three hypotheses tested and abandoned before the right one</h3>
+<p>Each looked obvious and each measured flat, which is the only reason the fourth is worth believing.</p>
+<table>
+	<thead><tr><th>hypothesis</th><th>swept</th><th>intro drift</th><th>verdict</th></tr></thead>
+	<tbody>
+		<tr><td>Cue <code>motion</code> throttles quiet sections (it is 0.28 against a groove's 1.0)</td><td>0.28 &rarr; 1.00</td><td>1.48 &rarr; 1.52</td><td>not the lever</td></tr>
+		<tr><td>The house floor flattens them (<code>SECTION_FLOOR</code> 0.42 is a black-level lift)</td><td>0.42 &rarr; 0.00</td><td>1.48 &rarr; 2.01</td><td>not the lever, and it costs coverage 100% &rarr; 60%</td></tr>
+		<tr><td>The mean-level controller squashes them</td><td>read</td><td>-</td><td><code>MEAN_MIN_GAIN</code> is 1: it can only lift</td></tr>
+		<tr><td><b>The beds themselves are flat</b></td><td>-</td><td><b>see below</b></td><td>confirmed</td></tr>
+	</tbody>
+</table>
+<p>The intro beds are <code>phraseArc</code>, <code>wash</code>, <code>chorusBloom</code> and <code>spectrumBed</code>. Two of them fill 99-100% of the room and moved 0.13 and 0.24 in a quiet passage: a full room that does not move. <code>subThrob</code> scores 5.61 on the same measure with a ripple of 0.03, which is the proof that a bed can be both alive and calm.</p>
+
+<div class="callout">
+	<p><b>A beat-latched band may drive a level. The blanket rule predates <code>BeatHold</code>.</b> "The spectrum must not drive brightness" was written against a per-<b>frame</b> read, whose 5-8 bytes of jitter is what made the room blink. A value that steps on the beat and glides between beats cannot produce that, and <code>subThrob</code> has been doing it all along. <code>spectrumBed</code> and <code>chorusBloom</code> now take a shallow spatial relief from their latched band, centred on unity rather than reaching down to it - written the other way it was a dimmer, and cost <code>chorusBloom</code> a third of its coverage.</p>
+</div>
+
+<h3>Sixty-two effects audited, and what the review caught</h3>
+<p>Seven parallel audits, then an adversarial review of every file that was touched by someone who had not touched it. <b>37 of 40 edited effects came back with defects, 32 rated high</b>, in three systematic classes that no single-pass review would have found:</p>
+<div class="findings">
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title"><code>ctx.motion</code> multiplied into an absolute clock</span><span class="f-loc">5 effects</span></div>
+		<p class="f-body"><code>(f.barIndex + f.barPhase) * motion</code> scales a monotonically growing counter, and the player cross-fades motion between cues: at bar 120 a routine 1.00 to 1.25 moves the pattern <span class="num">7.5 revolutions</span> in one frame, and it gets worse the longer the track runs. It also breaks the contract's seek requirement, since the phase no longer depends only on the grid. <b style="color:var(--good)">Fixed: a grid-locked phase takes its speed from the grid and motion no longer touches it.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Division by <code>ctx.motion</code>, which the schema permits to be zero</span><span class="f-loc">6 effects, 7 sites</span></div>
+		<p class="f-body">A decay of <code>1.2 / motion</code> at motion 0 is an infinite time constant, so the envelope never falls and the effect latches on. <b style="color:var(--good)">Fixed: floored at 0.05.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">Spectrum driving brightness through slot space</span><span class="f-loc">7 effects</span></div>
+		<p class="f-body">Slot space is a ring whose positions differ in VALUE: measured, <code>white</code> is 3.7x <code>glow</code>'s luminance, and a <code>base &rarr; third</code> walk swings <span class="num">2.9x</span> because it crosses it. A spectral term driving that walk is a spectrum driving brightness, laundered through the palette - the exact blinking the sixth pass existed to remove. <b style="color:var(--good)">Fixed: a spectral term may only walk inside base..glow, which is 1.2x. Where the fill itself should bleach toward white, as in <code>meterBuild</code>, that axis is kept and only the spectral one is constrained.</b></p>
+	</div>
+	<div class="f medium fixed">
+		<div class="f-head"><span class="sev">medium</span><span class="chip">fixed</span><span class="f-title">Hand-rolled colour ramps in place of <code>paletteArc</code></span><span class="f-loc">6 effects, reverted</span></div>
+		<p class="f-body">Four effects replaced <code>paletteArc</code> with stops cross-faded in RGB, or with a lerp between two declared slots. Both land between palette anchors, and an interpolated hue is not one the show declared: <code>iridescence</code> went from 82% of its lit bytes on a palette hue to <span class="num">10%</span>. <b style="color:var(--good)">Fixed: <code>iridescence</code> restored to <code>paletteArc</code> by hand; <code>comet</code>, <code>discoBall</code>, <code>chromaBurst</code>, <code>confetti</code>, <code>hueCarousel</code> and <code>gradientSpin</code> reverted whole, since they regressed with no measured gain.</b></p>
+	</div>
+</div>
+
+<table>
+	<thead><tr><th>catalog</th><th>before</th><th>after</th></tr></thead>
+	<tbody>
+		<tr><td>effects that ignore the music entirely</td><td>20</td><td><b>11</b></td></tr>
+		<tr><td>effects reaching past the palette for a colour</td><td>18</td><td><b>11</b></td></tr>
+		<tr><td>mean flicker (the blinking guard)</td><td>0.52</td><td><b>0.49</b></td></tr>
+		<tr><td>shimmering effects</td><td>0</td><td>0</td></tr>
+		<tr><td>palette fidelity, summed per-effect change</td><td>-</td><td><b>+144 against -23</b></td></tr>
+		<tr><td>catalog size</td><td>62</td><td>63 (<code>barFill</code>)</td></tr>
+	</tbody>
+</table>
+
+<p><code>barFill</code> is the build-up the old iteration had and this one did not: five bars, one per strip, staggered so they arrive in sequence with the ceiling beam last, landing full on the drop. <code>meterBuild</code> already filled the perimeter as one continuous line, but it reached only 4 of about 130 build layers, so in practice the room never showed it.</p>
+
+<div class="callout">
+	<p><b>What this did NOT fix, stated plainly.</b> Quiet-section liveliness improved by 11-18% - intro drift 1.48 to <span class="num">1.75</span>, intro colour 2.75 to <span class="num">3.21</span>, quiet drift 2.09 to 2.32 - against a groove's 18.1 and 35.9. The room is measurably less flat and is not yet as alive as the complaint asks for. The instruments to close the rest now exist and say exactly where the gap is: ten beds and accents still score under 0.02 on <code>quiet</code>, and the two that fill the whole room score 0.23 and 0.30 against <code>subThrob</code>'s 5.61 at a ripple of 0.03. Contrast held throughout: drop-to-quiet 3.38 to <span class="num">3.40</span> against a 3.2 floor, quiet 34.7 bytes against a 32 floor, 100% of LEDs lit in every quiet section, all 385 planned hits still firing.</p>
+</div>
+
+<h2 class="done">The seventh pass: can a model label a section better than a threshold</h2>
+<p class="lede">The question was whether an AI music-understanding model would make the room better. Answering it needed an instrument that did not exist, and building that instrument turned out to be most of the finding: every structure number this project has ever quoted was measured on SALAMI, whose labels are letters, and a letter cannot say whether a passage is a build.</p>
+
+<div class="callout">
+	<p><b>The labeller is worth one point over a constant answer.</b> Scored against annotated function on 115 Harmonix tracks, the seven lighting kinds agree with the annotation on <span class="num">43.3%</span> of frames. Always answering <code>groove</code> scores <span class="num">42.3%</span>. The share table that this project has been steering by looks healthy at the same time - estimated groove 41.8% against an annotated 42.3% - because a marginal distribution can match perfectly while every individual call is wrong. No share table is evidence that a labeller works.</p>
+	<p><b>And the labels are worth three times the boundaries.</b> <code>bench/ceilingprobe.ts</code> substitutes the annotation for one stage at a time over 374 SALAMI tracks: perfect boundaries are worth <span class="num">+5.6</span> pairwise, perfect labels <span class="num">+18.0</span>, both <span class="num">+25.0</span>. Every effort spent on the segmenter has been spent on the smaller half.</p>
+</div>
+
+<h3>Harmonix was dead weight for four sessions, for two independent reasons</h3>
+<p>The loader, the offset fitter and 254 downloaded tracks have been committed since the second pass, and not one of them has ever appeared in a report: every structure run in <code>bench/reports/</code> is SALAMI only. Both faults had to be fixed before a single track scored.</p>
+
+<div class="findings">
+	<div class="f critical fixed">
+		<div class="f-head"><span class="sev">critical</span><span class="chip">fixed</span><span class="f-title">The offset fitter could never accept a track, by construction</span><span class="f-loc">bench/structure-corpus.ts:135</span></div>
+		<p class="f-body">It scored onset strength at the annotated beat times, then required the best offset to beat every rival a quarter-second away by 1.15x. Beats are periodic, so the offset one beat period away lands every impulse on a different beat of the same music and scores within noise of the truth <b>always</b>. Sharpness came back at 1.00 on essentially every track. <b style="color:var(--good)">Fixed: rivals within half a beat of any alias of the best are no longer rivals. 114 of the 115 correctly-sized uploads were being rejected; now none are.</b></p>
+	</div>
+	<div class="f high fixed">
+		<div class="f-head"><span class="sev">high</span><span class="chip">fixed</span><span class="f-title">139 of 254 Harmonix uploads are the wrong edit</span><span class="f-loc">bench/kinds.ts:70</span></div>
+		<p class="f-body">Harmonix annotates Rock Band game cuts, which are frequently shorter than the release: "1, 2 Step" is annotated at 142 s against the 204 s single, with an internal section removed. No constant offset reaches those, and the fitter was being asked a question it cannot answer. <b style="color:var(--good)">Fixed: <code>masterDuration</code> from the corpus's own <code>metadata.csv</code> gates on a 2% length match before the fit runs. 115 tracks survive.</b></p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">A fitted track cannot be quoted at F0.5</span><span class="f-loc">bench/structure-corpus.ts:141</span></div>
+		<p class="f-body">The residual ambiguity after the fix is up to half a beat, and that lands squarely inside the strict tolerance. Measured: the same analyser scores Harmonix F3 <span class="num">36.7</span> against SALAMI's 31.3 - better, on the repertoire it was built for - while scoring Harmonix F0.5 <span class="num">6.7</span> against SALAMI's 13.6, half. A quarter-second cannot move a 3 s window and eats most of a 0.5 s one. Quote F3, pairwise and function from Harmonix; quote F0.5 from SALAMI only.</p>
+	</div>
+</div>
+
+<h3>What a model is actually worth, measured</h3>
+<p>MusicFM (Won et al., ICASSP 2024; MIT code <b>and</b> MIT weights, which no other tier-one music encoder has - MERT, MuQ, Music2Vec and MuQ-MuLan are all CC-BY-NC on every public checkpoint) at 25 Hz and 1024 dims, mean-pooled per section, reduced by a PCA refitted inside every fold, and classified alongside the features <code>arrange()</code> already has. Five-fold cross-validation grouped by <b>track</b>, never by section, because sections of one track share a mastering and a kit.</p>
+
+<table>
+	<thead><tr><th>section features</th><th>accuracy</th><th>macro F1</th><th>build F1</th><th>breakdown F1</th></tr></thead>
+	<tbody>
+		<tr><td>always answer <code>drop</code></td><td>43.8</td><td>-</td><td>-</td><td>-</td></tr>
+		<tr><td><code>arrange()</code> thresholds, as shipped</td><td>46.0</td><td>31.5</td><td><b>15.3</b></td><td>3.6</td></tr>
+		<tr><td>the same features, softmax</td><td>62.1</td><td>37.4</td><td>0.0</td><td>0.0</td></tr>
+		<tr><td>the same features, 24-unit MLP</td><td>47.3</td><td>36.2</td><td>13.1</td><td>10.8</td></tr>
+		<tr><td>MusicFM alone, layer 10</td><td><b>66.0</b></td><td>35.7</td><td>3.2</td><td>0.0</td></tr>
+		<tr><td>both, layer 8, softmax</td><td>65.4</td><td>42.0</td><td>3.3</td><td>0.0</td></tr>
+		<tr><td>both, layer 8, 24-unit MLP</td><td>62.7</td><td><b>43.2</b></td><td>9.5</td><td>5.7</td></tr>
+	</tbody>
+</table>
+
+<div class="callout">
+	<p><b>The thresholds were leaving 19 points of accuracy on the table, and 16 of those need no model at all.</b> A plain softmax over the numbers <code>arrange()</code> already reads scores 62.1 against its 46.0. Adding MusicFM buys a further 3.3 of accuracy and 5.8 of macro F1, and it earns most of that on the two labels the room shows longest: <code>intro</code> F1 rises 54.5 to <span class="num">77.1</span> and <code>outro</code> 14.7 to <span class="num">41.6</span>.</p>
+	<p><b>Capacity is not the limit; the features are.</b> The 24-unit MLP does not beat the linear model on the hand-built features. That is the null hypothesis answering itself: the information for the seven kinds is not in energy and drum density, so no amount of fitting extracts it.</p>
+	<p><b>And <code>arrange()</code> still wins on <code>build</code>, against everything.</b> Its hand-written trajectory rule - the kick withdraws while the snare climbs into the drop it points at - scores F1 15.3 where no learned model passes 9.5. A build is defined by where it is going, and a mean over the section is the one summary guaranteed to erase that. Splitting each section into three sub-spans before pooling more than doubled build F1, 5.6 to <span class="num">14.2</span>, which confirms the cause. Keep the rule; do not let a classifier replace it.</p>
+</div>
+
+<h3>Two things tried, measured and reverted</h3>
+<div class="findings">
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">The similarity matrix drops the top octave, and it costs nothing</span><span class="f-loc">analysis/src/structure.ts:54</span></div>
+		<p class="f-body">Confirmed by measurement, not by reading: <code>group = floor(153 / 32) = 4</code> stops the band loop at index 127, so 5431 Hz to 10861 Hz - hats, cymbals, the brightness a filter opens - never reaches the matrix that decides where sections are. Distributing all 153 bands over the 32 groups moved SALAMI F0.5 <span class="num">-0.36</span>, F3 <span class="num">-0.65</span>, pairwise <span class="num">-0.26</span> and Harmonix +0.2 / +0.2 / +0.3. Noise in both directions, so it was reverted. The defect is real and is recorded here so it is not rediscovered; its effect is not.</p>
+	</div>
+	<div class="f medium">
+		<div class="f-head"><span class="sev">medium</span><span class="f-title">Sixteen sub-frames per bar are four, replicated four times</span><span class="f-loc">analysis/src/structure.ts:67</span></div>
+		<p class="f-body">Verified on a real bar: all 512 pattern slots are bit-identical to the first slot of their beat, because <code>bf.spectral</code> is already one row per beat and <code>floor(u)</code> maps four consecutive sub-frames onto the same one. Cosine over the 512 replicated dimensions equals cosine over the 128 distinct ones exactly, so <code>SUB_FRAMES = 16</code> buys nothing and costs 4x the matrix. The bar pattern is beat-resolution, which is still the point of it; the sixteenth-note resolution the README claims does not exist. Fixing it means keeping sub-beat rows in <code>beatsync.ts</code>, which is a real change and was not attempted here.</p>
+	</div>
+</div>
+
+<div class="callout">
+	<p><b>Execution providers, measured on the shipped Beat This graph over a 137 s track.</b> <code>onnxruntime-node</code> 1.27 bundles cpu, webgpu and coreml on this machine. CPU 3.99 s (34x realtime). <b>WebGPU 1.28 s (106x), max logit difference 3.5e-3 and zero threshold flips</b>, so beats are unchanged. CoreML <span class="num">523 s</span> - 130x slower than CPU, because only 933 of 1765 nodes are supported and the graph splits into 208 partitions - and it flips two beats. CoreML is not an option here. WebGPU is a free 3x on a bit-identical result, and it is what makes a 329M-parameter encoder affordable at ingest.</p>
+</div>
+
 <h2 class="done">A dark room, and the two bugs behind it</h2>
 <p class="lede">Reported from the app: a track loaded, the timeline and the arrangement drew, and the room stayed black with "Track ready" on screen. Two separate faults, one of them mine and one of them a failure mode that has been waiting there all along.</p>
 <div class="callout">
 	<p><b>The planner sized a hit at one bar and placed it at another.</b> A strobe's length is capped in seconds; the cap was evaluated with <code>barDurationAt</code> at the bar the strobe was measured from, and the hit was then written a bar earlier. On a grid that drifts by a per cent - which is every real track, and 16% of the corpus by more - the two disagree, so the engine wrote a strobe of <span class="num">3.02 s</span> against its own 3.0 s cap. Both sides now call one function, <code>hitSeconds</code> in <code>grid.ts</code>, which reads the span off the bar table. The same class of defect as the two clocks the first pass found, and the same fix: one place owns the arithmetic.</p>
 	<p><b>And the app discards a show the linter rejects, without saying so.</b> <code>if (!verdict.ok) show = null</code> in the ingest route, which leaves the room dark and the panel reading "No show yet" - no error, no finding, nothing to act on. A show with one over-long strobe in it is strictly better than no show at all, and a rejection the user cannot see is worse than either. This has not been changed here, because what an invalid show should do is a product decision rather than a bug fix, but it is the reason a small planner defect presented as a completely dead application.</p>
 	<p><b>The guard.</b> <code>composeShow</code> now has to survive its own linter across seven tempos from 58 to 175 bpm, on flat grids and on grids jittered a few per cent per bar, twelve seeds each. The jitter matters and a smooth ramp does not: the fault only appears where neighbouring bars fall on OPPOSITE sides of a cap, so the first two versions of this test passed against the broken code. It was only worth keeping once it failed against it.</p>
+</div>
+
+<h3>What shipped: the model decides one label</h3>
+<p>Groove against drop, and nothing else. <code>packages/analysis/src/sectionModel.ts</code> is generated by <code>node bench/kindfit.ts --export</code> and holds 32 weights per class; <code>sectionFeatures.ts</code> is the single definition of the vector, imported by both the analyser and the bench, because a classifier is coefficients against a feature ORDER and two implementations of "the same" vector produce a model that is wrong rather than broken.</p>
+
+<div class="callout">
+	<p><b>Fitted on the question it is actually asked.</b> The first attempt trained seven classes and compared two logits at serve time. That is a different model: end to end it put <code>drop</code> at <span class="num">58.7%</span> of frames against an annotated 42.1%, because the drop logit had only ever been calibrated against five rivals it no longer had. Refitted as the binary decision, it is right on <span class="num">69.1%</span> of annotated frames against 46.2% for a constant answer.</p>
+	<p><b>And the repeat pass had to go.</b> It existed to recover the second chorus, which the thresholds lost whenever the passage before it was loud enough to erase the step. The model does not lose it, and with the pass still in place one member of a group being called drop dragged every repeat across: half of all annotated <code>groove</code> came back as <code>drop</code>. Removing it moved frame agreement <span class="num">47.7% to 50.9%</span> and the drop share to 42.8% against that annotated 42.1%. Same shape as the <code>SECTION_FLOOR</code> reduction - a compensation left in place after its cause is fixed is contrast spent for nothing.</p>
+</div>
+
+<table>
+	<thead><tr><th>measured end to end</th><th>before</th><th>after</th></tr></thead>
+	<tbody>
+		<tr><td>Harmonix, frame agreement with annotated function</td><td>43.3%</td><td><b>50.9%</b></td></tr>
+		<tr><td>Harmonix, per-track mean</td><td>43.4%</td><td><b>51.3%</b></td></tr>
+		<tr><td>Harmonix, <code>drop</code> share (annotated 42.1%)</td><td>25.9%</td><td><b>42.8%</b></td></tr>
+		<tr><td>Harmonix, pairwise F</td><td>50.1</td><td><b>52.8</b></td></tr>
+		<tr><td>Harmonix, boundary F3</td><td>36.7</td><td><b>37.7</b></td></tr>
+		<tr><td>SALAMI, groove share</td><td>60.2%</td><td><b>46.9%</b></td></tr>
+		<tr><td>SALAMI, boundary F0.5</td><td>13.6</td><td><b>13.9</b></td></tr>
+		<tr><td>SALAMI, boundary F3</td><td>31.3</td><td><b>31.8</b></td></tr>
+		<tr><td>SALAMI, pairwise F</td><td>53.0</td><td>52.5</td></tr>
+		<tr><td>SALAMI, over-segmentation</td><td>65.0</td><td><b>55.9</b></td></tr>
+	</tbody>
+</table>
+
+<p>The only figure that moved the wrong way is SALAMI pairwise, by <span class="num">0.56</span>. The fourth pass measured that exchange rate directly and put it at about one point of pairwise per twelve points of groove share; this buys 13.3 points of groove share for 0.56, so it is a better trade than the <code>DROP_KICK_STEP</code> dial offered, and the boundaries improved rather than paying for it.</p>
+
+<div class="callout">
+	<p><b>One judgement left open, and it belongs to the room rather than to a corpus.</b> On the owner's own 33 cached tracks the arrangement is now <code>drop</code> 47.8%, <code>groove</code> 23.4%, <code>build</code> 13.9%, against 78% groove when this work started. That is the annotated rate for pop and slightly above it for this heavier repertoire, and it is a defensible reading of the music. Whether half a track should be lit as its biggest thing is a different question from whether the label is correct, and no annotation can answer it. <code>rotationprobe</code> confirms the engine still reserves the biggest look (top peak share 35.9, 8 distinct peaks, 0 cues never placed), so a drop is not automatically the largest gesture.</p>
 </div>
 
 <h2 class="done">The sixth pass: the room was blinking, and it was my fault</h2>
