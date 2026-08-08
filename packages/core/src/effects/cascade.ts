@@ -3,6 +3,8 @@ import type { StripSpec } from '../contracts/room.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { addSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
+import { BeatHold } from '../dsl/env.ts';
+import { spectralTilt } from '../dsl/spectrum.ts';
 import { beatRelease, INTENSITY } from './helpers.ts';
 
 /**
@@ -33,11 +35,17 @@ export const cascade: EffectDef = {
 			walls[2] ? [walls[2]] : []
 		];
 		const env = new Float32Array(4);
+		// `f.energy` is beat-resolution data the player interpolates per frame, so a level
+		// multiplied by it slides continuously under a chase that lands on the grid.
+		const level = new BeatHold(0.5);
+		const tilt = new BeatHold(0.25);
 		let lastStage = -1;
 
 		return {
 			reset() {
 				env.fill(0);
+				level.reset();
+				tilt.reset();
 				lastStage = -1;
 			},
 			render(out, ctx) {
@@ -51,7 +59,16 @@ export const cascade: EffectDef = {
 				}
 
 				const tail = Math.exp(-f.dt / beatRelease(f.beatPeriod, 0.9));
-				const gain = (0.5 + p.intensity * 1.2) * clamp(0.3 + f.energy * 0.9);
+				const held = level.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const gain = (0.5 + p.intensity * 1.2) * clamp(0.45 + held * 0.55);
+				const warm = tilt.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				// Where the arrangement sits picks the walls' colour, so the same chase reads
+				// as body under a bass passage and as texture when the top opens up.
+				// A spectral term may only walk the slot inside base..glow. Slot space is a ring whose
+				// positions differ in VALUE - white is 3.7x glow's luminance - so a walk that crosses it
+				// is a spectrum driving BRIGHTNESS through the palette, which is the blinking the
+				// mixer already had to be rescued from once.
+				const wallLit = lerp(SLOT.base, SLOT.glow, clamp(warm * 0.7));
 
 				for (let s = 0; s < 4; s++) {
 					env[s] *= tail;
@@ -59,12 +76,14 @@ export const cascade: EffectDef = {
 					if (v < 0.015) continue;
 					// The beam pours in glow; the walls drain back toward the deep shade as the
 					// light leaves them - a waterfall of palette, not of position.
-					const slot = s === 0 ? SLOT.glow : lerp(SLOT.base, SLOT.deep, (1 - v) * 0.6);
-					for (const strip of groups[s]) {
-						for (let k = 0; k < strip.count; k++) {
+					const slot = s === 0 ? SLOT.glow : lerp(wallLit, SLOT.deep, (1 - v) * 0.6);
+					const group = groups[s];
+					for (let k = 0; k < group.length; k++) {
+						const strip = group[k];
+						for (let j = 0; j < strip.count; j++) {
 							// Feathered ends so neighbouring groups blend at the corners.
-							const e = Math.min(1, Math.min(k, strip.count - 1 - k) * 0.08 + 0.4);
-							addSample(out, strip.offset + k, palette, slot + hueShift, v * gain * e);
+							const e = Math.min(1, Math.min(j, strip.count - 1 - j) * 0.08 + 0.4);
+							addSample(out, strip.offset + j, palette, slot + hueShift, v * gain * e);
 						}
 					}
 				}

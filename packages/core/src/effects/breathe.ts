@@ -28,7 +28,8 @@ export const breathe: EffectDef = {
 		sections: ['intro', 'breakdown', 'outro'],
 		minBars: 4,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 3.42
 	},
 	params: [INTENSITY, param('bars', 'Bars per breath', 0.5), param('tilt', 'Colour travel', 0.5)],
 	create(g) {
@@ -58,15 +59,20 @@ export const breathe: EffectDef = {
 				const colour = hue.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
 				// Only a light energy term: this exists for the passages that have no energy, so
 				// scaling it hard by the thing it is written for would leave it with nothing.
-				const gain = (0.3 + p.intensity * 0.6) * clamp(0.55 + level.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.45);
+				const heard = level.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const gain = (0.3 + p.intensity * 0.6) * clamp(0.55 + heard * 0.45);
+				// How far the breath lags across the room rides on the same latched tilt: a bright
+				// passage reaches the far wall well after the near one, a dark one moves as one
+				// body. The spectrum may move the room without being allowed to light it.
+				const depth = lerp(0.15, 0.5, colour);
+				const tint = lerp(SLOT.base, SLOT.third, colour * p.tilt);
 
 				for (let i = 0; i < g.count; i++) {
-					// A quarter-turn of offset around the room, so the breath arrives at the far
-					// wall a moment after the near one and the room has depth.
-					const lag = sinewave(cycle / period - ringU(g, i) * 0.25);
+					// Offset around the room, so the breath arrives at the far wall a moment after
+					// the near one and the room has depth.
+					const lag = sinewave(cycle / period - ringU(g, i) * depth);
 					const v = clamp(0.35 + (swell * 0.5 + lag * 0.5) * 0.65);
-					const slot = lerp(SLOT.base, SLOT.third, colour * p.tilt);
-					setSample(out, i, palette, lerp(slot, SLOT.glow, v * 0.4) + hueShift, v * gain);
+					setSample(out, i, palette, lerp(tint, SLOT.glow, v * 0.4) + hueShift, v * gain);
 				}
 			}
 		};

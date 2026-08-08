@@ -40,7 +40,8 @@ export const pyroBursts: EffectDef = {
 		const flickPhase = new Float32Array(g.count);
 		const flickRate = new Float32Array(g.count);
 		for (let i = 0; i < g.count; i++) {
-			flickPhase[i] = hash01(i) * 6.28;
+			// Turns, not radians: `sinewave` takes a 0..1 phase.
+			flickPhase[i] = hash01(i);
 			flickRate[i] = 0.7 + hash01(i * 3);
 		}
 		let next = 0;
@@ -53,7 +54,7 @@ export const pyroBursts: EffectDef = {
 				armedFor = Number.NaN;
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 				fadeToBlack(out, f.dt, 0.08);
 				if (walls.length === 0) return;
 
@@ -71,9 +72,11 @@ export const pyroBursts: EffectDef = {
 					}
 				}
 
-				const life = Math.max(0.3, p.lifeBeats * f.beatPeriod);
+				const life = Math.max(0.3, p.lifeBeats * f.beatPeriod) / Math.max(0.2, motion);
 				const gain = 0.55 + p.intensity * 1.3;
-				const flick = f.t * 26;
+				// Cycles per second. The fastest pixels ran at 44 Hz against a 60 Hz frame clock,
+				// which aliases into per-pixel noise; a flame flickers at around a tenth of that.
+				const flick = f.t * 9 * motion;
 
 				for (const b of bursts) {
 					if (!b.alive) continue;

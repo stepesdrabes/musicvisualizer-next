@@ -56,7 +56,7 @@ export const beamFlick: EffectDef = {
 				lastHit = -1;
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.6));
 
 				const refractory = Math.max(0.05, f.beatPeriod * 0.4);
@@ -70,7 +70,9 @@ export const beamFlick: EffectDef = {
 					fl.slot = f.kick ? SLOT.base : SLOT.accent;
 				}
 
-				const travel = Math.max(0.1, p.travelBeats * f.beatPeriod);
+				// Floored divisor: at motion near zero the streak should cross the beam slowly
+				// rather than stall on it forever.
+				const travel = Math.max(0.1, p.travelBeats * f.beatPeriod) / Math.max(0.2, motion);
 				const gain = 0.6 + p.intensity * 1.4;
 				const half = beam.count / 2;
 				// Only as far as the mix is actually wide: a mono passage stays centred.

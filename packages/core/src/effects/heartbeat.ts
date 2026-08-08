@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
-import { PulseEnv } from '../dsl/env.ts';
+import { BeatHold, PulseEnv } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -25,6 +25,9 @@ export const heartbeat: EffectDef = {
 	create(g) {
 		const lub = new PulseEnv();
 		const dub = new PulseEnv();
+		// The passage's own level, latched on the beat: `f.energy` is beat-resolution data the
+		// player interpolates per frame, so a brightness multiplied by it slides continuously.
+		const passage = new BeatHold(0.45);
 		let lastBar = Number.NaN;
 		let firedDub = false;
 
@@ -32,11 +35,12 @@ export const heartbeat: EffectDef = {
 			reset() {
 				lub.reset();
 				dub.reset();
+				passage.reset();
 				lastBar = Number.NaN;
 				firedDub = false;
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 
 				if (f.barIndex !== lastBar) {
 					lastBar = f.barIndex;
@@ -49,11 +53,12 @@ export const heartbeat: EffectDef = {
 					dub.fire(1);
 				}
 				const v = Math.max(
-					lub.decay(f.dt, f.beatPeriod, 1.2),
-					dub.decay(f.dt, f.beatPeriod, 1.8)
+					lub.decay(f.dt, f.beatPeriod, 1.2 / Math.max(0.05, motion)),
+					dub.decay(f.dt, f.beatPeriod, 1.8 / Math.max(0.05, motion))
 				);
 
-				const level = clamp(0.25 + f.energy * 0.7) * (0.4 + p.intensity);
+				const passageLevel = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const level = clamp(0.25 + passageLevel * 0.7) * (0.4 + p.intensity);
 				const bright = level * (1 - p.depth + p.depth * v);
 
 				for (let i = 0; i < g.count; i++) {

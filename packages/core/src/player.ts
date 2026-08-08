@@ -53,21 +53,37 @@ const MIN_HIT_LEVEL = 0.35;
  * four bright layers - and giving it one would only eat the headroom the highlight compressor
  * needs.
  *
- * The quiet three have come down by more than half from where they were, in two steps, as the
- * catalog gained layers that carry a room on their own. The floor was compensating for cues
- * whose second layer emitted nothing, and a compensation left in place after its cause is fixed
- * is just contrast spent for nothing: the room reads the difference between a verse and a drop,
- * not the absolute level of either. Every quiet section still lights 98-100% of the LEDs.
+ * The quiet three have come down by more than half from where they were, in three steps, as the
+ * catalog gained layers that carry a room on their own. The floor was compensating for cues whose
+ * second layer emitted nothing, and a compensation left in place after its cause is fixed is just
+ * contrast spent for nothing: the room reads the difference between a verse and a drop, not the
+ * absolute level of either. Every quiet section still lights 99-100% of the LEDs.
+ *
+ * The third step came with the planner preferring layers that actually show the music in a quiet
+ * cue. Those are brighter as well as livelier, so leaving the floor where it was pushed the
+ * drop-to-quiet ratio from 3.43 down to 2.79, under its 3.2 floor: the same contrast, spent twice.
+ * The outro comes down least because its bed pool barely changed.
  */
 const SECTION_FLOOR: Record<SectionKind, number> = {
 	void: 0,
-	intro: 0.42,
-	outro: 0.4,
-	breakdown: 0.44,
+	intro: 0.3,
+	outro: 0.38,
+	breakdown: 0.34,
 	build: 0.38,
 	groove: 0.32,
 	drop: 0.09
 };
+
+/**
+ * How far ahead of the playhead a drum hit is read, as a fraction of the beat, and its ceiling.
+ *
+ * The one number to turn if the room feels early or late against the real strips: DDP and WLED add
+ * their own transport delay, which this cannot know and which pushes in the opposite direction.
+ * Raising it makes the room anticipate; zero restores the old behaviour exactly.
+ */
+const HIT_LEAD_BEATS = 0.06;
+const HIT_LEAD_CAP = 0.045;
+
 
 function floorFor(section: SectionKind): number {
 	return Math.min(1, SECTION_FLOOR[section] ?? 0);
@@ -458,12 +474,28 @@ export class ShowPlayer {
 
 	private updateDrums(t: number, dt: number, a: TrackAnalysis): void {
 		const f = this.frame;
+		// Read slightly AHEAD of the playhead, so the light is already at full when the hit
+		// arrives rather than starting then. Two reasons, and they point the same way.
+		//
+		// Mechanical: an onset is consumed on the first frame at or after it, which at 60 fps is
+		// up to 16.7 ms late on its own, before anything downstream adds more.
+		//
+		// Perceptual: the tolerance is strongly asymmetric. ITU-R BT.1359-1 puts detectability at
+		// 45 ms when the picture leads and 125 ms when it lags, so early is roughly three times
+		// cheaper than late; a sound within about 100 ms pulls a flash onto itself and tightens
+		// its apparent timing (temporal ventriloquism); and a listener's own sense of "on the
+		// beat" already runs 20-80 ms early. Spend the uncertainty on the early side.
+		//
+		// Derived from the beat period so it stays a musical fraction, and capped well inside a
+		// sixteenth at every tempo: 30 ms at 120 bpm, 21 ms at 174 bpm.
+		const lead = Math.min(HIT_LEAD_CAP, HIT_LEAD_BEATS * f.beatPeriod);
+		const at = t + lead;
 		// Fired at the hit's own strength, floored so the quietest ghost note still registers as
 		// an event. Firing every hit at 1.0 made `kickEnv` exactly 1.0 on every kick frame in the
 		// corpus, which gave `kickTunnel` one ring size for every track ever played.
-		const kick = advance(a.onsets.kick, t, this.kickCursor, (c) => (this.kickCursor = c));
-		const snare = advance(a.onsets.snare, t, this.snareCursor, (c) => (this.snareCursor = c));
-		const hat = advance(a.onsets.hat, t, this.hatCursor, (c) => (this.hatCursor = c));
+		const kick = advance(a.onsets.kick, at, this.kickCursor, (c) => (this.kickCursor = c));
+		const snare = advance(a.onsets.snare, at, this.snareCursor, (c) => (this.snareCursor = c));
+		const hat = advance(a.onsets.hat, at, this.hatCursor, (c) => (this.hatCursor = c));
 
 		f.kick = kick > 0;
 		f.snare = snare > 0;

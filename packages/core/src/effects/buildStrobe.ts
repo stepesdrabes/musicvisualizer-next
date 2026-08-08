@@ -1,8 +1,10 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
+import { lerp } from '../dsl/math.ts';
 import { fillSolid } from '../dsl/buffer.ts';
-import { PulseEnv } from '../dsl/env.ts';
+import { BeatHold, PulseEnv } from '../dsl/env.ts';
+import { bandBetween } from '../dsl/spectrum.ts';
 import { INTENSITY } from './helpers.ts';
 
 /**
@@ -27,17 +29,23 @@ export const buildStrobe: EffectDef = {
 	params: [INTENSITY],
 	create(g) {
 		const env = new PulseEnv();
-		let lastSlot = -1;
+		// How much top end the riser has, latched on the beat and spent entirely on colour.
+		// Driving the flash level from it would put the build's brightness on band data that
+		// is normalised across the whole track.
+		const air = new BeatHold(0.15);
+		let lastStep = -1;
 
 		return {
 			reset() {
 				env.reset();
-				lastSlot = -1;
+				air.reset();
+				lastStep = -1;
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
 				const progress = f.buildProgress;
+				const top = air.update(bandBetween(f, 0.65, 1), f.beat, f.dt, f.beatPeriod);
 				const v = env.decay(f.dt, f.beatPeriod, 0.54);
 				if (progress < 0.03 && v < 0.01) {
 					out.fill(0);
@@ -46,9 +54,9 @@ export const buildStrobe: EffectDef = {
 
 				if (progress >= 0.03) {
 					const per = progress < 0.35 ? 2 : progress < 0.65 ? 1 : progress < 0.88 ? 0.5 : 0.25;
-					const slot = Math.floor((f.beatIndex + f.beatPhase) / per);
-					if (slot !== lastSlot) {
-						lastSlot = slot;
+					const step = Math.floor((f.beatIndex + f.beatPhase) / per);
+					if (step !== lastStep) {
+						lastStep = step;
 						env.fire(1);
 					}
 				}
@@ -58,7 +66,9 @@ export const buildStrobe: EffectDef = {
 					out.fill(0);
 					return;
 				}
-				fillSolid(out, g.count, sample(palette, SLOT.white + hueShift, gain));
+				// Tinted toward the room's own colour while the riser is still low and bleached
+				// as it opens up, so the flash answers the arrangement without changing level.
+				fillSolid(out, g.count, sample(palette, lerp(SLOT.glow, SLOT.white, top) + hueShift, gain));
 			}
 		};
 	}

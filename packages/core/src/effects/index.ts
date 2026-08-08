@@ -4,6 +4,7 @@ import { ambientDrift } from './ambientDrift.ts';
 import { aurora } from './aurora.ts';
 import { auroraBorealis } from './auroraBorealis.ts';
 import { bandBloom } from './bandBloom.ts';
+import { barFill } from './barFill.ts';
 import { bassRing } from './bassRing.ts';
 import { beamFlick } from './beamFlick.ts';
 import { blackout } from './blackout.ts';
@@ -71,6 +72,7 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	nebula,
 	embers,
 	ambientDrift,
+	barFill,
 	bassRing,
 	lavaBlobs,
 	iridescence,

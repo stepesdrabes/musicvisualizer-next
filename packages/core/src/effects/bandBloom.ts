@@ -7,6 +7,10 @@ import { ringU } from '../dsl/space.ts';
 import { bandBetween } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
 
+/** Bottom, middle and top of the spectrum. At module scope because a literal here allocates. */
+const SPAN_LO = [0, 0.3, 0.65];
+const SPAN_HI = [0.3, 0.65, 1];
+
 /**
  * Three bands of the mix, three overlapping fields, the whole room.
  *
@@ -25,7 +29,8 @@ export const bandBloom: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 48,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 3.04
 	},
 	params: [INTENSITY, param('spread', 'Lobe width', 0.5), param('turn', 'How fast it turns', 0.4)],
 	create(g) {
@@ -61,13 +66,8 @@ export const bandBloom: EffectDef = {
 				// rather than on how bright it is. Driving the level from these was what made a
 				// quiet passage flicker: three bands moving continuously is three independent
 				// reasons for the room to change between beats.
-				const spans: [number, number][] = [
-					[0, 0.3],
-					[0.3, 0.65],
-					[0.65, 1]
-				];
 				for (let k = 0; k < 3; k++) {
-					held[k] = bands[k].update(bandBetween(f, spans[k][0], spans[k][1]), f.beat, f.dt, f.beatPeriod);
+					held[k] = bands[k].update(bandBetween(f, SPAN_LO[k], SPAN_HI[k]), f.beat, f.dt, f.beatPeriod);
 				}
 
 				// Scaled by the passage. An accent that fills the room is only useful if it is also

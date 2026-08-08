@@ -37,7 +37,7 @@ export const snareWhip: EffectDef = {
 				power = 1;
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.4));
 
 				if (f.snare) {
@@ -47,7 +47,7 @@ export const snareWhip: EffectDef = {
 				}
 				if (whipT < 0) return;
 
-				const travel = Math.max(0.05, p.crackBeats * f.beatPeriod);
+				const travel = Math.max(0.05, (p.crackBeats * f.beatPeriod) / Math.max(0.2, motion));
 				const u = (f.t - whipT) / travel;
 				if (u > 1.2) return;
 

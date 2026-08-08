@@ -84,3 +84,66 @@ export function hsv2rgb(
 	out[2] = b * v;
 	return out;
 }
+
+/**
+ * The ramp coordinate that DELIVERS a given true hue, degrees in, 0..1 out.
+ *
+ * The ramp above is not a rotation of textbook HSV, it is a different curve: feeding it a hue
+ * measured in textbook degrees lands up to 30 degrees away, which is a whole colour name. A cover
+ * measured at 90 (chartreuse) came out of the room at 60 (yellow). Anything that measures a hue
+ * from the outside world - artwork, a published colour, a user's pick - is in textbook degrees and
+ * has to come through here before it can be a palette hue.
+ *
+ * Inverted by search rather than algebraically because the ramp is piecewise and not injective:
+ * it spends no coordinates at all between about 150 and 223 degrees, which is cyan, so a cyan
+ * sleeve resolves to the nearest hue the LEDs can actually make instead of to nothing.
+ */
+export function rampHueFor(degrees: number): number {
+	const want = ((degrees % 360) + 360) % 360;
+	let best = 0;
+	let bestErr = Infinity;
+	for (let i = 0; i < RAMP_STEPS; i++) {
+		const err = Math.abs(angleDelta(rampTable()[i], want));
+		if (err < bestErr) {
+			bestErr = err;
+			best = i;
+		}
+	}
+	return best / RAMP_STEPS;
+}
+
+/** A quarter of a degree of resolution, which is finer than the eye and than a byte of hue. */
+const RAMP_STEPS = 1440;
+let RAMP: Float64Array | null = null;
+
+/** Delivered true hue for every ramp coordinate. Built once; the ramp is a compile-time constant. */
+function rampTable(): Float64Array {
+	if (RAMP) return RAMP;
+	const table = new Float64Array(RAMP_STEPS);
+	const rgb: [number, number, number] = [0, 0, 0];
+	for (let i = 0; i < RAMP_STEPS; i++) {
+		hsv2rgb(i / RAMP_STEPS, 1, 1, rgb);
+		table[i] = trueHue(rgb[0], rgb[1], rgb[2]);
+	}
+	RAMP = table;
+	return table;
+}
+
+/** Textbook HSV hue of an RGB triple, degrees. The coordinate the outside world measures in. */
+export function trueHue(r: number, g: number, b: number): number {
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const d = max - min;
+	if (d <= 1e-9) return 0;
+	let h: number;
+	if (max === r) h = ((g - b) / d) % 6;
+	else if (max === g) h = (b - r) / d + 2;
+	else h = (r - g) / d + 4;
+	h *= 60;
+	return ((h % 360) + 360) % 360;
+}
+
+/** Shortest signed way round the wheel, degrees. */
+function angleDelta(from: number, to: number): number {
+	return ((((to - from) % 360) + 540) % 360) - 180;
+}

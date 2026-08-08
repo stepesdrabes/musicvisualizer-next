@@ -13,6 +13,16 @@ import { INTENSITY } from './helpers.ts';
  * Outside a chorus this rests as a dim base wash, which is what earns the bloom: every
  * 8-bar phrase inside the drop lifts the floor another step, the "one more gear" feeling.
  */
+/**
+ * How deep the latched band cuts into the level. See `spectrumBed`'s RELIEF for the sweep.
+ *
+ * Shallower than `spectrumBed`'s 1.4 because this bed already varies in space: the relief
+ * multiplies the petal lobes rather than a flat field, so the two compound. At 1.1 the gate's own
+ * carries test refused it - dimmest wall 23% of the brightest against a 35% bar - which is the
+ * test doing its job rather than a number to argue with.
+ */
+const RELIEF = 0.9;
+
 export const chorusBloom: EffectDef = {
 	id: 'chorusBloom',
 	name: 'Chorus Bloom',
@@ -23,7 +33,8 @@ export const chorusBloom: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 2.13
 	},
 	params: [INTENSITY],
 	create(g) {
@@ -74,7 +85,9 @@ export const chorusBloom: EffectDef = {
 					const voice = held[k] + (held[k + 1] - held[k]) * (fold - k);
 					// From the room's home colour up toward its bright read, never from its shadow.
 					const slot = lerp(SLOT.base, SLOT.glow, clamp(bloom * 1.15 + voice * 0.35));
-					setSample(buf, i, palette, slot + hueShift, gain * petal);
+					// Shallow relief from the same latched band, so an intro shows which part of
+					// the room the arrangement is in rather than one even wash.
+					setSample(buf, i, palette, slot + hueShift, gain * petal * (1 + RELIEF * (voice - 0.5)));
 				}
 
 				nblend(out, buf, alphaFor(f.dt, 0.09));

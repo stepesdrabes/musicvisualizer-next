@@ -1,8 +1,9 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
-import { addSample } from '../color/palette.ts';
-import { clamp, lerp } from '../dsl/math.ts';
-import { fadeToBlack } from '../dsl/buffer.ts';
+import { setSample } from '../color/palette.ts';
+import { alphaFor, clamp, lerp, smoothstep } from '../dsl/math.ts';
+import { BeatHold } from '../dsl/env.ts';
+import { nblend } from '../dsl/buffer.ts';
 import { ringU } from '../dsl/space.ts';
 import { bandAt, spectrumPeak } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -32,17 +33,20 @@ export const spectrumRings: EffectDef = {
 	},
 	params: [INTENSITY, param('turn', 'Rotation', 0.5), param('bands', 'Slices', 0.6)],
 	create(g) {
+		const buf = new Float32Array(g.count * 3);
 		const level = new Float32Array(8);
+		const loudness = new BeatHold(0.3);
 		let turn = 0;
 
 		return {
 			reset() {
+				buf.fill(0);
 				level.fill(0);
+				loudness.reset();
 				turn = 0;
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift, motion } = ctx;
-				fadeToBlack(out, f.dt, 0.1 / Math.max(0.1, motion));
 
 				// One full turn every four phrases at motion 1, which is slow enough to read as
 				// the room moving rather than as something spinning.
@@ -55,24 +59,32 @@ export const spectrumRings: EffectDef = {
 					level[k] += (bandAt(f, u) - level[k]) * a;
 				}
 
-				const loud = spectrumPeak(f);
-				if (loud < 0.02) return;
-				const gain = (0.4 + p.intensity * 0.85) * clamp(0.35 + loud);
-				const width = 1 / slices;
+				// Latched on the beat: a whole-room level following the spectrum's own frame-to-frame
+				// noise is a blink, and the same reading taken once a beat is the room breathing with
+				// the track. Silence is still allowed to take the room out, so a void reads as one.
+				const loud = loudness.update(spectrumPeak(f), f.beat, f.dt, f.beatPeriod);
+				const gain =
+					(0.4 + p.intensity * 0.85) * clamp(0.5 + loud * 0.5) * smoothstep(0.01, 0.08, loud);
 
 				for (let i = 0; i < g.count; i++) {
 					const u = ringU(g, i) + turn;
 					const pos = (u - Math.floor(u)) * slices;
 					const k = Math.min(slices - 1, Math.floor(pos));
-					const frac = pos - k;
+					const w = pos - k;
 					// Blended with the neighbouring slice, so the ring has no seams where a band
 					// hands over to the next.
 					const nk = (k + 1) % slices;
-					const v = level[k] + (level[nk] - level[k]) * frac;
-					const slot = lerp(SLOT.base, SLOT.accent, (k + frac) / slices);
-					addSample(out, i, palette, slot + hueShift, (0.22 + v * 0.9) * gain);
+					const v = level[k] + (level[nk] - level[k]) * w;
+					// Most of what the band says goes into the colour and only a little into the
+					// level: a slice getting louder walks up the palette rather than blinking.
+					const slot = lerp(SLOT.base, SLOT.accent, clamp(((k + w) / slices) * 0.78 + v * 0.22));
+					setSample(buf, i, palette, slot + hueShift, (0.55 + v * 0.5) * gain);
 				}
-				void width;
+
+				// A field, not a trail. Written whole every frame and low-passed only for softness:
+				// decaying what is underneath and adding a turning pattern on top leaves a lagging
+				// edge that ripples at the frame rate.
+				nblend(out, buf, alphaFor(f.dt, 0.07));
 			}
 		};
 	}

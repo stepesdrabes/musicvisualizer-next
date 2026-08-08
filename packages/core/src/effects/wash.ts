@@ -4,6 +4,8 @@ import { setSample } from '../color/palette.ts';
 import { clamp, envelope, frac, lerp } from '../dsl/math.ts';
 import { sinewave } from '../dsl/wave.ts';
 import { ringU } from '../dsl/space.ts';
+import { spectralTilt } from '../dsl/spectrum.ts';
+import { BeatHold } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 export const wash: EffectDef = {
@@ -16,14 +18,21 @@ export const wash: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 1.86
 	},
 	params: [INTENSITY, param('breath', 'Breath', 0.45), param('drift', 'Drift', 0.06, 0, 0.4)],
 	create() {
+		// `f.energy` is beat-resolution data the player interpolates per frame, so a brightness
+		// multiplied by it slides continuously between the beats.
+		const passage = new BeatHold(0.45);
+		const lean = new BeatHold(0.3);
 		let level = 0;
 		return {
 			reset() {
 				level = 0;
+				passage.reset();
+				lean.reset();
 			},
 			render(out, ctx) {
 				const { f, g, p, palette } = ctx;
@@ -31,11 +40,15 @@ export const wash: EffectDef = {
 				// The floor is high because the cue's own intensity already says the passage is
 				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
 				// of a number under one is how an intro reached byte zero.
-				const target = clamp(0.55 + 0.45 * f.energy) * p.intensity;
+				const heard = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const target = clamp(0.55 + 0.45 * heard) * p.intensity;
 				level = envelope(level, target, f.dt, 0.08, 0.5);
 
 				const bright = level * lerp(1 - p.breath, 1, breathe);
-				const phase = (f.barIndex + f.barPhase) * p.drift * ctx.motion;
+				// Where the music sits pushes the gradient round the room, so a passage that opens
+				// up moves the wash rather than only brightening it. Latched, or it shimmers.
+				const tilt = lean.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				const phase = (f.barIndex + f.barPhase) * p.drift * ctx.motion + tilt * 0.4;
 
 				for (let i = 0; i < g.count; i++) {
 					const along = ringU(g, i);

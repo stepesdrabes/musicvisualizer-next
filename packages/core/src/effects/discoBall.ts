@@ -24,6 +24,7 @@ export const discoBall: EffectDef = {
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false,
+		quiet: 3.27,
 		// Discrete beams sweeping over an unlit room.
 		carries: false
 	},

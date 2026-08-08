@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { addSample } from '../color/palette.ts';
-import { clamp } from '../dsl/math.ts';
+import { clamp, lerp } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -35,6 +35,19 @@ export const kickTunnel: EffectDef = {
 	},
 	params: [INTENSITY, param('speed', 'Converge speed', 0.5), param('width', 'Ring width', 0.3)],
 	create(g) {
+		// The nearest LED to the room centre is a third of the way out, because every strip sits
+		// at the wall/ceiling junction. A ring converging through raw `g.dist` therefore leaves
+		// the room at four fifths of its life and the focus this effect exists for never lands.
+		const depth = new Float32Array(g.count);
+		let near = Infinity;
+		let far = 0;
+		for (let i = 0; i < g.count; i++) {
+			if (g.dist[i] < near) near = g.dist[i];
+			if (g.dist[i] > far) far = g.dist[i];
+		}
+		const span = Math.max(1e-3, far - near);
+		for (let i = 0; i < g.count; i++) depth[i] = (g.dist[i] - near) / span;
+
 		const rings: Ripple[] = [];
 		for (let i = 0; i < MAX_RINGS; i++) {
 			rings.push({ alive: false, t0: 0, power: 1, slot: SLOT.base });
@@ -61,7 +74,9 @@ export const kickTunnel: EffectDef = {
 					r.alive = true;
 					r.t0 = f.t;
 					r.power = clamp(0.4 + f.kickEnv * 0.7 + f.bands[Band.Sub] * 0.3);
-					r.slot = f.barIndex % 2 === 0 ? SLOT.base : SLOT.third;
+					// One hue family, alternating saturation rather than hue: where two rings of
+					// different hues meet they sum into a colour the show never declared.
+					r.slot = f.barIndex % 2 === 0 ? SLOT.base : SLOT.glow;
 				}
 
 				// Floor the divisor: at motion near zero the rings should converge SLOWLY, not
@@ -79,22 +94,24 @@ export const kickTunnel: EffectDef = {
 						core.fire(r.power);
 						continue;
 					}
-					// Radius shrinks 1 -> 0 in normalised distance, brightening as it focuses.
+					// Radius shrinks 1 -> 0 across the room's own depth, brightening and heating
+					// toward white as it focuses.
 					const radius = 1 - u;
 					const amp = r.power * gain * (0.4 + 0.6 * u);
+					const slot = lerp(r.slot, SLOT.white, u * 0.6) + hueShift;
 					for (let i = 0; i < g.count; i++) {
-						const d = Math.abs(g.dist[i] - radius);
+						const d = Math.abs(depth[i] - radius);
 						if (d > width) continue;
 						const v = 1 - d / width;
-						addSample(out, i, palette, r.slot + hueShift, v * v * amp);
+						addSample(out, i, palette, slot, v * v * amp);
 					}
 				}
 
 				const cv = core.decay(f.dt, f.beatPeriod, 1.05);
 				if (cv > 0.02) {
 					for (let i = 0; i < g.count; i++) {
-						if (g.dist[i] > 0.22) continue;
-						const v = (1 - g.dist[i] / 0.22) * cv;
+						if (depth[i] > 0.22) continue;
+						const v = (1 - depth[i] / 0.22) * cv;
 						addSample(out, i, palette, SLOT.white + hueShift, v * gain * 0.7);
 					}
 				}

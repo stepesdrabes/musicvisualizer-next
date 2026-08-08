@@ -2,11 +2,13 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
-import { clamp, frac } from '../dsl/math.ts';
+import { clamp, frac, lerp, paletteArc } from '../dsl/math.ts';
 import { fadeToBlack, stampGaussian } from '../dsl/buffer.ts';
+import { BeatHold } from '../dsl/env.ts';
 import { ringsFor, scatter } from '../dsl/space.ts';
+import { spectralTilt } from '../dsl/spectrum.ts';
 import { sinewave } from '../dsl/wave.ts';
-import { INTENSITY, param } from './helpers.ts';
+import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 const MAX_EMBERS = 32;
 
@@ -26,6 +28,7 @@ export const emberStorm: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
+		quiet: 13.49,
 		// Sparks. 19% of the room, three quarters of its light in a tenth of the pixels.
 		carries: false
 	},
@@ -40,35 +43,54 @@ export const emberStorm: EffectDef = {
 		for (let e = 0; e < MAX_EMBERS; e++) {
 			home[e] = hash01(e * 13 + 1);
 			drift[e] = 0.6 + hash01(e * 7 + 5) * 0.4;
-			flickPhase[e] = hash01(e * 31) * 6.28;
+			flickPhase[e] = hash01(e * 31);
 			hot[e] = hash01(e * 3) < 0.7 ? 0 : 1;
 		}
+		// The passage's own level, latched on the beat: `f.energy` is beat-resolution data the
+		// player interpolates per frame, so a gain multiplied by it slides continuously.
+		const passage = new BeatHold(0.45);
+		const tint = new BeatHold(0.15);
 		let windPos = 0;
+		let flickPos = 0;
 
 		return {
 			reset() {
+				passage.reset();
+				tint.reset();
 				windPos = 0;
+				flickPos = 0;
 				scratch.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
-				fadeToBlack(scratch, f.dt, 0.1);
+				const { f, p, palette, hueShift, motion } = ctx;
+				fadeToBlack(scratch, f.dt, beatRelease(f.beatPeriod, 0.25));
 
-				const tension = Math.max(f.buildProgress, f.energy * 0.5);
-				// From a lazy drift at 16 bars per lap to a gale at 2.
+				const tension = clamp(
+					Math.max(f.buildProgress, passage.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.5)
+				);
+				// From a lazy drift at 16 bars per lap to a gale at 2. Never wrapped: each ember's
+				// place is `windPos` times its own drift, so subtracting a whole lap here would
+				// teleport the whole flock.
 				const barsPerLap = 16 - tension * 14;
-				windPos += f.dt / Math.max(0.4, barsPerLap * 4 * f.beatPeriod);
+				windPos += (f.dt / Math.max(0.4, barsPerLap * 4 * f.beatPeriod)) * motion;
+				// Two to six flickers per beat. Taken off the wind position it ran near 25 Hz,
+				// which at 60 fps is aliasing rather than an ember.
+				flickPos += (f.dt / f.beatPeriod) * (2 + tension * 4) * motion;
 
+				const at = tint.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
 				const count = Math.floor(MAX_EMBERS * (0.4 + p.count * 0.6));
-				const gain = (0.45 + p.intensity * 1.1) * clamp(0.25 + tension);
+				const gain = (0.55 + p.intensity * 1.2) * clamp(0.3 + tension * 0.7);
+				// One hue family at a time, walked by where the mix is sitting. Two slots from
+				// opposite ends of the palette drifting over each other's trails sum to a colour
+				// the show never declared, which is what put a quarter of this off palette.
+				const coal = paletteArc(at);
+				const glowing = lerp(coal, SLOT.white, 0.5);
 
 				for (let e = 0; e < count; e++) {
 					const u = frac(home[e] + windPos * drift[e]);
-					const flick =
-						0.55 + 0.45 * sinewave(flickPhase[e] + windPos * (30 + tension * 60));
-					const slot = hot[e] === 0 ? SLOT.base : SLOT.accent;
-					const c = sample(palette, slot + hueShift, flick * gain);
-					stampGaussian(scratch, ring.length, u * ring.length, 1.6, c[0], c[1], c[2], true);
+					const flick = 0.7 + 0.3 * sinewave(flickPhase[e] + flickPos);
+					const c = sample(palette, (hot[e] === 0 ? coal : glowing) + hueShift, flick * gain);
+					stampGaussian(scratch, ring.length, u * ring.length, 2.1, c[0], c[1], c[2], true);
 				}
 
 				out.fill(0);

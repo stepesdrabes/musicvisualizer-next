@@ -44,13 +44,13 @@ export const hatTicker: EffectDef = {
 				pos = 0;
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 				fadeToBlack(scratch, f.dt, beatRelease(f.beatPeriod, 0.6));
 
 				const slot = Math.floor((f.beatIndex + f.beatPhase) * 4);
 				if (slot !== lastSlot) {
 					lastSlot = slot;
-					const step = Math.max(6, Math.round(ring.length * 0.02 * (0.5 + p.stepPx)));
+					const step = Math.max(6, Math.round(ring.length * 0.02 * (0.5 + p.stepPx) * motion));
 					// A hard pan is worth a quarter of the ring; a mono passage moves it not at all,
 					// so the jump only ever appears on tracks that actually do this.
 					const jump = f.pan * f.panWidth * p.panJump * ring.length * 0.25;

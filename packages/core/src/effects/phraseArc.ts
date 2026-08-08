@@ -28,7 +28,8 @@ export const phraseArc: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 1.58
 	},
 	params: [INTENSITY, param('bars', 'Bar lift', 0.45), param('sweep', 'How far it travels', 0.6)],
 	create(g) {
@@ -44,20 +45,31 @@ export const phraseArc: EffectDef = {
 				lean.reset();
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 
 				// Eased both ways rather than a sawtooth: a linear ramp that resets reads as a
 				// fault, and the ear hears a phrase arriving rather than a counter wrapping.
 				const arc = smoothstep(0, 0.55, f.phrasePhase) * (1 - smoothstep(0.75, 1, f.phrasePhase));
 				const barLift = smoothstep(0, 0.3, f.barPhase) * (1 - smoothstep(0.5, 1, f.barPhase));
 				const swell = clamp(0.45 + arc * 0.5 + barLift * p.bars * 0.35);
-				const gain = (0.5 + p.intensity * 0.85) * clamp(0.45 + level.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.55);
+				const heard = level.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const gain = (0.5 + p.intensity * 0.85) * clamp(0.45 + heard * 0.55);
 				// The whole field slides around the room across the phrase, so a long passage is
-				// never twice in the same place even though nothing in it is fast.
-				const travel = f.phrasePhase * p.sweep;
+				// never twice in the same place even though nothing in it is fast. Quantised to
+				// whole periods of the lobe below, which repeats every half turn: `phrasePhase`
+				// restarts at each phrase, and any other distance teleports the field with it.
+				const travel = f.phrasePhase * Math.round(p.sweep * 4 * motion) * 0.5;
 				// Latched on the beat: where the lobes sit is the music's business, but it moving
 				// every frame is what turns a slow field into a shimmer.
 				const tilt = lean.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				// How far up the palette the swell reaches follows the same number, so a passage
+				// opening up pales rather than only brightens. Inside the base hue on purpose: a
+				// walk between two of the show's hues spends most of its time on neither.
+				// A spectral term may only walk the slot inside base..glow. Slot space is a ring whose
+				// positions differ in VALUE - white is 3.7x glow's luminance - so a walk that crosses it
+				// is a spectrum driving BRIGHTNESS through the palette, which is the blinking the
+				// mixer already had to be rescued from once.
+				const top = lerp(SLOT.base, SLOT.glow, clamp(tilt));
 
 				for (let i = 0; i < g.count; i++) {
 					const u = ringU(g, i) + travel;
@@ -67,7 +79,7 @@ export const phraseArc: EffectDef = {
 					// a bed that lit two walls and left two, which no amount of mean brightness fixes.
 					const lobe = 0.79 + 0.21 * Math.cos((u * 2 - tilt) * Math.PI * 2);
 					const v = clamp(swell * lobe);
-					const slot = lerp(SLOT.base, SLOT.glow, v * 0.9);
+					const slot = lerp(SLOT.base, top, v * 0.9);
 					setSample(out, i, palette, slot + hueShift, (0.38 + v * 0.62) * gain);
 				}
 			}

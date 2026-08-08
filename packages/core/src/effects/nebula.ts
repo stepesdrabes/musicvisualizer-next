@@ -22,7 +22,8 @@ export const nebula: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 1.41
 	},
 	params: [INTENSITY, param('scale', 'Scale', 0.4), param('surge', 'Bass surge', 0.6)],
 	create(g) {
@@ -53,7 +54,8 @@ export const nebula: EffectDef = {
 				// The floor is high because the cue's own intensity already says the passage is
 				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
 				// of a number under one is how an intro reached byte zero.
-				level = envelope(level, clamp(0.55 + passage.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.45), f.dt, 0.12, 0.7);
+				const heard = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				level = envelope(level, clamp(0.55 + heard * 0.45), f.dt, 0.12, 0.7);
 				const bright = level * (0.5 + p.intensity * 1.05);
 				const scale = 1.2 + p.scale * 6;
 				const t = clock;

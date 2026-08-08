@@ -14,18 +14,21 @@ export const blackout: EffectDef = {
 		minBars: 1,
 		maxBars: 4,
 		peakReserved: false,
+		quiet: 1.06,
 		// Darkness is the whole instruction.
 		carries: false
 	},
 	params: [param('keepAlive', 'Keep-alive', 0.02, 0, 0.15)],
-	create() {
+	create(g) {
+		// The beam is the strip that is not part of the perimeter ring, not whichever strip a
+		// room spec happens to list last.
+		const beam = g.strips.find((s) => !s.inPerimeter) ?? g.strips[g.strips.length - 1];
 		return {
 			reset() {},
 			render(out, ctx) {
-				const { g, p, palette } = ctx;
+				const { p, palette } = ctx;
 				out.fill(0);
 				if (p.keepAlive <= 0) return;
-				const beam = g.strips[g.strips.length - 1];
 				for (let k = 0; k < beam.count; k++) {
 					setSample(out, beam.offset + k, palette, SLOT.deep + ctx.hueShift, p.keepAlive);
 				}

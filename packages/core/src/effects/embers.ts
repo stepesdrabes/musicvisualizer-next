@@ -4,6 +4,8 @@ import { setSample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
 import { alphaFor, clamp, envelope, frac, lerp } from '../dsl/math.ts';
 import { nblend } from '../dsl/buffer.ts';
+import { spectralTilt, spectrumFocus } from '../dsl/spectrum.ts';
+import { BeatHold } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -14,13 +16,14 @@ export const embers: EffectDef = {
 	id: 'embers',
 	name: 'Embers',
 	role: 'bed',
-	blurb: 'Slow deterministic twinkle pools in the deep palette colours.',
+	blurb: 'Slow deterministic twinkle pools, more of them alight the tighter the music gets.',
 	taste: {
 		energy: 1,
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
+		quiet: 1.52,
 		// A twinkle field: 22% of the room is lit at any instant and the rest is dark.
 		carries: false
 	},
@@ -33,21 +36,40 @@ export const embers: EffectDef = {
 			h1[i] = hash01(i);
 			h2[i] = hash01(i * 7 + 13);
 		}
+		// `f.energy` is beat-resolution data the player interpolates per frame, so a brightness
+		// multiplied by it slides continuously between the beats.
+		const passage = new BeatHold(0.45);
+		const spread = new BeatHold(0.3);
+		// True sample and hold: the hue split moves whole embers between two of the show's
+		// colours, and a glide would slide some of them across the arc in between.
+		const lean = new BeatHold(0);
 		let level = 0;
 
 		return {
 			reset() {
 				level = 0;
 				buf.fill(0);
+				passage.reset();
+				spread.reset();
+				lean.reset();
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 
-				level = envelope(level, clamp(0.2 + f.energy), f.dt, 0.2, 1.2);
-				const duty = (0.1 + p.pool * 0.3) * (0.5 + 0.5 * level);
+				const heard = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				level = envelope(level, clamp(0.2 + heard), f.dt, 0.2, 1.2);
+				// How many embers are alight at once follows how narrow the spectrum is, and which
+				// of them take the third hue follows where it sits. Both latched: the population
+				// may change on a beat, an ember's own brightness may not.
+				const focus = spread.update(spectrumFocus(f), f.beat, f.dt, f.beatPeriod);
+				const split = 0.4 + lean.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod) * 0.35;
+				const duty = (0.1 + p.pool * 0.3) * (0.5 + 0.5 * level) * (0.8 + focus * 0.6);
 				const gain = 0.4 + p.intensity;
 				// Clock in bars, so the twinkle tempo breathes with the track.
-				const clock = (f.barIndex + f.barPhase) * 0.5;
+				const clock = (f.barIndex + f.barPhase) * 0.5 * motion;
+				// A dim floor under the sparks so the gaps are not pure black. It does not hold a
+				// room on its own, which is what `carries: false` above says out loud.
+				const bed = 0.22 * (0.55 + 0.45 * level);
 
 				for (let i = 0; i < g.count; i++) {
 					const speed = 0.35 + h1[i] * 0.65;
@@ -59,12 +81,11 @@ export const embers: EffectDef = {
 						v = u < 0.25 ? u / 0.25 : 1 - (u - 0.25) / 0.75;
 						v *= v;
 					}
-					const slot = h2[i] < 0.6 ? lerp(SLOT.deep, SLOT.base, h1[i]) : SLOT.third;
-					// A bed under the sparks. Twinkles alone light 22% of the room at any instant and
-					// average 0.02 across it, which after gamma is byte zero: a bed is the FLOOR of a
-					// cue and has to hold the room on its own, however sparse the thing on top is.
-					const glow = 0.22 * (0.55 + 0.45 * level);
-					setSample(buf, i, palette, slot + hueShift, glow + v * gain * (0.3 + 0.7 * h1[i]));
+					// Pools in the lit half of the base hue rather than down at `deep`, whose own
+					// value is a tenth: an ember drawn there is scaled to nothing however hard the
+					// twinkle flares, so a third of the field could never light at all.
+					const slot = h2[i] < split ? lerp(SLOT.base, SLOT.glow, h1[i]) : SLOT.third;
+					setSample(buf, i, palette, slot + hueShift, bed + v * gain * (0.3 + 0.7 * h1[i]));
 				}
 
 				nblend(out, buf, alphaFor(f.dt, 0.09));

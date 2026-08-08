@@ -23,6 +23,7 @@ export const subThrob: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
+		quiet: 2.30,
 		// Driven entirely by the sub band, so a passage with no bass renders nothing.
 		carries: false
 	},
@@ -39,11 +40,14 @@ export const subThrob: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
+				// Only the rising path gets through an asymmetric follower, so the attack is the one
+				// place the sub band's own frame-to-frame noise can reach the room. A tenth of a
+				// beat still lands on the note and leaves the jitter behind.
 				env = envelope(
 					env,
 					clamp(f.bands[Band.Sub] * 1.5),
 					f.dt,
-					0.02,
+					Math.max(0.03, f.beatPeriod * 0.1),
 					Math.max(0.5, f.beatPeriod * 1.4)
 				);
 				const gain = env * (0.45 + p.intensity * 0.9);

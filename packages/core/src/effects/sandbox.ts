@@ -22,6 +22,9 @@ const BANNED = [
 	/\bglobalThis\b/,
 	/\beval\s*\(/,
 	/\bnew\s+Function\b/,
+	// `({}).constructor.constructor` IS `Function`, so banning the keyword alone leaves the
+	// door open. No effect has any business reaching for a constructor.
+	/\.\s*constructor\b/,
 	/\bfetch\s*\(/,
 	/\bXMLHttpRequest\b/,
 	/\bWebSocket\b/,

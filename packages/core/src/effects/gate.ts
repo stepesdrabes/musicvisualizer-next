@@ -237,3 +237,82 @@ export function runGate(def: EffectDef, g: Geometry): GateResult {
 
 	return { id: def.id, ok: failures.length === 0, failures, producesLight: maxSeen > 1e-3 };
 }
+
+/**
+ * An intro or outro: quiet, no kit at all, but real music playing.
+ *
+ * The gate's own journey has no such section, so nothing has ever been checked against the one
+ * case the room is reported to look dead in. It is deliberately NOT part of `SCRIPT`: pass/fail
+ * has to stay comparable across sessions, and this asks a quality question rather than a
+ * correctness one. `bench/effectprobe.ts` is what reads it.
+ *
+ * The spectrum here moves the way a real quiet passage does - a slow tilt, a wandering peak and a
+ * band that comes and goes - while `energy` barely changes. An effect that holds still through
+ * this is an effect that will hold still through every intro in the corpus, however good it looks
+ * over a drop.
+ */
+export function quietFrames(bpm = 96, bars = 16): ShowFrame[] {
+	const beatPeriod = 60 / bpm;
+	const dt = 1 / FPS;
+	const frames: ShowFrame[] = [];
+	const total = Math.round((bars * 4 * beatPeriod) / dt);
+
+	let lastBeat = Number.NaN;
+	let lastBar = Number.NaN;
+	let lastPhrase = Number.NaN;
+
+	for (let k = 0; k < total; k++) {
+		const t = k * dt;
+		const beatsF = t / beatPeriod;
+		const barsF = beatsF / 4;
+		const beatIndex = Math.floor(beatsF);
+		const barIndex = Math.floor(barsF);
+		const phraseIndex = Math.floor(barsF / 8);
+
+		const f = createShowFrame();
+		f.t = t;
+		f.dt = dt;
+		f.beat = beatIndex !== lastBeat;
+		f.downbeat = barIndex !== lastBar;
+		f.phraseStart = phraseIndex !== lastPhrase;
+		lastBeat = beatIndex;
+		lastBar = barIndex;
+		lastPhrase = phraseIndex;
+
+		f.beatIndex = beatIndex;
+		f.barIndex = barIndex;
+		f.beatPhase = beatsF - beatIndex;
+		f.barPhase = barsF - barIndex;
+		f.phrasePhase = barsF / 8 - phraseIndex;
+		f.beatPeriod = beatPeriod;
+		f.bpm = bpm;
+		f.section = barsF < bars / 2 ? 'intro' : 'outro';
+		f.sectionProgress = (barsF % (bars / 2)) / (bars / 2);
+		f.energy = 0.2 + 0.04 * Math.sin(t * 0.4);
+
+		// No kit. This is the whole point: an effect that only moves on a kick has nothing here.
+		f.kick = false;
+		f.snare = false;
+		f.hat = false;
+		f.kickEnv = 0;
+		f.snareEnv = 0;
+		f.hatEnv = 0;
+
+		const tilt = 0.5 + 0.5 * Math.sin(t * 0.23);
+		f.bands[0] = 0.22 + 0.14 * Math.sin(t * 0.31);
+		f.bands[1] = 0.3 + 0.18 * Math.sin(t * 0.19 + 1);
+		f.bands[2] = 0.28 + 0.2 * Math.sin(t * 0.27 + 2);
+		f.bands[3] = 0.18 + 0.16 * tilt;
+
+		for (let i = 0; i < f.spectrum.length; i++) {
+			const u = f.spectrum.length > 1 ? i / (f.spectrum.length - 1) : 0;
+			// A peak that wanders across the bands, so an effect reading position sees position
+			// move and one reading a single band sees it come and go.
+			const peak = Math.exp(-((u - tilt) ** 2) / 0.05);
+			f.spectrum[i] = clamp(0.15 + 0.6 * peak + 0.1 * Math.sin(t * 0.7 + i * 0.9));
+		}
+
+		frames.push(f);
+	}
+	return frames;
+}

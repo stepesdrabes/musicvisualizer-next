@@ -28,7 +28,8 @@ export const harmonicHaze: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 1.77
 	},
 	params: [INTENSITY, param('grain', 'Cell size', 0.5), param('drift', 'Drift speed', 0.5)],
 	create(g) {
@@ -62,13 +63,13 @@ export const harmonicHaze: EffectDef = {
 				// A busy mix is a fine grain; one sustained voice is a broad slow field.
 				const scale = (1.4 + p.grain * 2.2) * (0.6 + (1 - busy) * 1.8);
 				const gain = 0.48 + p.intensity * 0.8;
+				// Bottom-heavy walks toward the room's own colour, bright toward the third.
+				const slot = lerp(SLOT.base, SLOT.third, clamp(tilt * 1.2 - bottom * 0.35));
 
 				for (let i = 0; i < g.count; i++) {
 					const u = ringU(g, i);
 					const n = noise3(u * scale, phase, tilt * 1.5);
 					const v = clamp(0.4 + n * 0.75);
-					// Bottom-heavy walks toward the room's own colour, bright toward the third.
-					const slot = lerp(SLOT.base, SLOT.third, clamp(tilt * 1.2 - bottom * 0.35));
 					setSample(out, i, palette, lerp(slot, SLOT.glow, v * 0.35) + hueShift, (0.4 + v * 0.6) * gain);
 				}
 			}

@@ -22,6 +22,7 @@ export const bassRing: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
+		quiet: 2.18,
 		// The dark ceiling beam is the whole point of the look, and it is also why this cannot
 		// be the only thing in a cue: one of the room's five strips is off at all times.
 		carries: false
@@ -37,14 +38,17 @@ export const bassRing: EffectDef = {
 				buf.fill(0);
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p, palette, hueShift, motion } = ctx;
 
+				// Both constants are beats rather than seconds, so the glow keeps the track's time
+				// at any tempo. The attack is the only path the bass bands' own frame-to-frame
+				// noise has into the room, which is why it is a tenth of a beat and not a frame.
 				env = envelope(
 					env,
 					clamp(f.bands[Band.Sub] * 1.4 + f.bands[Band.Low] * 0.4),
 					f.dt,
-					0.015,
-					0.4
+					Math.max(0.03, f.beatPeriod * 0.1),
+					Math.max(0.18, f.beatPeriod * 0.9)
 				);
 				const bright = env * (0.4 + p.intensity * 0.9);
 
@@ -54,7 +58,8 @@ export const bassRing: EffectDef = {
 						continue;
 					}
 					// Slow undulation so the glow reads as a liquid, not a tube light.
-					const wave = 0.8 + 0.2 * sinewave(g.perim[i] * 2 + (f.barIndex + f.barPhase) * 0.05);
+					const wave =
+						0.8 + 0.2 * sinewave(g.perim[i] * 2 + (f.barIndex + f.barPhase) * 0.05 * motion);
 					const slot = lerp(SLOT.deep, SLOT.base, clamp(env * 1.3));
 					setSample(buf, i, palette, slot + hueShift, bright * wave);
 				}

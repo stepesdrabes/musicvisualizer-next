@@ -50,7 +50,7 @@ export { HIT_RULES, SHOW_VERSION } from './contracts/show.ts';
 export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 
 export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
-export { hsv2rgb } from './color/hsv.ts';
+export { hsv2rgb, rampHueFor, trueHue } from './color/hsv.ts';
 export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
 export {
 	BARS_PER_PHRASE,
@@ -68,7 +68,7 @@ export { Rng, hash01 } from './dsl/rng.ts';
 export { Layer, Mixer } from './mixer.ts';
 export { ShowPlayer } from './player.ts';
 export { BUILT_IN_EFFECTS, EffectRegistry } from './effects/index.ts';
-export { runGate, scriptFrames, type GateResult } from './effects/gate.ts';
+export { quietFrames, runGate, scriptFrames, type GateResult } from './effects/gate.ts';
 export {
 	SANDBOX_API,
 	compileGenerated,

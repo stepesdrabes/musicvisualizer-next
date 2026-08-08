@@ -1,10 +1,13 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import type { StripSpec } from '../contracts/room.ts';
+import type { Palette } from '../contracts/palette.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
 import { PulseEnv } from '../dsl/env.ts';
+import { spectralTilt } from '../dsl/spectrum.ts';
 import { stampOnStrip } from '../dsl/space.ts';
-import { beatRelease, INTENSITY, param, WallDrops } from './helpers.ts';
+import { beatRelease, INTENSITY, param, WallDrops, type WallDrop } from './helpers.ts';
 
 export const pixelRain: EffectDef = {
 	id: 'pixelRain',
@@ -26,40 +29,58 @@ export const pixelRain: EffectDef = {
 	create(g) {
 		const rain = new WallDrops(g);
 		const landGlow = rain.walls.map(() => new PulseEnv());
+		const landTint = new Float32Array(rain.walls.length).fill(SLOT.base);
+		const rgb: [number, number, number] = [0, 0, 0];
+
+		// The frame's context, held so the fall callbacks can be built once. `fall` takes them
+		// every frame, and a fresh closure per frame is an allocation per frame.
+		let dst: Float32Array = new Float32Array(0);
+		let palette: Palette = new Float32Array(0);
+		let hueShift = 0;
+		let gain = 1;
+
+		const onFall = (drop: WallDrop, u: number, pos: number, wall: StripSpec): void => {
+			sample(palette, drop.tint + hueShift, gain * (0.5 + 0.5 * u), rgb);
+			stampOnStrip(dst, g.count, wall, pos, 1.1, rgb);
+		};
+		const onLand = (drop: WallDrop): void => {
+			landGlow[drop.wall].fire(0.8);
+			landTint[drop.wall] = drop.tint;
+		};
 
 		return {
 			reset() {
 				rain.reset();
 				for (const l of landGlow) l.reset();
+				landTint.fill(SLOT.base);
 			},
 			render(out, ctx) {
-				const { f, p, palette, hueShift } = ctx;
+				const { f, p } = ctx;
+				dst = out;
+				palette = ctx.palette;
+				hueShift = ctx.hueShift;
 				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.3));
 
-				const gain = 0.6 + p.intensity * 1.4;
+				gain = 0.6 + p.intensity * 1.4;
 				const spawned = rain.spawn(f, p.perBeat);
 				if (spawned) {
-					// Mostly the home hue with designed interruptions, rotating per bar.
-					const pick = ((f.barIndex % 4) + 4) % 4;
-					spawned.tint = pick === 3 ? SLOT.accent : pick === 2 ? SLOT.third : SLOT.base;
+					// Where the arrangement is sitting chooses the droplet's colour, so a bass
+					// passage rains in the home hue and an opening one answers in the accent.
+					// Read once at spawn, which is on the grid, so nothing recolours mid-fall.
+					const tilt = spectralTilt(f);
+					spawned.tint = tilt < 0.34 ? SLOT.base : tilt < 0.62 ? SLOT.third : SLOT.accent;
 				}
 
-				rain.fall(
-					f,
-					p.fallBeats,
-					(drop, u, pos, wall) => {
-						const c = sample(palette, drop.tint + hueShift, gain * (0.5 + 0.5 * u));
-						stampOnStrip(out, g.count, wall, pos, 1.1, c);
-					},
-					(drop) => landGlow[drop.wall].fire(0.8)
-				);
+				rain.fall(f, p.fallBeats / Math.max(0.2, ctx.motion), onFall, onLand);
 
 				for (let w = 0; w < rain.walls.length; w++) {
 					const v = landGlow[w].decay(f.dt, f.beatPeriod, 3);
 					if (v < 0.02) continue;
 					const wall = rain.walls[w];
-					const c = sample(palette, SLOT.glow + hueShift, v * gain * 0.8);
-					stampOnStrip(out, g.count, wall, wall.count / 2, 3.2, c);
+					// The splash keeps its own droplet's colour. A base-hue glow under an accent
+					// droplet is two hues in one place, which sums to one the palette cannot make.
+					sample(palette, landTint[w] + hueShift, v * gain * 0.8, rgb);
+					stampOnStrip(out, g.count, wall, wall.count / 2, 3.2, rgb);
 				}
 			}
 		};
