@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+	<!--
+		The same mark as the top bar and the favicon, drawn at icon size: one bolt, no gradient,
+		no bevel. macOS rounds the corners itself for the dock, so the square is full bleed.
+	-->
+	<rect width="1024" height="1024" rx="228" fill="#09090b" />
+	<rect x="8" y="8" width="1008" height="1008" rx="220" fill="none" stroke="#26262c" stroke-width="16" />
+	<path d="M596 176 316 592h158l-42 256 280-416H554z" fill="#fafafa" />
+</svg>

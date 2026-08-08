@@ -1,0 +1,14 @@
+{
+	"name": "@mv/desktop",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "tauri dev",
+		"build": "tauri build",
+		"bundle": "node scripts/bundle.js"
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "^2.11.4"
+	}
+}
