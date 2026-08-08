@@ -12,6 +12,7 @@
 	import Inspector from '$components/Inspector.svelte';
 	import PlayerBar from '$components/PlayerBar.svelte';
 	import QueuePanel from '$components/QueuePanel.svelte';
+	import RoomModal from '$components/RoomModal.svelte';
 	import SearchModal from '$components/SearchModal.svelte';
 	import Stage from '$components/Stage.svelte';
 	import TimelineDrawer from '$components/TimelineDrawer.svelte';
@@ -542,6 +543,8 @@
 </div>
 
 <SearchModal bind:open={searchOpen} bind:query={searchSeed} {library} onpick={pick} />
+
+<RoomModal />
 
 <HardwareModal
 	open={hardwareOpen}

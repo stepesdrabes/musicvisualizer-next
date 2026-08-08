@@ -15,14 +15,6 @@
 
 	let panel: HTMLDivElement | undefined = $state();
 
-	function portal(node: HTMLElement) {
-		const parent = node.parentNode;
-		document.body.appendChild(node);
-		// Put it back before Svelte removes it, or Svelte's own cleanup looks for a child of a
-		// node that no longer owns it.
-		return () => parent?.appendChild(node);
-	}
-
 	/**
 	 * Focus is trapped rather than merely moved: the dialog sits over a screen full of
 	 * tabbable controls, and tabbing out of a command palette into the cue table behind it
@@ -54,25 +46,22 @@
 
 <svelte:window on:keydown={onkeydown} />
 
-{#if open}
-	<!--
-		Moved to the body rather than left where it was written.
+<!--
+	Render this at the page root, not inside a panel.
 
-		Every panel in this app blurs what is behind it, and a backdrop-filter makes an element
-		a containing block for fixed-position descendants: a dialog opened from inside the queue
-		rail would centre itself on the rail and be clipped by it. Portalling means a dialog is
-		correct wherever it is written.
-	-->
-	<div {@attach portal}>
-		<div class="backdrop" onclick={onclose} role="presentation"></div>
-		<div
-			class="panel"
-			bind:this={panel}
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby={labelledBy}>
-			{@render children()}
-		</div>
+	`position: fixed` is relative to the nearest ancestor with a filter, transform or
+	backdrop-filter, and every panel in this app blurs what is behind it. A dialog written
+	inside the queue rail centres itself on the rail and is clipped by it.
+-->
+{#if open}
+	<div class="backdrop" onclick={onclose} role="presentation"></div>
+	<div
+		class="panel"
+		bind:this={panel}
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby={labelledBy}>
+		{@render children()}
 	</div>
 {/if}
 
