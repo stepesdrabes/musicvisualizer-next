@@ -29,6 +29,23 @@ const flag = (n: string) => {
 	return i >= 0 ? argv[i + 1] : undefined;
 };
 
+/**
+ * The cover hue the app would have passed, read back from the cached meta.
+ *
+ * Without this `composeShow` silently falls back to the tempo-derived palette, so every reingest
+ * unlinked every show from its artwork and left no trace: same shape, different colour. The app
+ * has always passed it (`routes/api/ingest/+server.ts`), which is what made the difference
+ * invisible until a show composed here was compared against one composed there.
+ */
+function artHueOf(id: string): number | null | undefined {
+	try {
+		return (JSON.parse(readFileSync(join(CACHE, `${id}.meta.json`), 'utf8')) as { artHue?: number | null })
+			.artHue;
+	} catch {
+		return undefined;
+	}
+}
+
 const files = readdirSync(CACHE).filter((f) => AUDIO.test(f));
 const shardAt = argv.indexOf('--shard');
 
@@ -36,7 +53,10 @@ if (argv.includes('--compose-only')) {
 	for (const file of files) {
 		const id = file.replace(AUDIO, '');
 		const analysis = JSON.parse(readFileSync(analysisPath(id), 'utf8')) as TrackAnalysis;
-		writeFileSync(showPath(id), JSON.stringify(composeShow(analysis), null, '\t'));
+		writeFileSync(
+			showPath(id),
+			JSON.stringify(composeShow(analysis, { artHue: artHueOf(id) }), null, '\t')
+		);
 	}
 	console.error(`re-composed ${files.length} shows`);
 } else if (shardAt >= 0) {
@@ -73,7 +93,10 @@ if (argv.includes('--compose-only')) {
 					downbeats: tracked?.downbeats
 				});
 				writeFileSync(analysisPath(id), JSON.stringify(analysis, null, '\t'));
-				writeFileSync(showPath(id), JSON.stringify(composeShow(analysis), null, '\t'));
+				writeFileSync(
+					showPath(id),
+					JSON.stringify(composeShow(analysis, { artHue: artHueOf(id) }), null, '\t')
+				);
 				process.stdout.write(
 					`${id.padEnd(20)} ${String(analysis.sections.length).padStart(3)} sections  ${String(analysis.onsets.kick.times.length).padStart(5)} kicks\n`
 				);

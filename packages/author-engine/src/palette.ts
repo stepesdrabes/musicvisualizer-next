@@ -1,5 +1,5 @@
 import type { ShowPalette, TrackAnalysis } from '@mv/core';
-import { Rng } from '@mv/core';
+import { Rng, rampHueFor } from '@mv/core';
 
 /**
  * The palette library, base first. Every base and accent are 140-180 degrees apart, which is
@@ -97,8 +97,12 @@ export function choosePalette(analysis: TrackAnalysis, rng: Rng, artHue?: number
 	// sleeve gets a yellow room with the same complementary answer the palette was built with.
 	// Without a cover the tonic rotates the story by up to fifteen degrees instead, so two
 	// tracks landing on the same palette in different keys still light the room differently.
+	// The cover's hue is measured in textbook HSV; the palette's hues are ramp coordinates, and the
+	// two are different curves rather than a rotation of each other. Converting is not a nicety:
+	// declared 90 is delivered as 60, so a chartreuse sleeve lit the room yellow and the palette
+	// looked like it had ignored the artwork.
 	const shift = fromArt
-		? (((artHue as number) - choice.base) % 360 + 360) % 360
+		? ((rampHueFor(artHue as number) * 360 - choice.base) % 360 + 360) % 360
 		: analysis.key.confidence > 0.5
 			? (analysis.key.tonic / 12) * 30 - 15
 			: 0;
