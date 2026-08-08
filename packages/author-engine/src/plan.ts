@@ -122,7 +122,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		// ended up lit by stage blinders.
 		const bare =
 			slot.section === 'intro' || slot.section === 'outro' || slot.section === 'breakdown';
-		add('bed', picker.pick({ role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: bare, group: slot.index === 0 ? slot.span.group : undefined }));
+		add('bed', picker.pick({ role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: bare, bare, group: slot.index === 0 ? slot.span.group : undefined }));
 		switch (slot.section) {
 			case 'void':
 				break;
@@ -136,14 +136,14 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// This used to be unfiltered, because requiring it once left most of these cues
 				// with no accent at all: only a single accent in the catalog qualified. There are
 				// now enough that the rule can be what it should always have been.
-				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true }));
+				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare }));
 				break;
 
 			case 'breakdown':
 				// One texture on top of the bed, and only sometimes: a breakdown that keeps
 				// everything running is not a breakdown.
 				if (rng.float() < 0.5) {
-					add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true }));
+					add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare }));
 				}
 				break;
 
