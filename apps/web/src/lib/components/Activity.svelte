@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { Step } from '$lib/types.ts';
+	import Icon from '$lib/ui/Icon.svelte';
+	import Spinner from '$lib/ui/Spinner.svelte';
 
 	let { steps, compact = false }: { steps: Step[]; compact?: boolean } = $props();
 
@@ -18,13 +20,13 @@
 		<div class="step {step.kind}" class:pending={step.state === 'pending'}>
 			<span class="glyph">
 				{#if step.state === 'pending'}
-					<span class="spin"></span>
+					<Spinner size={11} accent />
 				{:else if step.state === 'failed'}
-					<span class="mark bad">×</span>
+					<span class="bad"><Icon name="x" size={11} /></span>
 				{:else if step.kind === 'phase'}
-					<span class="mark accent">▸</span>
+					<span class="live"><Icon name="chevronRight" size={11} /></span>
 				{:else}
-					<span class="mark ok">✓</span>
+					<span class="ok"><Icon name="check" size={11} /></span>
 				{/if}
 			</span>
 
@@ -41,19 +43,19 @@
 	.feed {
 		display: flex;
 		flex-direction: column;
-		gap: 5px;
+		gap: 7px;
 		overflow-y: auto;
 		min-height: 0;
 	}
 	.feed.compact {
-		gap: 4px;
+		gap: 6px;
 		max-height: 190px;
 		overflow: hidden;
 		mask-image: linear-gradient(to bottom, transparent, #000 22px);
 	}
 	.step {
 		display: flex;
-		gap: 8px;
+		gap: 9px;
 		align-items: flex-start;
 		text-align: left;
 		animation: in 0.18s ease-out;
@@ -65,72 +67,55 @@
 		}
 	}
 	.glyph {
-		width: 12px;
+		width: 13px;
 		flex: none;
 		display: grid;
 		place-items: center;
-		padding-top: 2px;
+		padding-top: 3px;
 	}
-	.mark {
-		font-size: 10px;
-		line-height: 1;
-	}
-	.mark.ok {
+	.ok {
 		color: var(--ok);
-		opacity: 0.75;
+		opacity: 0.8;
 	}
-	.mark.bad {
+	.bad {
 		color: var(--bad);
-		font-size: 13px;
 	}
-	.mark.accent {
-		color: var(--accent);
-	}
-	.spin {
-		width: 9px;
-		height: 9px;
-		border-radius: 50%;
-		border: 1.5px solid #ffffff1f;
-		border-top-color: var(--accent);
-		animation: spin 0.7s linear infinite;
-	}
-	@keyframes spin {
-		to {
-			rotate: 360deg;
-		}
+	.live {
+		color: var(--live);
 	}
 
 	.body {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 2px 7px;
+		gap: 2px 8px;
 		min-width: 0;
 		align-items: baseline;
 	}
 	.label {
-		font-size: 12px;
-		color: var(--dim);
+		font-size: 12.5px;
+		color: var(--muted-foreground);
 	}
 	.step.phase .label {
-		color: var(--text);
+		color: var(--foreground);
 		font-weight: 600;
-		font-size: 12.5px;
+		font-size: 13px;
 	}
 	.step.think .label {
-		color: var(--faint);
+		color: var(--subtle-foreground);
 		font-style: italic;
 	}
-	.detail {
-		color: var(--faint);
+	.detail,
+	.result {
+		color: var(--subtle-foreground);
+		font-size: 11.5px;
 	}
 	.result {
-		color: var(--faint);
 		width: 100%;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 	.step.pending .label {
-		color: var(--text);
+		color: var(--foreground);
 	}
 </style>

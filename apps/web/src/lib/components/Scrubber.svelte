@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
+	import { clock, titleCase } from '$lib/format.ts';
 
 	let {
 		analysis,
@@ -28,12 +29,14 @@
 	}
 
 	function down(e: PointerEvent) {
+		if (duration <= 0) return;
 		dragging = true;
 		el?.setPointerCapture(e.pointerId);
 		onseek(timeAt(e));
 	}
 
 	function move(e: PointerEvent) {
+		if (duration <= 0) return;
 		hoverAt = timeAt(e);
 		if (dragging) onseek(hoverAt);
 	}
@@ -41,11 +44,6 @@
 	function up(e: PointerEvent) {
 		dragging = false;
 		el?.releasePointerCapture(e.pointerId);
-	}
-
-	function clock(t: number): string {
-		if (!Number.isFinite(t) || t < 0) return '0:00';
-		return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 	}
 
 	function barAt(t: number): number {
@@ -68,7 +66,7 @@
 </script>
 
 <div class="scrubber" class:active={dragging}>
-	<span class="t mono">{clock(position)}</span>
+	<span class="t mono muted">{clock(position)}</span>
 
 	<div
 		class="track"
@@ -110,30 +108,32 @@
 		<div class="veil" style:left={`${(played * 100).toFixed(3)}%`}></div>
 		<div class="knob" style:left={`${(played * 100).toFixed(3)}%`}></div>
 
-		{#if hoverAt !== null}
-			<div class="tip" style:left={`${((hoverAt / duration) * 100).toFixed(3)}%`}>
+		{#if hoverAt !== null && duration > 0}
+			<div
+				class="tip"
+				style:left={`${((hoverAt / duration) * 100).toFixed(3)}%`}>
 				<span class="mono">{clock(hoverAt)}</span>
 				{#if analysis}
-					<span class="mono faint">bar {barAt(hoverAt)} · {sectionAt(hoverAt)}</span>
+					<span class="sub subtle">bar {barAt(hoverAt)} · {titleCase(sectionAt(hoverAt))}</span>
 				{/if}
 			</div>
 		{/if}
 	</div>
 
-	<span class="t mono faint">{clock(duration - position)}</span>
+	<span class="t mono subtle">{clock(Math.max(0, duration - position))}</span>
 </div>
 
 <style>
 	.scrubber {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 11px;
 		width: 100%;
 	}
 	.t {
-		width: 38px;
+		width: 40px;
 		flex: none;
-		color: var(--dim);
+		font-size: 11.5px;
 	}
 	.t:last-child {
 		text-align: right;
@@ -141,7 +141,7 @@
 	.track {
 		position: relative;
 		flex: 1;
-		height: 16px;
+		height: 18px;
 		display: flex;
 		align-items: center;
 		cursor: pointer;
@@ -153,14 +153,14 @@
 		top: 50%;
 		translate: 0 -50%;
 		height: 5px;
-		border-radius: 3px;
+		border-radius: 999px;
 		overflow: hidden;
-		background: var(--surface-3);
-		transition: height 0.12s;
+		background: var(--muted);
+		transition: height 0.12s ease;
 	}
 	.track:hover .sections,
 	.scrubber.active .sections {
-		height: 8px;
+		height: 9px;
 	}
 	.sec {
 		position: absolute;
@@ -174,22 +174,22 @@
 		top: 50%;
 		translate: 0 -50%;
 		right: 0;
-		height: 8px;
-		background: #08080ab8;
-		border-radius: 0 3px 3px 0;
+		height: 9px;
+		background: #09090bc4;
+		border-radius: 0 999px 999px 0;
 		pointer-events: none;
 	}
 	.knob {
 		position: absolute;
 		top: 50%;
-		width: 11px;
-		height: 11px;
+		width: 12px;
+		height: 12px;
 		border-radius: 50%;
 		background: #fff;
 		translate: -50% -50%;
-		box-shadow: 0 0 0 1px #0009;
+		box-shadow: 0 1px 4px #000000b3;
 		opacity: 0;
-		transition: opacity 0.12s;
+		transition: opacity 0.12s ease;
 		pointer-events: none;
 	}
 	.track:hover .knob,
@@ -200,10 +200,11 @@
 		position: absolute;
 		top: 50%;
 		width: 2px;
-		height: 13px;
+		height: 14px;
+		border-radius: 1px;
 		translate: -50% -50%;
 		pointer-events: none;
-		opacity: 0.9;
+		opacity: 0.85;
 	}
 	.hit.slam {
 		background: #fff;
@@ -214,19 +215,26 @@
 	.hit.blackout {
 		background: var(--bad);
 	}
+	.hit.bump {
+		background: var(--live);
+	}
 	.tip {
 		position: absolute;
-		bottom: 20px;
+		bottom: 24px;
 		translate: -50% 0;
-		background: var(--surface-3);
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		padding: 3px 7px;
 		display: flex;
 		flex-direction: column;
+		align-items: center;
 		gap: 1px;
+		padding: 5px 9px;
+		background: var(--popover);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
 		white-space: nowrap;
 		pointer-events: none;
-		box-shadow: 0 6px 18px #0007;
+		box-shadow: var(--shadow-md);
+	}
+	.tip .sub {
+		font-size: 11.5px;
 	}
 </style>

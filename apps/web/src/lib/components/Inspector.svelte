@@ -1,9 +1,15 @@
 <script lang="ts">
-	import type { EffectDef, Show, TrackAnalysis } from '@mv/core';
+	import type { Show, TrackAnalysis } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import type { Step } from '$lib/types.ts';
+	import { titleCase } from '$lib/format.ts';
 	import Activity from './Activity.svelte';
-	import Gallery from './Gallery.svelte';
+	import Badge from '$lib/ui/Badge.svelte';
+	import Button from '$lib/ui/Button.svelte';
+	import Icon from '$lib/ui/Icon.svelte';
+	import Section from '$lib/ui/Section.svelte';
+	import Spinner from '$lib/ui/Spinner.svelte';
+	import Tabs from '$lib/ui/Tabs.svelte';
 
 	let {
 		analysis,
@@ -12,14 +18,9 @@
 		log,
 		steps,
 		warnings,
-		ddpHost = $bindable(''),
-		ddpRunning,
-		ontoggleOutput,
-		generatedEffects = [],
-		previewing = null,
-		previewParams = {},
-		onpreview,
-		onparam,
+		canAuthor = false,
+		authoring = false,
+		onauthor,
 		onrelevel,
 		relevelling = false
 	}: {
@@ -29,19 +30,21 @@
 		log: string[];
 		steps: Step[];
 		warnings: string[];
-		ddpHost?: string;
-		ddpRunning: boolean;
-		ontoggleOutput: () => void;
-		generatedEffects?: EffectDef[];
-		previewing?: string | null;
-		previewParams?: Record<string, number>;
-		onpreview: (def: EffectDef | null) => void;
-		onparam: (key: string, value: number) => void;
+		canAuthor?: boolean;
+		authoring?: boolean;
+		onauthor: () => void;
 		onrelevel: (level: number) => void;
 		relevelling?: boolean;
 	} = $props();
 
-	let tab = $state<'show' | 'cues' | 'effects' | 'design' | 'log'>('show');
+	const TABS = [
+		{ id: 'show', label: 'Show' },
+		{ id: 'cues', label: 'Cues' },
+		{ id: 'design', label: 'Design' },
+		{ id: 'log', label: 'Log' }
+	];
+
+	let tab = $state('show');
 
 	// Follow the agent automatically while it works, then hand the view back.
 	let followed = $state(false);
@@ -51,8 +54,8 @@
 			tab = 'design';
 		}
 	});
-	let logEl: HTMLPreElement | undefined = $state();
 
+	let logEl: HTMLPreElement | undefined = $state();
 	$effect(() => {
 		// Depend on length so a new line scrolls the view.
 		void log.length;
@@ -62,6 +65,7 @@
 	const activeCue = $derived(
 		show ? [...show.cues].reverse().find((c) => c.bar <= readout.bar) : undefined
 	);
+	const liveTabs = $derived(steps.some((s) => s.state === 'pending') ? ['design'] : []);
 
 	function layerList(cue: Show['cues'][number]): string {
 		return Object.entries(cue.layers)
@@ -71,172 +75,157 @@
 	}
 </script>
 
-<aside>
-	<nav>
-		{#each ['show', 'cues', 'effects', 'design', 'log'] as const as t (t)}
-			<button class:on={tab === t} onclick={() => (tab = t)}>
-				{t}
-				{#if t === 'design' && steps.some((s) => s.state === 'pending')}
-					<span class="dot-live"></span>
-				{/if}
-			</button>
-		{/each}
-	</nav>
+<aside class="floats">
+	<div class="head">
+		<Tabs tabs={TABS} bind:value={tab} live={liveTabs} />
+	</div>
 
 	<div class="scroll">
 		{#if tab === 'show'}
+			<div class="action">
+				<Button variant="primary" disabled={!canAuthor || authoring} onclick={onauthor}>
+					{#if authoring}
+						<Spinner size={14} />
+						Designing
+					{:else}
+						<Icon name="sparkles" size={15} />
+						{show ? 'Revise with Claude' : 'Design with Claude'}
+					{/if}
+				</Button>
+			</div>
+
 			{#if analysis}
-				<section>
-					<h2 class="caption">Track</h2>
-					<dl class="mono">
-						<dt>tempo</dt>
+				<Section title="Track">
+					<dl>
+						<dt>Tempo</dt>
 						<dd>
-							{analysis.tempo.bpm} bpm · confidence {analysis.tempo.confidence.toFixed(2)}
+							<span class="mono">{analysis.tempo.bpm}</span> bpm
+							<span class="sep">·</span> confidence
+							<span class="mono">{analysis.tempo.confidence.toFixed(2)}</span>
 							{#if analysis.tempo.ambiguous}
 								<!-- Only where the evidence really is split. Offering the correction on every
 								     track would teach people to ignore it. -->
-								<span class="ambiguous" title="an unusual tempo for a tactus; a commoner reading of the same beats is offered below"
-									>ambiguous</span>
+								<Badge
+									variant="warn"
+									title="an unusual tempo for a tactus; a commoner reading of the same beats is offered below">
+									Ambiguous
+								</Badge>
 							{/if}
 						</dd>
+
 						{#if analysis.tempo.alternativeBpm.length > 0}
-							<dt>re-read at</dt>
+							<dt>Re-read at</dt>
 							<dd class="levels">
 								{#each analysis.tempo.alternativeBpm as alt (alt)}
-									<button
-										type="button"
+									<Button
+										variant="outline"
+										size="sm"
 										disabled={relevelling}
 										onclick={() => onrelevel(alt / analysis.tempo.bpm)}>
 										{Math.round(alt)} bpm
-									</button>
+									</Button>
 								{/each}
 							</dd>
 						{/if}
-						<dt>grid</dt>
-						<dd>
-							{analysis.tempo.beatsPerBar}/4 · phrase {analysis.tempo.barsPerPhrase} · anchor {analysis
-								.tempo.phraseAnchorBar}
-						</dd>
-						<dt>bars</dt>
-						<dd>{analysis.bars.length}</dd>
-						<dt>loudness</dt>
-						<dd>{analysis.integratedLufs} LUFS</dd>
-					</dl>
-				</section>
 
-				<section>
-					<h2 class="caption">Arrangement</h2>
+						<dt>Grid</dt>
+						<dd>
+							{analysis.tempo.beatsPerBar}/4 <span class="sep">·</span> phrase
+							<span class="mono">{analysis.tempo.barsPerPhrase}</span>
+							<span class="sep">·</span> anchor
+							<span class="mono">{analysis.tempo.phraseAnchorBar}</span>
+						</dd>
+						<dt>Bars</dt>
+						<dd><span class="mono">{analysis.bars.length}</span></dd>
+						<dt>Loudness</dt>
+						<dd><span class="mono">{analysis.integratedLufs}</span> LUFS</dd>
+					</dl>
+				</Section>
+
+				<Section title="Arrangement">
 					<ul class="sections">
 						{#each analysis.sections as s (s.index)}
 							<li class:now={readout.bar >= s.startBar && readout.bar < s.endBar}>
 								<span class="swatch" style:background={`var(--sec-${s.kind})`}></span>
-								<span class="kind">{s.kind}</span>
-								<span class="mono faint">{s.startBar}-{s.endBar}</span>
+								<span class="kind">{titleCase(s.kind)}</span>
+								<span class="mono subtle">{s.startBar}-{s.endBar}</span>
 								<span class="spacer"></span>
-								{#if s.energyRank === 1}<span class="peak mono">peak</span>{/if}
-								<span class="mono faint">{s.meanEnergy}</span>
+								{#if s.energyRank === 1}<Badge variant="live">Peak</Badge>{/if}
+								<span class="mono subtle">{s.meanEnergy}</span>
 							</li>
 						{/each}
 					</ul>
-				</section>
+				</Section>
 			{/if}
 
 			{#if show}
-				<section>
-					<h2 class="caption">Palette</h2>
+				<Section title="Palette">
 					<div class="palette">
-						{#each [['base', show.palette.base], ['accent', show.palette.accent], ...(show.palette.third !== undefined ? [['third', show.palette.third] as const] : [])] as const as [label, hue] (label)}
+						{#each [['Base', show.palette.base], ['Accent', show.palette.accent], ...(show.palette.third !== undefined ? [['Third', show.palette.third] as const] : [])] as const as [label, hue] (label)}
 							<div class="chip">
 								<span class="fill" style:background={`hsl(${hue} 88% 50%)`}></span>
-								<span class="mono faint">{label} {hue}</span>
+								<span class="chip-label subtle">{label} <span class="mono">{hue}</span></span>
 							</div>
 						{/each}
 					</div>
-				</section>
+				</Section>
 
-				<section>
-					<h2 class="caption">Brief</h2>
+				<Section title="Brief">
 					<p class="brief">{show.brief}</p>
-				</section>
+				</Section>
 
 				{#if show.generatedEffects.length > 0}
-					<section>
-						<h2 class="caption">Written for this track</h2>
+					<Section title="Written for this track">
 						{#each show.generatedEffects as g (g.id)}
 							<div class="gen">
-								<span class="mono"><strong>{g.id}</strong> · {g.role}</span>
-								<span class="dim">{g.blurb}</span>
+								<span class="gen-head">
+									<strong class="mono">{g.id}</strong>
+									<Badge variant="outline">{g.role}</Badge>
+								</span>
+								<span class="muted">{g.blurb}</span>
 							</div>
 						{/each}
-					</section>
+					</Section>
 				{/if}
 			{/if}
 
 			{#if warnings.length > 0}
-				<section>
-					<h2 class="caption">Linter notes</h2>
-					<ul class="warns mono">
+				<Section title="Linter notes">
+					<ul class="warns">
 						{#each warnings as w (w)}<li>{w}</li>{/each}
 					</ul>
-				</section>
+				</Section>
 			{/if}
 
-			<section>
-				<h2 class="caption">Hardware</h2>
-				<div class="ddp">
-					<input
-						type="text"
-						placeholder="WLED host, comma-separated"
-						bind:value={ddpHost}
-						disabled={ddpRunning} />
-					<button
-						class="btn ghost"
-						onclick={ontoggleOutput}
-						disabled={!show || (!ddpHost.trim() && !ddpRunning)}>
-						{ddpRunning ? 'Stop' : 'Send'}
-					</button>
-				</div>
-				{#if ddpRunning}
-					<span class="mono live">DDP live · 60 fps · port 4048</span>
-				{:else}
-					<span class="mono faint">Sends the same bytes as the preview, over DDP.</span>
-				{/if}
-			</section>
-		{:else if tab === 'effects'}
-			<section class="gallery">
-				<Gallery
-					generated={generatedEffects}
-					{previewing}
-					params={previewParams}
-					{onpreview}
-					{onparam} />
-			</section>
 		{:else if tab === 'design'}
 			{#if steps.length > 0}
-				<div class="design"><Activity {steps} /></div>
+				<div class="pad"><Activity {steps} /></div>
 			{:else}
-				<p class="empty faint">Nothing yet. Press Design with Claude.</p>
+				<p class="empty subtle">Nothing yet. Press Design with Claude.</p>
 			{/if}
 		{:else if tab === 'cues'}
 			{#if show}
-				<table class="cues mono">
+				<table class="cues">
 					<thead>
-						<tr><th>bar</th><th>section</th><th>layers</th><th>int</th></tr>
+						<tr><th>Bar</th><th>Section</th><th>Layers</th><th>Int</th></tr>
 					</thead>
 					<tbody>
 						{#each show.cues as c (c.bar)}
 							<tr class:now={activeCue?.bar === c.bar}>
-								<td>{c.bar}</td>
-								<td><span class="dot" style:background={`var(--sec-${c.section})`}></span>{c.section}</td
-								>
-								<td class="layers" title={c.note}>{layerList(c)}</td>
-								<td>{((c.intensity ?? show.defaults.intensity) * 100).toFixed(0)}</td>
+								<td class="mono">{c.bar}</td>
+								<td>
+									<span class="dot" style:background={`var(--sec-${c.section})`}></span>{titleCase(
+										c.section
+									)}
+								</td>
+								<td class="layers mono" title={c.note}>{layerList(c)}</td>
+								<td class="mono">{((c.intensity ?? show.defaults.intensity) * 100).toFixed(0)}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
 			{:else}
-				<p class="empty faint">No show yet.</p>
+				<p class="empty subtle">No show yet.</p>
 			{/if}
 		{:else}
 			<pre class="mono" bind:this={logEl}>{log.join('\n')}</pre>
@@ -245,98 +234,60 @@
 </aside>
 
 <style>
-	.ambiguous {
-		font-size: 10px;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		color: var(--warn, #d8a33a);
-		border: 1px solid currentColor;
-		padding: 0 4px;
-		margin-left: 6px;
-	}
-	.levels {
-		display: flex;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-	.levels button {
-		font: inherit;
-		font-size: 11px;
-		color: inherit;
-		background: transparent;
-		border: 1px solid currentColor;
-		padding: 2px 7px;
-		cursor: pointer;
-		opacity: 0.75;
-	}
-	.levels button:hover:not(:disabled) {
-		opacity: 1;
-	}
-	.levels button:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-
 	aside {
-		width: 336px;
+		width: var(--rail-right);
 		flex: none;
 		display: flex;
 		flex-direction: column;
-		background: var(--surface);
-		border-left: 1px solid var(--line);
+		background: var(--panel);
+		backdrop-filter: var(--panel-blur);
+		border-left: 1px solid var(--border);
 		min-height: 0;
 	}
-	nav {
-		display: flex;
-		gap: 2px;
-		padding: 8px 10px 0;
-		border-bottom: 1px solid var(--line);
-	}
-	nav button {
-		font-family: var(--mono);
-		font-size: 10px;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
-		color: var(--faint);
-		padding: 6px 11px;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-		transition: color 0.12s;
-	}
-	nav button:hover {
-		color: var(--dim);
-	}
-	nav button.on {
-		color: var(--text);
-		border-bottom-color: var(--accent);
+	.head {
+		flex: none;
+		padding: 8px;
+		border-bottom: 1px solid var(--border);
 	}
 	.scroll {
 		flex: 1;
 		overflow-y: auto;
 		min-height: 0;
 	}
-	section {
-		padding: 11px 12px;
-		border-bottom: 1px solid var(--line-soft);
+	.pad {
+		padding: 16px;
 	}
-	section.gallery {
-		border-bottom: none;
+	/* The panel's one action, and it is about the show the panel describes. */
+	.action {
+		padding: 16px 16px 0;
 	}
-	h2 {
-		margin: 0 0 7px;
+	.action :global(.btn) {
+		width: 100%;
 	}
+
 	dl {
 		display: grid;
-		grid-template-columns: 64px 1fr;
-		gap: 3px 8px;
+		grid-template-columns: 78px 1fr;
+		gap: 7px 10px;
 		margin: 0;
+		font-size: 13px;
 	}
 	dt {
-		color: var(--faint);
+		color: var(--subtle-foreground);
 	}
 	dd {
 		margin: 0;
-		color: var(--dim);
+		color: var(--muted-foreground);
+		display: flex;
+		align-items: center;
+		gap: 5px;
+		flex-wrap: wrap;
+	}
+	.sep {
+		opacity: 0.4;
+	}
+	.levels {
+		gap: 6px;
 	}
 
 	ul.sections {
@@ -345,157 +296,136 @@
 		padding: 0;
 		display: flex;
 		flex-direction: column;
-		gap: 1px;
+		gap: 2px;
 	}
 	ul.sections li {
 		display: flex;
 		align-items: center;
-		gap: 7px;
-		padding: 3px 5px;
-		border-radius: var(--r-sm);
-		font-size: 12px;
+		gap: 9px;
+		padding: 5px 8px;
+		border-radius: var(--radius-sm);
+		font-size: 13px;
+		color: var(--muted-foreground);
 	}
 	ul.sections li.now {
-		background: #ffffff0d;
+		background: var(--muted);
+		color: var(--foreground);
 	}
 	.swatch {
-		width: 3px;
-		height: 13px;
-		border-radius: 2px;
+		width: 9px;
+		height: 9px;
+		border-radius: 3px;
 		flex: none;
 	}
 	.kind {
-		text-transform: capitalize;
+		font-weight: 500;
 	}
 	.spacer {
 		flex: 1;
 	}
-	.peak {
-		color: var(--accent);
-		font-size: 9px;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-	}
 
 	.palette {
 		display: flex;
-		gap: 7px;
+		gap: 8px;
 	}
 	.chip {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: 6px;
 		align-items: center;
 	}
 	.fill {
-		width: 42px;
-		height: 26px;
-		border-radius: var(--r-sm);
-		box-shadow: inset 0 0 0 1px #ffffff1a;
+		width: 56px;
+		height: 32px;
+		border-radius: var(--radius-sm);
+		box-shadow: inset 0 0 0 1px #ffffff1f;
+	}
+	.chip-label {
+		font-size: 12px;
 	}
 
 	.brief {
-		margin: 0;
-		font-size: 12.5px;
-		line-height: 1.55;
-		color: var(--dim);
+		font-size: 13px;
+		line-height: 1.6;
+		color: var(--muted-foreground);
 		white-space: pre-wrap;
 	}
 	.gen {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-		margin-bottom: 7px;
-		font-size: 12px;
+		gap: 4px;
+		margin-bottom: 12px;
+		font-size: 13px;
+	}
+	.gen:last-child {
+		margin-bottom: 0;
+	}
+	.gen-head {
+		display: flex;
+		align-items: center;
+		gap: 7px;
 	}
 	ul.warns {
 		margin: 0;
-		padding-left: 15px;
+		padding-left: 17px;
 		color: var(--warn);
-		line-height: 1.55;
+		font-size: 12.5px;
+		line-height: 1.6;
 	}
 	ul.warns li {
-		margin-bottom: 3px;
-	}
-
-	.ddp {
-		display: flex;
-		gap: 6px;
-		margin-bottom: 6px;
-	}
-	.ddp input {
-		flex: 1;
-		min-width: 0;
-	}
-	.live {
-		color: var(--ok);
+		margin-bottom: 5px;
 	}
 
 	table.cues {
 		width: 100%;
 		border-collapse: collapse;
+		font-size: 12.5px;
 	}
 	table.cues th {
 		text-align: left;
-		color: var(--faint);
-		font-weight: 600;
-		padding: 7px 8px;
+		color: var(--subtle-foreground);
+		font-weight: 500;
+		padding: 10px 12px;
 		position: sticky;
 		top: 0;
-		background: var(--surface);
-		border-bottom: 1px solid var(--line);
+		background: var(--panel-strong);
+		backdrop-filter: var(--panel-blur);
+		border-bottom: 1px solid var(--border);
 	}
 	table.cues td {
-		padding: 4px 8px;
-		color: var(--dim);
-		border-bottom: 1px solid var(--line-soft);
+		padding: 7px 12px;
+		color: var(--muted-foreground);
+		border-bottom: 1px solid var(--border-soft);
 		white-space: nowrap;
 	}
 	table.cues tr.now td {
-		background: #ffffff0d;
-		color: var(--text);
+		background: var(--muted);
+		color: var(--foreground);
 	}
 	.layers {
-		max-width: 130px;
+		max-width: 140px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 	.dot {
 		display: inline-block;
-		width: 6px;
-		height: 6px;
+		width: 7px;
+		height: 7px;
 		border-radius: 50%;
-		margin-right: 5px;
+		margin-right: 7px;
 	}
 
 	pre {
 		margin: 0;
-		padding: 11px 12px;
+		padding: 16px;
 		white-space: pre-wrap;
 		word-break: break-word;
-		color: var(--dim);
-		line-height: 1.6;
-		max-height: 100%;
+		color: var(--muted-foreground);
+		line-height: 1.65;
+		font-size: 11.5px;
 	}
 	.empty {
-		padding: 16px 12px;
-	}
-	.design {
-		padding: 11px 12px;
-	}
-	.dot-live {
-		display: inline-block;
-		width: 5px;
-		height: 5px;
-		border-radius: 50%;
-		background: var(--accent);
-		margin-left: 4px;
-		vertical-align: middle;
-		animation: pulse 1.1s ease-in-out infinite;
-	}
-	@keyframes pulse {
-		50% {
-			opacity: 0.25;
-		}
+		padding: 24px 16px;
+		font-size: 13px;
 	}
 </style>

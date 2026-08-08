@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis } from '@mv/core';
 	import { buildTimeline, densityColumns } from '$lib/timeline.ts';
+	import { clock, titleCase } from '$lib/format.ts';
 
 	let {
 		analysis,
@@ -25,11 +26,6 @@
 
 	const pct = (t: number) => (duration > 0 ? Math.max(0, Math.min(100, (t / duration) * 100)) : 0);
 	const widthPct = (a: number, b: number) => Math.max(0.12, pct(b) - pct(a));
-
-	function clock(t: number): string {
-		if (!Number.isFinite(t) || t < 0) return '0:00';
-		return `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-	}
 
 	function seekFrom(e: PointerEvent) {
 		if (!host || duration <= 0) return;
@@ -116,9 +112,9 @@
 					style:left={`${pct(s.start)}%`}
 					style:width={`${widthPct(s.start, s.end)}%`}
 					style:background={`var(--sec-${s.kind})`}
-					onpointerenter={(e) => showTip(e, s.title, s.lines)}
+					onpointerenter={(e) => showTip(e, titleCase(s.title), s.lines)}
 					role="presentation">
-					<span class="label">{s.kind}</span>
+					<span class="label">{titleCase(s.kind)}</span>
 				</div>
 			{/each}
 		</div>
@@ -132,7 +128,7 @@
 					style:opacity={0.3 + 0.7 * c.intensity}
 					onpointerenter={(e) => showTip(e, c.title, c.lines)}
 					role="presentation">
-					<span class="label">{c.section}</span>
+					<span class="label">{titleCase(c.section)}</span>
 				</div>
 			{/each}
 		</div>
@@ -147,7 +143,7 @@
 					class="hit {m.kind}"
 					style:left={`${pct(m.start)}%`}
 					style:width={`${widthPct(m.start, m.end)}%`}
-					onpointerenter={(e) => showTip(e, m.title, m.lines)}
+					onpointerenter={(e) => showTip(e, titleCase(m.title), m.lines)}
 					role="presentation">
 					<span class="glyph">{m.kind === 'strobe' ? '⚡' : m.kind === 'blackout' ? '■' : '▲'}</span>
 				</div>
@@ -169,28 +165,26 @@
 		{/if}
 	</div>
 
-	<div class="legend mono faint">
-		<span><i class="swatch kick"></i>kick</span>
-		<span><i class="swatch snare"></i>snare</span>
-		<span><i class="swatch hat"></i>hat</span>
+	<div class="legend subtle">
+		<span><i class="swatch kick"></i>Kick</span>
+		<span><i class="swatch snare"></i>Snare</span>
+		<span><i class="swatch hat"></i>Hat</span>
 		<span class="sep">·</span>
-		<span>⚡ strobe</span>
-		<span>■ blackout</span>
-		<span>▲ slam</span>
+		<span>⚡ Strobe</span>
+		<span>■ Blackout</span>
+		<span>▲ Slam</span>
 		{#if show}
+			<span class="spacer"></span>
+			<span class="mono">{timeline.cues.length} cues · {timeline.markers.length} hits</span>
 			<span class="sep">·</span>
-			<span>{timeline.cues.length} cues · {timeline.markers.length} hits</span>
-			<span class="sep">·</span>
-			<span>{clock(position)} / {clock(duration)}</span>
+			<span class="mono">{clock(position)} / {clock(duration)}</span>
 		{/if}
 	</div>
 </div>
 
 <style>
 	.strip {
-		border-top: 1px solid var(--line-soft);
-		background: var(--surface);
-		padding: 8px 12px 9px;
+		padding: 4px 14px 12px;
 		user-select: none;
 	}
 	.strip.empty {
@@ -208,24 +202,24 @@
 	.lane {
 		position: relative;
 		width: 100%;
-		border-radius: 3px;
+		border-radius: var(--radius-sm);
 		overflow: hidden;
 	}
 	.sections {
-		height: 22px;
-		background: var(--surface-2);
+		height: 24px;
+		background: var(--muted);
 	}
 	.cues {
-		height: 18px;
-		background: var(--surface-2);
+		height: 20px;
+		background: var(--muted);
 	}
 	.drums {
 		height: 26px;
-		background: #0b0b0e;
+		background: #08080b;
 	}
 	.hits {
-		height: 22px;
-		background: var(--surface-2);
+		height: 24px;
+		background: var(--muted);
 		overflow: visible;
 	}
 	canvas {
@@ -242,25 +236,27 @@
 		box-sizing: border-box;
 	}
 	.sec {
-		border-right: 1px solid rgba(0, 0, 0, 0.55);
+		border-right: 1px solid #00000091;
 	}
+	/* The divider between cues is drawn as a full inset rule rather than a coloured left edge,
+	   so a one-bar cue reads as a block rather than as a stripe. */
 	.cue {
-		background: var(--surface-3);
-		border-left: 1px solid var(--dim);
+		background: var(--card-raised);
+		box-shadow: inset 1px 0 0 #ffffff2e;
 	}
 	.sec:hover,
 	.cue:hover {
-		filter: brightness(1.45);
+		filter: brightness(1.4);
 	}
 	.label {
 		position: absolute;
 		inset: 0;
 		display: flex;
 		align-items: center;
-		padding-left: 5px;
-		font-size: 10px;
-		letter-spacing: 0.02em;
-		color: rgba(255, 255, 255, 0.82);
+		padding-left: 7px;
+		font-size: 11px;
+		font-weight: 500;
+		color: #ffffffd6;
 		white-space: nowrap;
 		overflow: hidden;
 		pointer-events: none;
@@ -284,18 +280,19 @@
 		text-shadow: 0 0 3px #000;
 	}
 	.hit.strobe {
-		background: rgba(255, 214, 92, 0.35);
-		box-shadow: inset 0 0 0 1px #ffd65c;
+		background: #fbbf2445;
+		box-shadow: inset 0 0 0 1px var(--warn);
 		color: #ffe9a8;
 	}
 	.hit.blackout {
-		background: rgba(120, 120, 140, 0.3);
+		background: #78788c45;
 		box-shadow: inset 0 0 0 1px #7a7a8c;
 		color: #c9c9d6;
 	}
-	.hit.slam {
-		background: rgba(255, 106, 26, 0.35);
-		box-shadow: inset 0 0 0 1px var(--accent);
+	.hit.slam,
+	.hit.bump {
+		background: #ff6a1a45;
+		box-shadow: inset 0 0 0 1px var(--live);
 		color: #ffc79a;
 	}
 	.hit:hover {
@@ -307,54 +304,58 @@
 		top: 0;
 		bottom: 0;
 		width: 2px;
-		background: var(--text);
-		box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
+		background: var(--foreground);
+		box-shadow: 0 0 5px #ffffff80;
 		pointer-events: none;
 	}
 
 	.tooltip {
 		position: absolute;
-		bottom: calc(100% + 6px);
+		bottom: calc(100% + 8px);
 		transform: translateX(-6px);
 		display: flex;
 		flex-direction: column;
-		gap: 1px;
-		min-width: 120px;
+		gap: 2px;
+		min-width: 130px;
 		max-width: 300px;
-		padding: 7px 9px;
-		background: #05050a;
-		border: 1px solid var(--line);
-		border-radius: 5px;
-		font-size: 11.5px;
-		line-height: 1.45;
-		color: var(--dim);
+		padding: 9px 11px;
+		background: var(--popover);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		font-size: 12px;
+		line-height: 1.5;
+		color: var(--muted-foreground);
 		white-space: pre-line;
 		pointer-events: none;
+		box-shadow: var(--shadow-md);
 		z-index: 5;
 	}
 	.tooltip.flip {
 		transform: translateX(calc(-100% + 6px));
 	}
 	.tooltip strong {
-		color: var(--text);
-		font-size: 12px;
+		color: var(--foreground);
+		font-size: 12.5px;
 		font-weight: 600;
 	}
 
 	.legend {
 		display: flex;
 		align-items: center;
-		gap: 10px;
-		margin-top: 7px;
-		font-size: 10.5px;
+		gap: 12px;
+		margin-top: 10px;
+		font-size: 11.5px;
 	}
 	.legend span {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
+		gap: 5px;
 	}
 	.legend .sep {
 		opacity: 0.4;
+	}
+	.legend .spacer {
+		flex: 1;
 	}
 	.swatch {
 		width: 8px;

@@ -11,10 +11,12 @@
 	},
 	"dependencies": {
 		"@mv/analysis": "*",
-		"@mv/author": "*",
+		"@mv/author-ai": "*",
+		"@mv/author-engine": "*",
 		"@mv/core": "*",
 		"@mv/preview3d": "*",
-		"@mv/transport-ddp": "*"
+		"@mv/transport-ddp": "*",
+		"lucide-svelte": "^1.0.1"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",

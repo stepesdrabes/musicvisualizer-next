@@ -125,30 +125,29 @@
 	.bands {
 		display: flex;
 		align-items: stretch;
-		gap: 8px;
-		padding: 6px 12px 0;
-		background: var(--surface);
+		gap: 10px;
+		padding: 12px 14px 8px;
 	}
 	.names {
 		display: flex;
 		flex-direction: column;
 		justify-content: space-between;
-		width: 62px;
+		width: 58px;
 		flex: none;
-		padding: 1px 0 5px;
-		font-size: 9.5px;
-		color: var(--faint);
+		padding: 1px 0 6px;
+		font-size: 10.5px;
+		color: var(--subtle-foreground);
 		line-height: 1;
 	}
 	.canvas-box {
 		flex: 1;
 		min-width: 0;
-		height: 54px;
+		height: 58px;
 	}
 	canvas {
 		display: block;
 		width: 100%;
 		height: 100%;
-		border-radius: 3px;
+		border-radius: var(--radius-sm);
 	}
 </style>

@@ -1,35 +1,71 @@
+/*
+ * The chrome is greyscale on purpose. The room's LEDs are the only saturated thing on
+ * screen, so anything here that carries a hue is competing with the thing being judged.
+ * `--live` is the single exception and is spent only on states that are genuinely live.
+ */
 :root {
-	--bg: #08080a;
-	--surface: #101013;
-	--surface-2: #17171c;
-	--surface-3: #1f1f26;
-	--line: #23232b;
-	--line-soft: #1a1a20;
+	--background: #09090b;
+	--card: #0f0f12;
+	--card-raised: #16161a;
+	--popover: #131317;
+	--muted: #1c1c21;
+	--hover: #1f1f25;
 
-	--text: #f2f2f5;
-	--dim: #a0a0ad;
-	--faint: #61616d;
+	--border: #26262c;
+	--border-soft: #1b1b20;
+	--ring: #52525b;
 
-	--accent: #ff6a1a;
-	--ok: #3ddc84;
-	--warn: #ffb020;
-	--bad: #ff5455;
+	/*
+	 * Panels sit over the live room rather than beside it, so they are slightly transparent:
+	 * enough that a lit room glows through the chrome, not enough to make text work for it.
+	 * Every panel also blurs what is behind it, which is what keeps a strobe from turning the
+	 * queue into a flickering surface.
+	 */
+	--panel: #0f0f12d4;
+	--panel-strong: #0f0f12e8;
+	--panel-blur: blur(22px) saturate(1.25);
 
-	--sec-intro: #46577f;
-	--sec-groove: #2e8f68;
-	--sec-breakdown: #6b4a8c;
-	--sec-build: #b8761f;
-	--sec-void: #303038;
-	--sec-drop: #c8384f;
-	--sec-outro: #3b4a5c;
+	--foreground: #fafafa;
+	--muted-foreground: #a1a1aa;
+	--subtle-foreground: #71717a;
+
+	/* Primary is the foreground itself: a white button on near-black, shadcn's dark default. */
+	--primary: #fafafa;
+	--primary-foreground: #0a0a0b;
+
+	--live: #ff6a1a;
+	--ok: #4ade80;
+	--warn: #fbbf24;
+	--bad: #f87171;
+
+	--sec-intro: #5b6b93;
+	--sec-groove: #35a37a;
+	--sec-breakdown: #7d5aa0;
+	--sec-build: #cf8a2a;
+	--sec-void: #3f3f47;
+	--sec-drop: #d9435c;
+	--sec-outro: #4a5b70;
 
 	--mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
 	--sans:
 		-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Helvetica Neue', sans-serif;
 
-	--r-sm: 4px;
-	--r-md: 7px;
-	--r-lg: 11px;
+	--radius: 10px;
+	--radius-sm: 6px;
+	--radius-md: 8px;
+	--radius-lg: 14px;
+
+	/* Control heights. 36 is the resting size of everything clickable; 40 is the player. */
+	--h-sm: 30px;
+	--h: 36px;
+	--h-lg: 40px;
+
+	--rail-left: 300px;
+	--rail-right: 380px;
+	--topbar-h: 56px;
+
+	--shadow-md: 0 4px 16px #00000059;
+	--shadow-lg: 0 16px 48px #00000080;
 }
 
 * {
@@ -40,13 +76,21 @@ html,
 body {
 	margin: 0;
 	height: 100%;
-	background: var(--bg);
-	color: var(--text);
+	background: var(--background);
+	color: var(--foreground);
 	font-family: var(--sans);
-	font-size: 13px;
-	line-height: 1.45;
+	font-size: 14px;
+	line-height: 1.5;
 	overflow: hidden;
 	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p {
+	margin: 0;
 }
 
 button {
@@ -62,117 +106,89 @@ button:disabled {
 	cursor: default;
 }
 
-.btn {
-	background: var(--surface-3);
-	border: 1px solid var(--line);
-	border-radius: var(--r-md);
-	padding: 6px 13px;
-	font-weight: 500;
-	transition:
-		background 0.12s,
-		border-color 0.12s,
-		transform 0.06s;
-}
-
-.btn:hover:not(:disabled) {
-	background: #26262e;
-	border-color: #34343e;
-}
-
-.btn:active:not(:disabled) {
-	transform: scale(0.975);
-}
-
-.btn:disabled {
-	opacity: 0.35;
-}
-
-.btn.solid {
-	background: var(--text);
-	border-color: var(--text);
-	color: #0b0b0e;
-	font-weight: 650;
-}
-
-.btn.solid:hover:not(:disabled) {
-	background: #fff;
-	border-color: #fff;
-}
-
-.btn.ghost {
-	background: transparent;
-	border-color: var(--line);
-}
-
-.btn.ghost:hover:not(:disabled) {
-	background: var(--surface-2);
-}
-
-input[type='text'] {
+input,
+textarea,
+select {
 	font: inherit;
 	color: inherit;
-	background: var(--surface-2);
-	border: 1px solid var(--line);
-	border-radius: 999px;
-	padding: 7px 14px;
-	transition: border-color 0.12s;
-}
-
-input[type='text']::placeholder {
-	color: var(--faint);
-}
-
-input[type='text']:focus {
-	outline: none;
-	border-color: #3a3a46;
-}
-
-input[type='text']:disabled {
-	opacity: 0.5;
 }
 
 :focus-visible {
-	outline: 2px solid var(--accent);
+	outline: 2px solid var(--ring);
 	outline-offset: 2px;
 }
 
+/* Digits only. Anywhere a number changes in place, a proportional font makes it jitter. */
 .mono {
 	font-family: var(--mono);
-	font-size: 11px;
 	font-variant-numeric: tabular-nums;
+	font-size: 12px;
 }
 
-.dim {
-	color: var(--dim);
+.muted {
+	color: var(--muted-foreground);
 }
 
-.faint {
-	color: var(--faint);
+.subtle {
+	color: var(--subtle-foreground);
 }
 
-.caption {
-	font-family: var(--mono);
-	font-size: 9.5px;
-	letter-spacing: 0.13em;
-	text-transform: uppercase;
-	color: var(--faint);
-	font-weight: 600;
+.truncate {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	min-width: 0;
 }
 
 ::-webkit-scrollbar {
-	width: 9px;
-	height: 9px;
+	width: 10px;
+	height: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-	background: #2a2a33;
-	border-radius: 9px;
+	background: #2e2e36;
+	border-radius: 999px;
+	border: 3px solid transparent;
+	background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-	background: #3a3a46;
+	background: #3f3f4a;
+	background-clip: content-box;
 }
 
 ::-webkit-scrollbar-track {
 	background: transparent;
+}
+
+@keyframes spin {
+	to {
+		rotate: 360deg;
+	}
+}
+
+/*
+ * The room is rendered full-window underneath everything, and the chrome floats on it. That
+ * is the only way a panel can show the light it is reporting on; keeping the canvas inside
+ * its own column would leave the rails sitting on flat paint.
+ */
+.room-layer {
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	pointer-events: none;
+}
+
+/*
+ * The canvas itself stays interactive: OrbitControls listens on it, and it is now underneath
+ * the whole layout rather than inside a column. Wherever a panel covers it the panel wins,
+ * so in practice this is drag-to-orbit over the open middle, exactly as before.
+ */
+.room-layer canvas {
+	pointer-events: auto;
+}
+
+.floats {
+	position: relative;
+	z-index: 2;
 }

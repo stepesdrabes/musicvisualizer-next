@@ -3,6 +3,8 @@
 	import type { Readout, Viz } from '$lib/viz.svelte.ts';
 	import type { LoadState, Step } from '$lib/types.ts';
 	import Activity from './Activity.svelte';
+	import Icon from '$lib/ui/Icon.svelte';
+	import Spinner from '$lib/ui/Spinner.svelte';
 
 	let {
 		viz,
@@ -10,21 +12,21 @@
 		load,
 		steps,
 		hasShow,
-		previewing = null
+		queued = 0
 	}: {
 		viz: Viz | null;
 		readout: Readout;
 		load: LoadState;
 		steps: Step[];
 		hasShow: boolean;
-		previewing?: string | null;
+		queued?: number;
 	} = $props();
+
+	/** The renderer's own ceiling, so this cannot drift from the shader it feeds. */
+	const MAX_BLOOM = 5;
 
 	let renderer: RoomRenderer | null = $state(null);
 	let view = $state<CameraView>('orbit');
-	let dots = $state(false);
-	let diffused = $state(true);
-	let bloom = $state(2.1);
 
 	// {@attach} rather than $effect: the canvas is the only dependency, and an $effect reading
 	// the other controls would tear down and rebuild the whole WebGL context on every tweak.
@@ -32,6 +34,12 @@
 		const v = viz;
 		if (!v) return;
 		const r = new RoomRenderer(canvas, v.geometry, { spec: v.spec });
+		// Fixed rather than exposed. Diffused is how the strips actually read behind a channel,
+		// and bloom at full is what makes a lit room look lit; both were only ever turned down
+		// to inspect the raw emitters, which the LED bands in the timeline drawer show better.
+		r.diffused = true;
+		r.showDots = false;
+		r.bloomIntensity = MAX_BLOOM;
 		renderer = r;
 		v.roomRenderer = r;
 
@@ -53,47 +61,29 @@
 	$effect(() => {
 		if (renderer) renderer.setView(view);
 	});
-	$effect(() => {
-		if (renderer) renderer.showDots = dots;
-	});
-	$effect(() => {
-		if (renderer) renderer.diffused = diffused;
-	});
-	$effect(() => {
-		if (renderer) renderer.bloomIntensity = bloom;
-	});
 
 	const busy = $derived(load.phase !== 'idle' && load.phase !== 'ready' && load.phase !== 'error');
+	const VIEWS: { id: CameraView; label: string }[] = [
+		{ id: 'orbit', label: 'Orbit' },
+		{ id: 'top', label: 'Top' },
+		{ id: 'front', label: 'Front' }
+	];
 </script>
 
-<div class="stage">
-	<canvas {@attach mount}></canvas>
+<div class="room-layer"><canvas {@attach mount}></canvas></div>
 
+<div class="stage floats">
 	<div class="overlay top">
-		<div class="views">
-			{#each ['orbit', 'top', 'front'] as const as v (v)}
-				<button class:on={view === v} onclick={() => (view = v)}>{v}</button>
+		<div class="segmented">
+			{#each VIEWS as v (v.id)}
+				<button class:on={view === v.id} onclick={() => (view = v.id)}>{v.label}</button>
 			{/each}
 		</div>
 
-		<span class="spacer"></span>
-
-		<div class="toggles">
-			<button class:on={diffused} onclick={() => (diffused = !diffused)} title="Diffuser blending">
-				diffuse
-			</button>
-			<button class:on={dots} onclick={() => (dots = !dots)} title="Show discrete LEDs">
-				pixels
-			</button>
-			<label title="Bloom">
-				<span class="faint">bloom</span>
-				<input type="range" min="0" max="5" step="0.1" bind:value={bloom} />
-			</label>
-		</div>
 	</div>
 
 	<div class="overlay bottom">
-		<span class="mono faint">
+		<span class="mono subtle">
 			{viz ? `${viz.geometry.count} px · ${viz.spec.width}x${viz.spec.depth} m` : ''}
 		</span>
 		<span class="spacer"></span>
@@ -102,45 +92,47 @@
 				flash limit {(readout.headroom * 100).toFixed(0)}%
 			</span>
 		{/if}
-		<span class="mono faint">{readout.fps} fps</span>
+		<span class="mono subtle">{readout.fps} fps</span>
 	</div>
 
-	<!-- Nothing covers a preview. Being told the room is dark while an effect is running in it
-	     is the panel calling the user a liar. -->
-	{#if !hasShow && !previewing}
+	{#if !hasShow}
 		<div class="empty">
 			{#if busy}
-				<div class="big-spinner"></div>
+				<Spinner size={26} accent />
 				<h1>{load.message}</h1>
-				{#if load.progress !== null}
-					<div class="bar"><div style:width={`${load.progress * 100}%`}></div></div>
-				{/if}
 				{#if load.phase === 'authoring'}
 					{#if steps.length > 0}
 						<div class="live"><Activity {steps} compact /></div>
 					{:else}
-						<p class="dim">Claude is researching the track.</p>
+						<p>Claude is researching the track.</p>
 					{/if}
-				{:else}
-					<p class="dim">Downloading and analysing.</p>
 				{/if}
 			{:else if readout.duration > 0}
 				<h1>Track ready</h1>
-				<p class="dim">Paste a link to light the room. Claude can revise it afterwards.</p>
+			{:else if queued > 0}
+				<h1>Preparing the queue</h1>
 			{:else}
+				<Icon name="radio" size={26} />
 				<h1>The room is dark</h1>
-				<p class="dim">Paste a YouTube link to begin.</p>
+				<p>Search for a track to light it.</p>
 			{/if}
 		</div>
 	{/if}
 </div>
 
 <style>
+	/*
+	 * A transparent column, not a viewport. The canvas is full-window underneath; this only
+	 * reserves the space the room is meant to read as its own and anchors the controls.
+	 */
 	.stage {
 		position: relative;
 		flex: 1;
+		min-width: 0;
 		min-height: 0;
-		background: #04040a;
+		/* Transparent to the pointer as well as to the eye, so a drag over the room reaches the
+		   canvas underneath. The controls inside take their events back individually. */
+		pointer-events: none;
 	}
 	canvas {
 		display: block;
@@ -155,7 +147,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 10px 12px;
+		padding: 12px 14px;
 		pointer-events: none;
 	}
 	.overlay.top {
@@ -172,54 +164,34 @@
 		pointer-events: none;
 	}
 
-	.views,
-	.toggles {
+	.segmented {
 		display: flex;
 		align-items: center;
 		gap: 2px;
-		background: #0b0b0ec4;
-		backdrop-filter: blur(9px);
-		border: 1px solid #ffffff14;
-		border-radius: 999px;
 		padding: 3px;
+		border-radius: var(--radius-md);
+		background: #0d0d10cc;
+		backdrop-filter: blur(10px);
+		border: 1px solid #ffffff14;
 	}
-	.toggles {
-		gap: 4px;
-		padding: 3px 9px 3px 3px;
-	}
-	.views button,
-	.toggles button {
-		font-family: var(--mono);
-		font-size: 10px;
-		letter-spacing: 0.05em;
-		color: var(--dim);
-		padding: 4px 10px;
-		border-radius: 999px;
+	.segmented button {
+		height: 26px;
+		padding: 0 11px;
+		border-radius: var(--radius-sm);
+		font-size: 12.5px;
+		font-weight: 500;
+		color: var(--muted-foreground);
 		transition:
-			background 0.12s,
-			color 0.12s;
+			background-color 0.12s ease,
+			color 0.12s ease;
 	}
-	.views button:hover,
-	.toggles button:hover {
-		color: var(--text);
+	.segmented button:hover {
+		color: var(--foreground);
 	}
-	.views button.on,
-	.toggles button.on {
+	.segmented button.on {
 		background: #ffffff17;
-		color: var(--text);
+		color: var(--foreground);
 	}
-	.toggles label {
-		display: flex;
-		align-items: center;
-		gap: 5px;
-		font-family: var(--mono);
-		font-size: 10px;
-	}
-	.toggles input {
-		width: 62px;
-		accent-color: var(--dim);
-	}
-
 	.warn {
 		color: var(--warn);
 	}
@@ -231,52 +203,26 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		gap: 10px;
+		gap: 12px;
 		text-align: center;
 		padding: 24px;
-		background: radial-gradient(ellipse at center, #0b0b12e0 0%, #05050ac0 70%);
 		pointer-events: none;
+		color: var(--subtle-foreground);
 	}
 	.empty h1 {
-		margin: 0;
-		font-size: 19px;
+		font-size: 20px;
 		font-weight: 600;
 		letter-spacing: -0.015em;
+		color: var(--foreground);
 	}
 	.empty p {
-		margin: 0;
 		max-width: 360px;
-		font-size: 12.5px;
-	}
-	.big-spinner {
-		width: 26px;
-		height: 26px;
-		border-radius: 50%;
-		border: 2px solid #ffffff1a;
-		border-top-color: var(--accent);
-		animation: spin 0.75s linear infinite;
-		margin-bottom: 4px;
-	}
-	@keyframes spin {
-		to {
-			rotate: 360deg;
-		}
-	}
-	.bar {
-		width: 190px;
-		height: 3px;
-		border-radius: 2px;
-		background: #ffffff1a;
-		overflow: hidden;
-	}
-	.bar div {
-		height: 100%;
-		background: var(--accent);
-		transition: width 0.25s;
+		font-size: 13.5px;
+		color: var(--muted-foreground);
 	}
 	.live {
 		width: min(560px, 90%);
-		margin-top: 4px;
+		margin-top: 2px;
 		text-align: left;
 	}
 </style>

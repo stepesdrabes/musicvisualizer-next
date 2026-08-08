@@ -9,6 +9,25 @@ export interface TrackMeta {
 	artHue?: number | null;
 	webpageUrl: string;
 	source: string;
+	/** Seconds. Absent on tracks analysed before the field existed. */
+	duration?: number;
+}
+
+/** Mirrors @mv/analysis LibraryEntry. */
+export interface LibraryEntry extends TrackMeta {
+	analysed: boolean;
+	authored: 'none' | 'engine' | 'claude';
+	updatedAt: number;
+}
+
+/** Mirrors @mv/analysis SearchResult. */
+export interface SearchResult {
+	id: string;
+	title: string;
+	uploader: string;
+	duration: number;
+	thumbnail: string;
+	webpageUrl: string;
 }
 
 export type Phase =

@@ -1,15 +1,25 @@
 <script lang="ts">
-	import type { EffectDef, Show, TrackAnalysis } from '@mv/core';
+	import type { Show, TrackAnalysis } from '@mv/core';
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
-	import type { AuthorEvent, LoadState, Step, TrackMeta } from '$lib/types.ts';
+	import { QueueClient } from '$lib/queue.svelte.ts';
+	import { HardwareClient } from '$lib/hardware.svelte.ts';
+	import { indexOfKey } from '$lib/queueModel.ts';
+	import type { Candidate } from '$lib/search.svelte.ts';
+	import type { AuthorEvent, LibraryEntry, LoadState, Step, TrackMeta } from '$lib/types.ts';
+	import Backdrop from '$components/Backdrop.svelte';
+	import HardwareModal from '$components/HardwareModal.svelte';
 	import Inspector from '$components/Inspector.svelte';
 	import PlayerBar from '$components/PlayerBar.svelte';
-	import ShowStrip from '$components/ShowStrip.svelte';
-	import LedBands from '$components/LedBands.svelte';
+	import QueuePanel from '$components/QueuePanel.svelte';
+	import SearchModal from '$components/SearchModal.svelte';
 	import Stage from '$components/Stage.svelte';
+	import TimelineDrawer from '$components/TimelineDrawer.svelte';
 	import TopBar from '$components/TopBar.svelte';
 
 	let viz: Viz | null = $state(null);
+	const queue = new QueueClient();
+	const hardware = new HardwareClient();
+
 	let readout = $state<Readout>({
 		fps: 0,
 		position: 0,
@@ -31,32 +41,37 @@
 	let log = $state<string[]>([]);
 	let steps = $state<Step[]>([]);
 	let warnings = $state<string[]>([]);
-	let previewing = $state<string | null>(null);
-	let previewParams = $state<Record<string, number>>({});
+	let library = $state<LibraryEntry[]>([]);
 
-	// Whatever this show wrote for itself, so the gallery shows the full deck rather than only
-	// the built-ins. Compilation already happened when the show loaded; this reads the registry.
-	const generatedDefs = $derived(
-		(show?.generatedEffects ?? [])
-			.map((g) => viz?.registry.get(g.id) ?? null)
-			.filter((d): d is EffectDef => d !== null)
-	);
+	let searchOpen = $state(false);
+	let searchSeed = $state('');
+	let hardwareOpen = $state(false);
+	let leftOpen = $state(true);
+	let rightOpen = $state(true);
+	let timelineOpen = $state(false);
 
-	function preview(def: EffectDef | null) {
-		if (!viz) return;
-		viz.setPreview(def);
-		previewing = def?.id ?? null;
-		previewParams = { ...viz.previewValues };
-	}
-
-	function previewParam(key: string, value: number) {
-		if (!viz) return;
-		viz.setPreviewParam(key, value);
-		previewParams = { ...viz.previewValues };
-	}
 	let volume = $state(0.8);
-	let ddpHost = $state('');
-	let ddpRunning = $state(false);
+	let relevelling = $state(false);
+
+	// The server owns the address and whether it is streaming; this only ever reads them.
+	const ddpHost = $derived(hardware.status.host);
+	const ddpRunning = $derived(hardware.status.streaming);
+
+	const current = $derived(queue.current);
+	const currentIndex = $derived(indexOfKey(queue.state, queue.state.currentKey));
+	const hasPrev = $derived(currentIndex > 0);
+	const hasNext = $derived(currentIndex >= 0 && currentIndex < queue.items.length - 1);
+
+	const busy = $derived(
+		load.phase === 'authoring' ||
+			(current !== null && current.status !== 'ready' && current.status !== 'error')
+	);
+	const busyLabel = $derived(
+		load.phase === 'authoring' ? load.message : (current?.message ?? 'Working')
+	);
+	const failure = $derived(
+		load.phase === 'error' ? load.message : current?.status === 'error' ? current.message : ''
+	);
 
 	function note(line: string) {
 		log = [...log.slice(-400), line];
@@ -74,12 +89,30 @@
 		});
 	}
 
+	async function refreshLibrary() {
+		try {
+			const res = await fetch('/api/library');
+			if (res.ok) library = ((await res.json()) as { entries: LibraryEntry[] }).entries;
+		} catch {
+			// A missing library only costs the palette its first group.
+		}
+	}
+
 	$effect(() => {
 		const v = new Viz();
 		v.onReadout = (r) => (readout = r);
+		// The queue decides what comes next, not this tab: a skip from anywhere lands the same way.
+		v.onEnded = () => void queue.next();
 		v.start();
 		viz = v;
-		return () => v.dispose();
+		queue.connect();
+		hardware.connect();
+		void refreshLibrary();
+		return () => {
+			v.dispose();
+			queue.dispose();
+			hardware.dispose();
+		};
 	});
 
 	$effect(() => {
@@ -101,7 +134,123 @@
 		return () => clearInterval(timer);
 	});
 
-	let relevelling = $state(false);
+	/**
+	 * Follow the server's idea of what is playing.
+	 *
+	 * The queue is server state so that a phone in the room can change it, which means this
+	 * tab is a follower: it reacts to the current row becoming ready rather than deciding
+	 * anything. Keyed on the track id so a row being re-titled mid-download does not reload
+	 * audio that is already decoded.
+	 */
+	let loadedTrackId = $state<string | null>(null);
+	$effect(() => {
+		const item = current;
+		if (!viz) return;
+
+		// An emptied queue leaves the room running. Stopping the music because somebody cleared
+		// a list would be the one thing a room full of people would not forgive, and the loaded
+		// track stays addressable so it can still be handed to Claude.
+		if (!item || item.status !== 'ready' || !item.trackId) return;
+		if (item.trackId === loadedTrackId) return;
+
+		loadedTrackId = item.trackId;
+		void openTrack(item.trackId);
+	});
+
+	async function openTrack(id: string) {
+		if (!viz) return;
+		warnings = [];
+		steps = [];
+		show = null;
+		analysis = null;
+		viz.clearShow();
+		setPhase('analysing', 'Loading');
+
+		try {
+			const [bundleRes, audioRes] = await Promise.all([
+				fetch(`/api/track/${id}/bundle`),
+				fetch(`/api/track/${id}/audio`)
+			]);
+			if (!bundleRes.ok) throw new Error((await bundleRes.text()).slice(0, 300));
+			if (!audioRes.ok) throw new Error('audio not cached');
+
+			const bundle = (await bundleRes.json()) as {
+				analysis: TrackAnalysis;
+				show: Show | null;
+				meta: TrackMeta | null;
+			};
+
+			await viz.loadAudio(await audioRes.arrayBuffer());
+			trackId = id;
+			analysis = bundle.analysis;
+			meta = bundle.meta;
+
+			if (bundle.show) {
+				show = bundle.show;
+				viz.loadShow(bundle.analysis, bundle.show);
+				note(`${bundle.meta?.title ?? id}: ${bundle.show.cues.length} cues, ${bundle.show.hits.length} hits`);
+			} else {
+				note(`${id}: analysed, no show yet`);
+			}
+
+			setPhase('ready', '');
+			// Starting here rather than on the queue event: a track that is not decoded yet
+			// cannot play, and asking it to would just silently do nothing.
+			await viz.play();
+			if (ddpRunning) void postJson('/api/output', { action: 'start', trackId: id, hosts: hosts() });
+		} catch (e) {
+			setPhase('error', (e as Error).message);
+			note(`ERROR ${(e as Error).message}`);
+		}
+	}
+
+	function hosts(): string[] {
+		return ddpHost
+			.split(',')
+			.map((h) => h.trim())
+			.filter(Boolean);
+	}
+
+	async function toggleOutput() {
+		if (ddpRunning) {
+			await postJson('/api/output', { action: 'stop' });
+			note('DDP output stopped');
+			return;
+		}
+		if (!trackId || hosts().length === 0) return;
+		const res = await postJson('/api/output', { action: 'start', trackId, hosts: hosts() });
+		note(res.ok ? `DDP output to ${ddpHost}` : `ERROR ${await res.text()}`);
+	}
+
+	function openSearch(seed: string) {
+		searchSeed = seed;
+		searchOpen = true;
+	}
+
+	async function pick(candidate: Candidate, how: 'queue' | 'now' | 'next') {
+		const wasEmpty = queue.items.length === 0;
+		await queue.add([
+			{
+				source: candidate.source,
+				trackId: candidate.origin === 'link' ? null : candidate.id,
+				title: candidate.origin === 'link' ? candidate.source : candidate.title,
+				uploader: candidate.uploader,
+				thumbnail: candidate.thumbnail,
+				duration: candidate.duration,
+				authored: candidate.authored
+			}
+		]);
+		note(`queued ${candidate.title}`);
+		void refreshLibrary();
+
+		if (how === 'queue' || wasEmpty) return;
+		// The row that was just appended is the last one, and the server has told us about it
+		// by the time the POST resolves.
+		const added = queue.items[queue.items.length - 1];
+		if (!added) return;
+		if (how === 'now') await queue.jump(added.key);
+		else await queue.playNext(added.key);
+	}
 
 	/**
 	 * Re-read the track at a different metrical level.
@@ -111,58 +260,28 @@
 	 */
 	async function relevel(level: number) {
 		const source = meta?.source;
-		if (!source || relevelling) return;
+		if (!source || relevelling || !viz) return;
 		relevelling = true;
+		setPhase('analysing', 'Re-reading the grid');
 		try {
-			await loadTrack(source, level);
-		} finally {
-			relevelling = false;
-		}
-	}
-
-	async function loadTrack(source: string, metricalLevel?: number) {
-		if (!viz) return;
-		warnings = [];
-		show = null;
-		setPhase(/^https?:/.test(source) ? 'resolving' : 'analysing', 'Resolving');
-		note(metricalLevel ? `re-reading ${source} at ${metricalLevel}x` : `load ${source}`);
-
-		try {
-			const res = await postJson('/api/ingest', { source, metricalLevel });
+			const res = await postJson('/api/ingest', { source, metricalLevel: level });
 			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
-
 			const data = (await res.json()) as {
 				id: string;
 				analysis: TrackAnalysis;
 				meta: TrackMeta;
 				show: Show | null;
-				fromCache: boolean;
 			};
-			trackId = data.id;
 			analysis = data.analysis;
 			meta = data.meta;
-			note(
-				`analysed ${data.analysis.tempo.bpm} bpm, ${data.analysis.bars.length} bars, ${data.analysis.sections.length} sections${data.fromCache ? ' (cached)' : ''}`
-			);
-
-			setPhase('analysing', 'Decoding audio');
-			const audio = await fetch(`/api/track/${data.id}/audio`);
-			if (!audio.ok) throw new Error('audio not cached');
-			await viz.loadAudio(await audio.arrayBuffer());
-
-			// Ingest composes a show from the analysis before it returns, so the room is lit as
-			// soon as the audio is, without waiting on anybody's decision to spend a model.
-			if (data.show) {
-				show = data.show;
-				viz.loadShow(data.analysis, data.show);
-				note(`show loaded: ${data.show.cues.length} cues, ${data.show.hits.length} hits`);
-			} else {
-				note('no show yet');
-			}
+			show = data.show;
+			if (data.show) viz.loadShow(data.analysis, data.show);
+			note(`re-read at ${data.analysis.tempo.bpm} bpm`);
 			setPhase('ready', '');
 		} catch (e) {
 			setPhase('error', (e as Error).message);
-			note(`ERROR ${(e as Error).message}`);
+		} finally {
+			relevelling = false;
 		}
 	}
 
@@ -277,91 +396,112 @@
 			});
 			note(`show ready: ${data.show.cues.length} cues, ${data.show.generatedEffects.length} generated`);
 			setPhase('ready', '');
+			void refreshLibrary();
 			es.close();
 		});
 	}
 
-	/** Jump to the previous or next section boundary, the way a track skip would. */
-	function step(dir: -1 | 1) {
-		if (!viz || !analysis) return;
-		const bounds = analysis.sections.map((s) => s.startTime);
-		const now = readout.position;
-		if (dir < 0) {
-			// Within the first 2 s of a section, skip past it to the one before.
-			const prev = [...bounds].reverse().find((t) => t < now - 2);
-			viz.seek(prev ?? 0);
-		} else {
-			const next = bounds.find((t) => t > now + 0.05);
-			viz.seek(next ?? readout.duration);
-		}
-	}
-
-	async function toggleOutput() {
-		if (ddpRunning) {
-			await postJson('/api/output', { action: 'stop' });
-			ddpRunning = false;
-			note('DDP output stopped');
+	/**
+	 * Previous means the previous section until the track is barely started, then the previous
+	 * track. Same gesture as every player: what it does depends on where you are in the song.
+	 */
+	// The audio clock, not the readout: the readout is published at 20 Hz and stops entirely
+	// while the tab is in the background, where the audio keeps playing regardless.
+	function prev() {
+		const v = viz;
+		if (!v || !analysis || v.position < 3) {
+			void queue.prev();
 			return;
 		}
-		if (!trackId || !ddpHost.trim()) return;
-		const res = await postJson('/api/output', {
-			action: 'start',
-			trackId,
-			hosts: ddpHost
-				.split(',')
-				.map((h) => h.trim())
-				.filter(Boolean)
-		});
-		if (res.ok) {
-			ddpRunning = true;
-			note(`DDP output to ${ddpHost}`);
-		} else {
-			note(`ERROR ${await res.text()}`);
+		const now = v.position;
+		const bounds = analysis.sections.map((s) => s.startTime);
+		v.seek([...bounds].reverse().find((t) => t < now - 2) ?? 0);
+	}
+
+	function next() {
+		const v = viz;
+		if (!v || !analysis) {
+			void queue.next();
+			return;
 		}
+		const now = v.position;
+		const target = analysis.sections.map((s) => s.startTime).find((t) => t > now + 0.05);
+		if (target === undefined) void queue.next();
+		else v.seek(target);
 	}
 
 	function onKey(e: KeyboardEvent) {
+		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+			e.preventDefault();
+			openSearch('');
+			return;
+		}
+		if (searchOpen) return;
 		if (e.target instanceof HTMLInputElement) return;
+
 		if (e.code === 'Space') {
 			e.preventDefault();
 			void viz?.toggle();
-		} else if (e.code === 'ArrowLeft') {
-			viz?.seek(Math.max(0, readout.position - (e.shiftKey ? 30 : 5)));
-		} else if (e.code === 'ArrowRight') {
-			viz?.seek(Math.min(readout.duration, readout.position + (e.shiftKey ? 30 : 5)));
+		} else if (e.code === 'ArrowLeft' && viz) {
+			viz.seek(Math.max(0, viz.position - (e.shiftKey ? 30 : 5)));
+		} else if (e.code === 'ArrowRight' && viz) {
+			viz.seek(Math.min(viz.duration, viz.position + (e.shiftKey ? 30 : 5)));
+		} else if (e.key === '[') {
+			leftOpen = !leftOpen;
+		} else if (e.key === ']') {
+			rightOpen = !rightOpen;
 		}
 	}
 </script>
 
 <svelte:window onkeydown={onKey} />
 
+<Backdrop thumbnail={meta?.thumbnail ?? ''} />
+
 <div class="shell">
 	<TopBar
-		{load}
-		canAuthor={!!analysis}
-		hasShow={!!show}
-		onload={loadTrack}
-		onauthor={author} />
+		{busy}
+		{busyLabel}
+		{failure}
+		hardware={hardware.status}
+		{leftOpen}
+		{rightOpen}
+		onsearch={openSearch}
+		onhardware={() => (hardwareOpen = true)}
+		ontoggleLeft={() => (leftOpen = !leftOpen)}
+		ontoggleRight={() => (rightOpen = !rightOpen)} />
 
 	<div class="body">
-		<Stage {viz} {readout} {load} {steps} hasShow={!!show} {previewing} />
-		<Inspector
-			{analysis}
-			{show}
-			{readout}
-			{log}
-			{steps}
-			{warnings}
-			bind:ddpHost
-			{ddpRunning}
-			ontoggleOutput={toggleOutput}
-			generatedEffects={generatedDefs}
-			{previewing}
-			{previewParams}
-			onpreview={preview}
-			onparam={previewParam}
-			onrelevel={relevel}
-			{relevelling} />
+		{#if leftOpen}
+			<QueuePanel
+				items={queue.items}
+				currentKey={queue.state.currentKey}
+				playing={readout.playing}
+				onjump={(k) => void queue.jump(k)}
+				onremove={(k) => void queue.remove(k)}
+				onplayNext={(k) => void queue.playNext(k)}
+				onmove={(k, to) => void queue.move(k, to)}
+				onretry={(k) => void queue.retry(k)}
+				onclear={() => void queue.clear(true)}
+				onsearch={() => openSearch('')} />
+		{/if}
+
+		<Stage {viz} {readout} {load} {steps} hasShow={!!show} queued={queue.items.length} />
+
+		{#if rightOpen}
+			<Inspector
+				{analysis}
+				{show}
+				{readout}
+				{log}
+				{steps}
+				{warnings}
+				canAuthor={!!analysis}
+				authoring={load.phase === 'authoring'}
+				onauthor={author}
+				onrelevel={relevel}
+				{relevelling} />
+		{/if}
 	</div>
 
 	<PlayerBar
@@ -370,21 +510,40 @@
 		{show}
 		{readout}
 		bind:volume
+		{timelineOpen}
+		{hasPrev}
+		{hasNext}
 		ontoggle={() => void viz?.toggle()}
 		onseek={(t) => viz?.seek(t)}
-		onstep={step} />
+		onprev={prev}
+		onnext={next}
+		ontimeline={() => (timelineOpen = !timelineOpen)} />
 
-	<LedBands {viz} />
-
-	<ShowStrip
-		{analysis}
-		{show}
-		position={readout.position}
-		duration={readout.duration}
-		onseek={(t) => viz?.seek(t)} />
+	{#if timelineOpen}
+		<TimelineDrawer
+			{viz}
+			{analysis}
+			{show}
+			position={readout.position}
+			duration={readout.duration}
+			onseek={(t) => viz?.seek(t)} />
+	{/if}
 </div>
 
+<SearchModal bind:open={searchOpen} bind:query={searchSeed} {library} onpick={pick} />
+
+<HardwareModal
+	open={hardwareOpen}
+	status={hardware.status}
+	canStream={!!show}
+	onclose={() => (hardwareOpen = false)}
+	onhost={(h) => void hardware.setHost(h)}
+	onprobe={(h) => void hardware.probe(h)}
+	ontoggleOutput={toggleOutput} />
+
 <style>
+	/* No z-index of its own: the room layer inside it has to stay under the panels, which is
+	   only possible while they all share the root stacking context. */
 	.shell {
 		display: flex;
 		flex-direction: column;
