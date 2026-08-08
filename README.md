@@ -1,4 +1,4 @@
-# Room
+# LightningStrike
 
 A lighting show for a 5 x 4 m room with five addressable LED strips: four wall runs at
 2.4 m forming a closed perimeter ring, plus one ceiling beam. 1320 pixels at 60 LED/m.
@@ -155,24 +155,50 @@ throughout.
 
 ## The app
 
-One screen. The room is the hero; the chrome stays quiet so the room's colours are the only
-saturated thing on screen.
+One screen. The room is rendered full-window underneath everything and the chrome floats on
+it, slightly transparent, so a lit room glows through the panels reporting on it. Behind that
+sits the current cover, blurred past recognition - at that radius it carries no detail, only
+the record's own colour, which is the one thing about a track the chrome can honestly borrow.
+Everything else is greyscale, because the LEDs have to be the only saturated thing on screen.
 
-- **Top bar** takes a YouTube link or a local path. The engine's show is lit as soon as the
-  audio is; Design with Claude hands it over to be revised.
-- **Stage** is the 3D room, with view presets, a diffuser/raw-pixel toggle and bloom.
-  Empty-state text reports which phase the pipeline is in.
-- **Player bar** is Spotify-shaped: art, title, prev-section / play / next-section, and a
-  scrubber. The scrubber is the timeline: sections are drawn as coloured segments and what
-  has not played yet is veiled rather than covered, so the arrangement stays readable ahead
-  of the playhead. Hits are ticks on it. Hovering shows bar number and section.
-- **Inspector** has four tabs: the show (tempo, arrangement, palette, Claude's brief, the
-  generated effect, linter notes, DDP output), the cue sheet with the live cue highlighted,
-  **design** (a live feed of what the agent is doing - every tool call, its arguments and its
-  result, as it happens), and the raw log. It switches to design automatically while a show
-  is being authored.
+- **Top bar** centres one field. Typing in it opens a command palette that lists the tracks
+  already in the cache first, then searches YouTube. A pasted link collapses to a single row.
+  Enter queues, Cmd-Enter plays now, Alt-Enter plays next.
+- **Queue**, on the left, is the set list: drag to reorder, click to jump, live status while a
+  track downloads and analyses, and a mark on the ones Claude has designed rather than the
+  engine.
+- **Stage** is the 3D room, with view presets. Nothing else floats over it: the diffuser and
+  bloom are fixed at the settings the room is meant to be judged at.
+- **Player bar** is Spotify-shaped: art, title, prev/play/next, and a scrubber. The scrubber is
+  the timeline: sections are drawn as coloured segments and what has not played yet is veiled
+  rather than covered, so the arrangement stays readable ahead of the playhead. Hits are ticks
+  on it. Hovering shows bar number and section.
+- **Timeline drawer**, under the player, holds the raw LED bands - the exact bytes that go on
+  the wire - and four lanes of sections, cues, drum density and punctuation.
+- **Inspector** has four tabs: the show (Revise with Claude, tempo, arrangement, palette,
+  Claude's brief, the generated effects, linter notes), the cue sheet with the live cue
+  highlighted, **design** (a live feed of what the agent is doing - every tool call, its
+  arguments and its result, as it happens), and the raw log. It switches to design
+  automatically while a show is being authored.
+- **The board**, top right, is a live readout rather than a button: a dot and the frame rate
+  the hardware itself reports. Opening it gives the address field, what the board says it is,
+  and how the stream is actually arriving. See `FIRMWARE.md`.
 
-Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s.
+Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s. Cmd-K opens the palette,
+`[` and `]` collapse the two rails.
+
+## The queue is server state
+
+It lives in the Node process and is persisted to `cache/queue.json`, not in the browser. The
+server owns `currentKey`; the browser watches it over SSE and plays what it is told. That is
+what makes it possible for people in the room to add to the queue from their own phones later
+without this deciding anything, and it means the hardware output re-points itself on a track
+change with no browser involved. The dev server binds every interface for the same reason.
+
+Preparing a track - download, analyse, compose - runs one job at a time, and only for the
+current row and the one after it. The beat tracker is an ONNX graph that will take every core
+it is offered, so two at once is slower than the same two in sequence and starves the render
+loop besides.
 
 ## Setup
 
@@ -191,14 +217,14 @@ pool.
 
 ```sh
 npm run dev            # the app
-npm test               # 293 tests
+npm test               # 419 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
-Everything else happens in the app: paste a link and the room lights. Artifacts land in `cache/`:
-`<id>.<ext>` audio, `<id>.analysis.json`, `<id>.show.json`. The cache is anchored to the
-workspace root rather than to cwd, so the dev server and a production build share it.
-`MV_CACHE_DIR` overrides it.
+Everything else happens in the app: search for a track and the room lights. Artifacts land in
+`cache/`: `<id>.<ext>` audio, `<id>.analysis.json`, `<id>.show.json`, `<id>.meta.json`, plus
+`queue.json`. The cache is anchored to the workspace root rather than to cwd, so the dev
+server and a production build share it. `MV_CACHE_DIR` overrides it.
 
 The packages are consumed as TypeScript source rather than built to `dist/`, so there is no
 build step between editing a package and seeing it in the app.

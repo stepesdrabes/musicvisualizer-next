@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-House rules for this repo. `README.md` explains what Room is and why it is built this way;
+House rules for this repo. `README.md` explains what LightningStrike is and why it is built this way;
 this file is only the conventions.
 
 ## Commands
@@ -76,6 +76,22 @@ and the linter have to agree on it, so neither writes the modulo out by hand.
 
 Bump `ANALYSIS_VERSION` when the analysis shape changes, or cached blobs go silently stale
 rather than obviously broken.
+
+## Interface
+
+Three rules, in `apps/web`. They are absolutes rather than preferences, because each one is a
+tell that an interface was assembled rather than designed:
+
+- **No `text-transform: uppercase`.** Write a label in the case it should be read in.
+- **No left-edge colour bars.** The `border-left: 3px solid <colour>` list row is out. A dot, a
+  filled chip or a full background says the same thing without pretending to be structure.
+- **No label that only rephrases the thing next to it.** A heading reading "room-node" does not
+  need "A Pico W on the same network" underneath it, and a section whose contents announce
+  themselves does not need a caption. Say the next thing or say nothing.
+
+Beyond those: one accent, spent only on states that are genuinely live; monospace only where
+digits change in place; and the room is the only saturated thing on screen, so chrome that
+carries a hue is competing with the thing being judged.
 
 ## Style
 
