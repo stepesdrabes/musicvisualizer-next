@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { RealFft, hannWindow } from './dsp/fft.ts';
 import { MODEL_DIR } from './paths.ts';
@@ -202,6 +203,26 @@ interface Session {
 }
 type TensorCtor = new (type: string, data: Float32Array, dims: number[]) => unknown;
 
+interface Ort {
+	InferenceSession: { create(path: string, opts: unknown): Promise<Session> };
+	Tensor: TensorCtor;
+}
+
+/**
+ * Resolve onnxruntime-node at runtime, out of a bundler's reach.
+ *
+ * A plain `import('onnxruntime-node')` is statically analysable, and a bundler that inlines it
+ * rewrites the require of its native `.node` addon into a stub that throws. Ingest catches
+ * that and quietly falls back to the in-repo tracker, so a bundled build loses Beat This and
+ * says nothing about it: the same audio came out at confidence 0.36 bundled against 1.00 from
+ * source. `createRequire` with a bare specifier is opaque to that analysis, so the addon is
+ * found the same way in every build.
+ */
+function loadOrt(): Ort {
+	const require = createRequire(import.meta.url);
+	return require('onnxruntime-node') as Ort;
+}
+
 export class BeatThis {
 	// Node strips types rather than compiling them, so no parameter properties here, any more
 	// than in the packages this repo consumes as source.
@@ -210,7 +231,7 @@ export class BeatThis {
 
 	static async create(): Promise<BeatThis> {
 		if (!modelsPresent()) await ensureModels();
-		const ort = (await import('onnxruntime-node')).default;
+		const ort = loadOrt();
 		const session = await ort.InferenceSession.create(join(modelDir(), 'beat_this.onnx'), {
 			executionProviders: ['cpu'],
 			graphOptimizationLevel: 'all'
