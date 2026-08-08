@@ -12,6 +12,8 @@ import type { BarFeatures } from './structure.ts';
 import type { SegmentGroup } from './structure.ts';
 import type { Spectrogram } from './dsp/spectrogram.ts';
 import { clamp01, mean, median, normalise, quantile } from './dsp/stats.ts';
+import { sectionFeatures } from './sectionFeatures.ts';
+import { readsAsDrop } from './sectionModel.ts';
 
 export interface Segment {
 	startBar: number;
@@ -146,14 +148,14 @@ const VOID_RATIO = 0.35;
  */
 const BREAKDOWN_KIT = 0.62;
 /**
- * How far the kit has to come back across a boundary for the lift to be a drop.
+ * How far the kit has to come back across a boundary for the track to have drops at all.
  *
  * Yadati et al. (ISMIR 2014) label the drop as the moment the buildup ends and the bassline is
- * re-introduced, and add rhythm features to a spectral classifier precisely because the rhythm
- * switches there. Both halves of that are tested: the kit returns AND the bottom comes with it.
+ * re-introduced. That pairing is now the section model's to find - it reads the kick, snare, kit
+ * and sub steps across both neighbours as features - and what is left here is the coarser
+ * question this constant is actually good at: does this track do that anywhere, ever.
  */
 const DROP_KICK_STEP = 0.3;
-const DROP_SUB_STEP = 0.2;
 /**
  * How far the kick has to sit below the drop it leads into for the passage to be a build.
  *
@@ -163,13 +165,6 @@ const DROP_SUB_STEP = 0.2;
  */
 const BUILD_KICK_RATIO = 0.85;
 const BUILD_SNARE_RISE = 1.15;
-/**
- * How full the kit has to be for a repeat of a drop to be lit as one too.
- *
- * Just under parity: the same chorus played again is rarely bar-for-bar identical, and asking
- * for its equal would only ever admit an exact loop.
- */
-const REPEAT_KICK_RATIO = 0.9;
 const MAX_BUILD_BARS = 16;
 /** The longest a merge may make a section. Four phrases. */
 const MAX_MERGED_BARS = 32;
@@ -308,64 +303,61 @@ export function arrange(
 	const body = median(segEnergy);
 	const loudLevel = Math.max(quantile(segEnergy, 0.7), Math.max(...segEnergy) * 0.82);
 
+	// Groove against drop is the one call a fitted model makes better than a threshold, and it is
+	// most of every track. Scored against annotated function over 115 Harmonix tracks, five-fold
+	// cross-validated BY TRACK, the thresholds this replaces reach F1 47.2 on groove and 53.6 on
+	// drop where the model reaches 62.0 and 67.2.
+	//
+	// It decides that and nothing else, because the rules beat it everywhere they are still used:
+	// the build walk-back scores 15.3 F1 against the model's 0.0, since a build is defined by
+	// where it is GOING and no summary of what a section contains can see that. Silence and a
+	// stopped kit are facts rather than predictions, and intro and outro are positions.
+	const features = sectionFeatures({
+		energy,
+		bands: bandsN,
+		kicks: kicksPerBar,
+		snares: snaresPerBar,
+		segments,
+		barCount: count
+	});
 	for (let i = 0; i < segments.length; i++) {
 		const e = segEnergy[i];
-		// A loud passage is a drop only when something set it up, and only once the track has
-		// had room to establish what it is dropping from. Nothing drops in its first two
-		// phrases; a loud passage there is the groove arriving, which is a different thing
-		// to light.
-		const settled = segments[i].startBar >= 2 * PHRASE_BARS;
-		const rose = i > 0 && e - segEnergy[i - 1] >= DROP_STEP;
-		// The kit returning with the bottom, which is what the literature actually defines a
-		// drop as. Both halves are required: drums alone come back at the top of a verse too,
-		// and the bass alone is a bassline entry rather than a drop.
-		const kitReturned =
-			audible &&
-			i > 0 &&
-			kit[i].kick - kit[i - 1].kick >= DROP_KICK_STEP &&
-			segSub[i] - segSub[i - 1] >= DROP_SUB_STEP;
 
-		// The level gate is what the drum route exists to get past. A master limited to within a
-		// couple of dB puts most of its passages under the same quantile, so a drop found by the
-		// kit is only asked to be above the body of the track rather than in its top third.
-		const loudEnough = e >= loudLevel || (kitReturned && e >= body);
-
-		if (loudEnough && hasDrops && settled && (rose || kitReturned)) {
-			segments[i].kind = 'drop';
-		} else if (audible && kit[i].kit < BREAKDOWN_KIT && e < loudLevel) {
+		if (audible && kit[i].kit < BREAKDOWN_KIT && e < loudLevel) {
 			// The kit stopped. Not a level test at all, which is the point: a filtered breakdown
 			// sits at the same loudness as the groove around it and the energy quantile that used
 			// to decide this cannot see it.
 			segments[i].kind = 'breakdown';
-		} else if (e <= body - BREAKDOWN_STEP) {
-			segments[i].kind = 'breakdown';
-		} else {
-			segments[i].kind = 'groove';
+			continue;
 		}
+		if (e <= body - BREAKDOWN_STEP) {
+			segments[i].kind = 'breakdown';
+			continue;
+		}
+
+		// A loud passage is a drop only when something set it up, and only once the track has had
+		// room to establish what it is dropping from. Nothing drops in its first two phrases; a
+		// loud passage there is the groove arriving, which is a different thing to light. Both
+		// gates stay in front of the model because they are taste rather than accuracy: a ballad
+		// has no drop however loud its last chorus is, and a corpus of pop cannot teach that.
+		const settled = segments[i].startBar >= 2 * PHRASE_BARS;
+		segments[i].kind = readsAsDrop(features[i]) && hasDrops && settled ? 'drop' : 'groove';
 	}
 
 	// --- repeats ---------------------------------------------------------------------------
-	// Two passages of the same material are the same part of the song, so a repeat of a drop is
-	// a drop. Without this the second chorus is a groove whenever the passage before it happened
-	// to be loud enough to erase the step, and the room then answers the same music two
-	// different ways for no reason anyone in it can hear.
+	// There is deliberately no repeat propagation here any more.
 	//
-	// Guarded by the kit rather than applied blindly, because a stripped reprise IS the same
-	// material played differently and lighting it as a drop is exactly why the real one stops
-	// landing. Repeat identity is a tie-breaker on the drum evidence here, never a substitute
-	// for it: scored on its own across 374 tracks it partitions worse than the labels do.
-	const dropFloor = new Map<number, number>();
-	for (let i = 0; i < segments.length; i++) {
-		if (segments[i].kind !== 'drop' || segments[i].group < 0) continue;
-		const g = segments[i].group;
-		dropFloor.set(g, Math.min(dropFloor.get(g) ?? Infinity, kit[i].kick));
-	}
-	for (let i = 0; i < segments.length; i++) {
-		const floor = dropFloor.get(segments[i].group);
-		if (segments[i].kind !== 'groove' || floor === undefined) continue;
-		if (segments[i].startBar < 2 * PHRASE_BARS) continue;
-		if (audible && kit[i].kick >= floor * REPEAT_KICK_RATIO) segments[i].kind = 'drop';
-	}
+	// It existed to recover the second chorus, which the threshold labeller lost whenever the
+	// passage before it was loud enough to erase the step. The section model does not lose it:
+	// with the pass still in place `drop` came out 58.7% of frames against an annotated 42.1%
+	// and half of all annotated groove was called drop, because one member of a group being
+	// called drop dragged every repeat of it across. Removing it moved frame agreement 47.7% to
+	// 50.9% and the drop share to 42.8% against that annotated 42.1%.
+	//
+	// Same shape as the SECTION_FLOOR reduction: a compensation left in place after its cause is
+	// fixed is contrast spent for nothing. `SectionSpan.group` still ships, and a show is still
+	// free to light every member of a group alike; what no longer happens is the arrangement
+	// deciding that for it.
 
 	// A track with dynamics has a peak whether or not the step test caught it.
 	if (hasDrops && !segments.some((s) => s.kind === 'drop')) {

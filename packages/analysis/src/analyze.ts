@@ -272,7 +272,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			energy: Array.from(beat.energy, pct),
 			bands: Array.from(beat.bands, pct)
 		},
-		spectrum: spectrumTrack(features.spec, input.duration),
+		spectrum: spectrumTrack(features.spec, input.duration, (t) => {
+			for (const s of sections) if (t >= s.startTime && t < s.endTime) return s.kind;
+			return 'groove';
+		}),
 		stereo: {
 			fps: round3(stereo.fps),
 			pan: Array.from(stereo.pan, round2),

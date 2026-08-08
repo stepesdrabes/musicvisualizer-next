@@ -125,3 +125,32 @@ export function sampleAt(a: ArrayLike<number>, x: number): number {
 	const f = x - i;
 	return a[i] * (1 - f) + a[i + 1] * f;
 }
+
+/**
+ * Centred running median, radius `r`, in place of a smoothing filter.
+ *
+ * Two properties an exponential filter cannot have. It is CENTRED, so it has no group delay: an
+ * offline analyser is not causal and paying a lag for smoothing is a realtime tax we do not owe.
+ * And a median preserves a step edge where a mean rounds it off, so an impulse survives while the
+ * jitter around it does not - which is the difference between smoothing a spectrum and blurring it.
+ */
+export function centredMedian(a: ArrayLike<number>, r: number, out = new Float32Array(a.length)): Float32Array {
+	const n = a.length;
+	if (n === 0 || r <= 0) {
+		for (let i = 0; i < n; i++) out[i] = a[i];
+		return out;
+	}
+	const window = new Float64Array(2 * r + 1);
+	for (let i = 0; i < n; i++) {
+		let m = 0;
+		for (let k = -r; k <= r; k++) {
+			const j = i + k;
+			if (j < 0 || j >= n) continue;
+			window[m++] = a[j];
+		}
+		const slice = window.subarray(0, m);
+		slice.sort();
+		out[i] = m % 2 ? slice[(m - 1) >> 1] : (slice[m / 2 - 1] + slice[m / 2]) / 2;
+	}
+	return out;
+}

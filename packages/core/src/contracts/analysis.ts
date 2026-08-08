@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 7;
+export const ANALYSIS_VERSION = 9;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -151,9 +151,16 @@ export interface Envelopes {
  * on its own and, pretty-printed the way the rest of the analysis is, a quarter of a million
  * lines.
  *
- * Each band is normalised against its own distribution across the track, exactly as
- * `Envelopes.bands` is, so an effect reading this and an effect reading `f.bands` are reading
- * the same kind of number and a quiet track's top octave still reaches 1.0.
+ * A fixed 30 dB window against one shared reference per band: 1.0 means "as loud as this track's
+ * loud passages get", 0.0 means 30 dB under it. NOT per-band normalised - stretching each band
+ * across its own whole-track range made every band read near full whenever it was near its own
+ * maximum, so a drop arrived as a flat plateau with nothing left to react with, and it destroyed
+ * the relative height between bands that is what makes a spectrum look like music rather than
+ * like twenty independent meters. Quiet section kinds are lifted by at most 6 dB, so they keep
+ * some articulation of their own without arriving at a drop's.
+ *
+ * This is therefore NOT the same kind of number as `Envelopes.bands`, which stays normalised per
+ * band across the track. The bands say how LOUD; the spectrum says what SHAPE.
  */
 export interface SpectrumTrack {
 	fps: number;
