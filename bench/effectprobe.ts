@@ -5,6 +5,7 @@ import {
 	SLOT,
 	buildGeometry,
 	makePalette,
+	quietFrames,
 	scriptFrames,
 	type EffectDef,
 	type ShowFrame
@@ -25,6 +26,10 @@ import {
  *   react   how far the output moves when the spectrum and bands are driven rather than held
  *           flat, as a share of its own mean level. An effect that ignores the music scores 0,
  *           which is exactly the complaint about a quiet passage.
+ *   quiet   the same question asked over an intro and an outro instead: quiet, no kit at all,
+ *           but a real spectrum with a wandering peak. `react` can be carried entirely by an
+ *           effect's response to drums, and the room is reported dead precisely where there are
+ *           none, so this is the column that answers the complaint.
  *
  *   node bench/effectprobe.ts [--role bed] [--sort fill]
  */
@@ -83,10 +88,16 @@ interface Row {
 	top10: number;
 	hue: number;
 	react: number;
+	quiet: number;
 }
 
 /** Run one effect alone in the mixer, which is what applies gamma and the output chain. */
-function measure(def: EffectDef, frames: readonly ShowFrame[]): { bytes: Uint8Array[]; mean: number } {
+interface Measured {
+	bytes: Uint8Array[];
+	mean: number;
+}
+
+function measure(def: EffectDef, frames: readonly ShowFrame[]): Measured {
 	const mixer = new Mixer(g);
 	mixer.palette = palette;
 	mixer.intensity = 1;
@@ -105,15 +116,41 @@ function measure(def: EffectDef, frames: readonly ShowFrame[]): { bytes: Uint8Ar
 	return { bytes, mean: total / Math.max(1, bytes.length * bytes[0].length) };
 }
 
+
+/** Roles that have to hold a quiet passage on their own. A transient is allowed to be still. */
+const QUIET_ROLES = new Set(['bed', 'accent', 'rhythm']);
+
+/**
+ * Movement over a quiet passage, as a share of the effect's own mean level.
+ *
+ * Guarded against a near-black output rather than scaled by it: an effect delivering almost
+ * nothing divides by almost nothing and reports spectacular reactivity it does not have.
+ */
+function quietReact(live: Measured, deaf: Measured): number {
+	if (live.mean < 0.5) return 0;
+	let delta = 0;
+	const n = Math.min(live.bytes.length, deaf.bytes.length);
+	for (let k = 0; k < n; k++) {
+		const a = live.bytes[k];
+		const b = deaf.bytes[k];
+		for (let i = 0; i < a.length; i++) delta += Math.abs(a[i] - b[i]);
+	}
+	return delta / Math.max(1, n * live.bytes[0].length) / live.mean;
+}
+
 const rows: Row[] = [];
 const frames = scriptFrames();
 const flat = deafen(frames);
+const quiet = quietFrames();
+const quietFlat = deafen(quiet);
 
 for (const def of BUILT_IN_EFFECTS) {
 	if (onlyRole && def.role !== onlyRole) continue;
 
 	const live = measure(def, frames);
 	const deaf = measure(def, flat);
+	const quietLive = measure(def, quiet);
+	const quietDeaf = measure(def, quietFlat);
 
 	let litPixels = 0;
 	let pixels = 0;
@@ -166,7 +203,8 @@ for (const def of BUILT_IN_EFFECTS) {
 		fill: pixels > 0 ? litPixels / pixels : 0,
 		top10: framesCounted > 0 ? concentration / framesCounted : 0,
 		hue: litBytes > 0 ? onHue / litBytes : 1,
-		react: live.mean > 0.5 ? delta / norm / live.mean : 0
+		react: live.mean > 0.5 ? delta / norm / live.mean : 0,
+		quiet: quietReact(quietLive, quietDeaf)
 	});
 }
 
@@ -184,7 +222,7 @@ rows.sort((a, b) =>
 );
 
 console.error(
-	`${'effect'.padEnd(20)}${'role'.padEnd(11)}${'fill'.padStart(7)}${'top10'.padStart(8)}${'hue'.padStart(7)}${'react'.padStart(8)}`
+	`${'effect'.padEnd(20)}${'role'.padEnd(11)}${'fill'.padStart(7)}${'top10'.padStart(8)}${'hue'.padStart(7)}${'react'.padStart(8)}${'quiet'.padStart(8)}`
 );
 for (const r of rows) {
 	console.error(
@@ -193,7 +231,8 @@ for (const r of rows) {
 			`${(100 * r.fill).toFixed(0)}%`.padStart(7) +
 			`${(100 * r.top10).toFixed(0)}%`.padStart(8) +
 			`${(100 * r.hue).toFixed(0)}%`.padStart(7) +
-			r.react.toFixed(2).padStart(8)
+			r.react.toFixed(2).padStart(8) +
+			r.quiet.toFixed(2).padStart(8)
 	);
 }
 
@@ -205,5 +244,12 @@ emit('mean fill %', 100 * mean((r) => r.fill));
 emit('mean top10 %', 100 * mean((r) => r.top10));
 emit('off-palette', rows.filter((r) => r.hue < 0.9).length, 0);
 emit('deaf effects', rows.filter((r) => r.react < 0.02).length, 0);
+// Only the ones that can legally appear in a quiet section: a transient with no drums SHOULD be
+// still, and counting it here would bury the beds and accents that are the actual complaint.
+emit(
+	'deaf in quiet',
+	rows.filter((r) => r.quiet < 0.02 && QUIET_ROLES.has(r.role)).length,
+	0
+);
 emit('spotlights', rows.filter((r) => r.top10 > 0.45).length, 0);
 void SLOT;
