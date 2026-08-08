@@ -89,8 +89,27 @@ The banner gives you the address:
 room-node on 192.168.1.57, DDP :4048, stats -> :4049
 ```
 
-Put that address in the app's DDP host field and press Generate show. A DHCP reservation is
-worth setting up, since the hostname offered is `room-node` and nothing else advertises it.
+Put that address into the board panel in the app, top right. A DHCP reservation is worth
+setting up, since the hostname offered is `room-node` and nothing else advertises it.
+
+## Answering "are you there"
+
+The stats stream below only goes to whoever is already sending DDP, which leaves a host with
+no way to tell a wrong address from an unplugged board until it starts streaming at the room.
+So the board also answers a query, on the DDP port, at any time:
+
+```
+-> ?room-node
+<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds stub
+```
+
+The reply goes back to the asker's own source port, so nothing has to be listening on 4049 for
+this to work. A leading `?` is `0x3f`, and DDP version 1 puts `0b01` in the top two bits of its
+first byte, so `hello.rs` and `ddp.rs` can never both claim a datagram; the query is checked
+first and never counts against `bad`.
+
+`leds` is read from `leds.rs` rather than written in `hello.rs`, so it says `stub` until the
+strips are actually driven and the app stops warning that the room will stay dark.
 
 ## Reading the stats line
 

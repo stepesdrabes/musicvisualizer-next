@@ -1,3 +1,7 @@
+/// What this build actually does with a frame, reported in the discovery answer so a host can
+/// say so rather than implying the room is lit. Becomes `ws2812` when the strips are driven.
+pub const LED_KIND: &str = "stub";
+
 /// Stub until the strips are wired.
 ///
 /// The real path drives WS2812 from PIO1 SM0..SM3 with DMA_CH2..CH5: cyw43 already holds PIO0

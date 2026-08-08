@@ -4,6 +4,7 @@
 mod config;
 mod ddp;
 mod frame;
+mod hello;
 mod leds;
 mod stats;
 
@@ -158,6 +159,15 @@ async fn main(spawner: Spawner) {
 		match event {
 			Either::First(Ok((n, meta))) => {
 				let now = Instant::now();
+
+				// Answered before the parse and on the asker's own port, so discovery needs no
+				// listener on the stats port and never counts against `bad`.
+				if hello::is_query(&pkt[..n]) {
+					let line = hello::line((now - boot).as_secs());
+					let _ = socket.send_to(line.as_bytes(), meta.endpoint).await;
+					continue;
+				}
+
 				let Some(p) = ddp::parse(&pkt[..n]) else {
 					stats.bad += 1;
 					continue;
