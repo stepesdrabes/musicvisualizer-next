@@ -194,6 +194,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		title: analysis.title,
 		analysisHash: analysis.hash,
 		brief: writeBrief(analysis, palette.name ?? 'unnamed'),
+		authoredBy: 'engine',
 		palette,
 		defaults: { intensity: 0.7, motion: 1, fadeBeats: 2 },
 		generatedEffects: [],

@@ -105,6 +105,12 @@ export interface Show {
 	analysisHash: string;
 	/** The design rationale, in prose. Read by humans, not the engine. */
 	brief: string;
+	/**
+	 * Who composed it. Optional so shows written before this field still load; a reader
+	 * without it can fall back to whether the show has effects of its own, which only the
+	 * agent produces.
+	 */
+	authoredBy?: 'engine' | 'claude';
 	palette: ShowPalette;
 	defaults: {
 		intensity: number;

@@ -193,7 +193,7 @@ export async function authorShow(
 	}
 
 	return {
-		show: session.submitted,
+		show: { ...session.submitted, authoredBy: 'claude' },
 		brief,
 		analysis: session.analysis,
 		log: session.log

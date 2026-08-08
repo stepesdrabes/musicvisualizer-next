@@ -189,6 +189,20 @@ export class ShowPlayer {
 		return this.analysis && this.show ? { analysis: this.analysis, show: this.show } : null;
 	}
 
+	/**
+	 * Forget the loaded show entirely.
+	 *
+	 * `reset()` rewinds a show to its start; this is for when there is no longer a show at all,
+	 * which is what a queue moving to a track that has not been composed yet leaves behind.
+	 */
+	clear(): void {
+		this.analysis = null;
+		this.show = null;
+		this.cues = [];
+		this.hits = [];
+		this.reset();
+	}
+
 	load(analysis: TrackAnalysis, show: Show): void {
 		this.analysis = analysis;
 		this.show = show;
