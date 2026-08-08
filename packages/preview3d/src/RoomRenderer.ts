@@ -396,10 +396,32 @@ export class RoomRenderer {
 		this.dots = mesh;
 	}
 
+	/**
+	 * Device pixels the bloom chain may work over, before the ratio is reduced.
+	 *
+	 * The chain costs roughly linearly in pixels, and 60 fps is not a preference here: the
+	 * preview is what the room is judged by, and a show that stutters in the preview reads as
+	 * a show that stutters. Retina sharpness is the cheaper thing to give up, because almost
+	 * everything on screen is a soft glow that bloom has already blurred.
+	 */
+	private static readonly PIXEL_BUDGET = 3_000_000;
+
 	resize(width: number, height: number): void {
 		if (width <= 0 || height <= 0) return;
 		this.camera.aspect = width / height;
 		this.camera.updateProjectionMatrix();
+
+		const ratio = Math.max(
+			1,
+			Math.min(
+				window.devicePixelRatio || 1,
+				2,
+				Math.sqrt(RoomRenderer.PIXEL_BUDGET / (width * height))
+			)
+		);
+		// Before setSize on either: the composer sizes its buffers from the renderer's ratio.
+		if (Math.abs(ratio - this.renderer.getPixelRatio()) > 0.01) this.renderer.setPixelRatio(ratio);
+
 		this.renderer.setSize(width, height, false);
 		this.composer.setSize(width, height);
 	}
