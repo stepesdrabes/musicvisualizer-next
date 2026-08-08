@@ -5,6 +5,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
 	import Spinner from '$lib/ui/Spinner.svelte';
+	import RoomInvite from './RoomInvite.svelte';
 
 	let {
 		items = [],
@@ -106,6 +107,8 @@
 							{:else if item.status !== 'ready' && item.status !== 'pending'}
 								<Spinner size={10} />
 								<span class="muted">{statusLabel(item)}</span>
+							{:else if item.addedBy}
+								<span class="guest">{item.addedBy}</span>
 							{:else}
 								<span class="muted">{item.uploader}</span>
 							{/if}
@@ -159,6 +162,8 @@
 			</div>
 		{/if}
 	</div>
+
+	<RoomInvite />
 </aside>
 
 <style>
@@ -301,6 +306,11 @@
 	}
 	.bad {
 		color: var(--bad);
+	}
+	/* Named rather than coloured: whose track it is matters, which guest it is does not. */
+	.guest {
+		color: var(--muted-foreground);
+		font-weight: 500;
 	}
 
 	.right {

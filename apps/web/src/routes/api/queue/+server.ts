@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { readLibrary } from '@mv/analysis';
 import type { NewItem, QueueState } from '$lib/queueModel.ts';
+import { isLocal } from '$lib/server/access.ts';
 import { queue } from '$lib/server/queueStore.ts';
 import { runner } from '$lib/server/ingestRunner.ts';
 import type { RequestHandler } from './$types';
@@ -34,8 +35,11 @@ async function withCacheState(items: NewItem[]): Promise<NewItem[]> {
 	});
 }
 
-export const POST: RequestHandler = async ({ request }) => {
-	const body = (await request.json()) as Body;
+export const POST: RequestHandler = async (event) => {
+	// Guests reach the queue through /api/guest, which can only add and take back their own.
+	if (!isLocal(event)) error(403, 'use the guest page to add to this queue');
+
+	const body = (await event.request.json()) as Body;
 	let state: QueueState;
 
 	switch (body.action) {

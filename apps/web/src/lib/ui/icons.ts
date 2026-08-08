@@ -19,6 +19,7 @@ import PanelLeft from 'lucide-svelte/icons/panel-left';
 import PanelRight from 'lucide-svelte/icons/panel-right';
 import Pause from 'lucide-svelte/icons/pause';
 import Play from 'lucide-svelte/icons/play';
+import Plus from 'lucide-svelte/icons/plus';
 import Radio from 'lucide-svelte/icons/radio';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 import Search from 'lucide-svelte/icons/search';
@@ -49,6 +50,7 @@ export const GLYPHS = {
 	pause: Pause,
 	play: Play,
 	playNext: ListPlus,
+	plus: Plus,
 	radio: Radio,
 	retry: RotateCcw,
 	search: Search,

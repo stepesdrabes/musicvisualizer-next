@@ -11,6 +11,7 @@
 		busyLabel = '',
 		failure = '',
 		hardware,
+		inset = 0,
 		leftOpen = true,
 		rightOpen = true,
 		onsearch,
@@ -22,6 +23,8 @@
 		busyLabel?: string;
 		failure?: string;
 		hardware: HardwareStatus;
+		/** Leading space the desktop window's own controls need. Zero in a browser. */
+		inset?: number;
 		leftOpen?: boolean;
 		rightOpen?: boolean;
 		onsearch: (seed: string) => void;
@@ -45,7 +48,7 @@
 	}
 </script>
 
-<header class="floats">
+<header class="floats" data-tauri-drag-region style:padding-left={`${12 + inset}px`}>
 	<div class="side">
 		<Button
 			variant="ghost"
@@ -188,6 +191,16 @@
 		border: 1px solid var(--border);
 		border-radius: 5px;
 		background: var(--muted);
+	}
+
+	/*
+	 * Everything interactive opts out of the drag region, or a click on it starts a window
+	 * move instead of doing what it says.
+	 */
+	.side,
+	.search,
+	.link {
+		-webkit-app-region: no-drag;
 	}
 
 	.status {

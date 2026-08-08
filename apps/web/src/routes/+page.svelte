@@ -3,6 +3,7 @@
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
+	import { installHint, readShell } from '$lib/shell.svelte.ts';
 	import { indexOfKey } from '$lib/queueModel.ts';
 	import type { Candidate } from '$lib/search.svelte.ts';
 	import type { AuthorEvent, LibraryEntry, LoadState, Step, TrackMeta } from '$lib/types.ts';
@@ -46,6 +47,9 @@
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
 	let hardwareOpen = $state(false);
+
+	// Read once: the shell injects it before any of this runs and never changes it.
+	const shell = readShell();
 	let leftOpen = $state(true);
 	let rightOpen = $state(true);
 	let timelineOpen = $state(false);
@@ -70,7 +74,13 @@
 		load.phase === 'authoring' ? load.message : (current?.message ?? 'Working')
 	);
 	const failure = $derived(
-		load.phase === 'error' ? load.message : current?.status === 'error' ? current.message : ''
+		shell.missingTools.length > 0
+			? `${shell.missingTools.join(', ')} not found. ${installHint(shell.platform, shell.missingTools)}`
+			: load.phase === 'error'
+				? load.message
+				: current?.status === 'error'
+					? current.message
+					: ''
 	);
 
 	function note(line: string) {
@@ -464,6 +474,7 @@
 		{busyLabel}
 		{failure}
 		hardware={hardware.status}
+		inset={shell.trafficLightInset}
 		{leftOpen}
 		{rightOpen}
 		onsearch={openSearch}

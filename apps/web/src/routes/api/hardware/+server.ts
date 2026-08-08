@@ -1,5 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { hardware } from '$lib/server/hardware.ts';
+import { isLocal } from '$lib/server/access.ts';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => json(hardware.status);
@@ -7,8 +8,10 @@ export const GET: RequestHandler = async () => json(hardware.status);
 /** Hosts are used as an argument to a UDP send, so anything shell-like is simply not one. */
 const HOST = /^[A-Za-z0-9._-]{1,253}$/;
 
-export const POST: RequestHandler = async ({ request }) => {
-	const body = (await request.json()) as { action: 'set' | 'probe'; host?: string };
+export const POST: RequestHandler = async (event) => {
+	if (!isLocal(event)) error(403, 'the hardware belongs to the machine running the show');
+
+	const body = (await event.request.json()) as { action: 'set' | 'probe'; host?: string };
 
 	if (body.action === 'set') {
 		const host = (body.host ?? '').trim();

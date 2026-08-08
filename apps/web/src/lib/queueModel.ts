@@ -192,6 +192,19 @@ export function patchItem(
 	return { ...state, items, revision: state.revision + 1 };
 }
 
+/**
+ * Whether a guest may pull a row back out.
+ *
+ * Their own, and not the one playing. Removing what is playing is a skip however it is
+ * spelled, and a room where anyone can skip is a room where nobody finishes a song. An
+ * anonymous row belongs to nobody and so cannot be removed by anybody.
+ */
+export function canGuestRemove(state: QueueState, key: string, guest: string): boolean {
+	if (!guest) return false;
+	const item = state.items.find((i) => i.key === key);
+	return item !== undefined && item.addedBy === guest && state.currentKey !== key;
+}
+
 /** Whether two snapshots of an item differ in anything a queue row draws. */
 export function sameItem(a: QueueItem, b: QueueItem): boolean {
 	return (

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	EMPTY_QUEUE,
 	addItems,
+	canGuestRemove,
 	clearQueue,
 	currentItem,
 	jumpTo,
@@ -174,5 +175,45 @@ describe('patching and clearing', () => {
 		const wiped = clearQueue(state, false);
 		expect(wiped.items).toHaveLength(0);
 		expect(wiped.currentKey).toBeNull();
+	});
+});
+
+describe('what a guest may take back', () => {
+	function withGuests(): QueueState {
+		let state = addItems(
+			EMPTY_QUEUE,
+			[
+				{ source: 'a', addedBy: 'Ada' },
+				{ source: 'b', addedBy: 'Ada' },
+				{ source: 'c', addedBy: 'Grace' },
+				{ source: 'd' }
+			],
+			keys,
+			1
+		);
+		// k0 is playing, so Ada's second track is the first she could take back.
+		state = jumpTo(state, 'k0');
+		return state;
+	}
+
+	it('lets a guest take back their own pending row', () => {
+		expect(canGuestRemove(withGuests(), 'k1', 'Ada')).toBe(true);
+	});
+
+	it("refuses somebody else's row", () => {
+		expect(canGuestRemove(withGuests(), 'k2', 'Ada')).toBe(false);
+	});
+
+	it('refuses the row that is playing, because that would be a skip', () => {
+		expect(canGuestRemove(withGuests(), 'k0', 'Ada')).toBe(false);
+	});
+
+	it('refuses a row nobody claimed', () => {
+		expect(canGuestRemove(withGuests(), 'k3', 'Ada')).toBe(false);
+	});
+
+	it('refuses an unnamed guest and an unknown row', () => {
+		expect(canGuestRemove(withGuests(), 'k1', '')).toBe(false);
+		expect(canGuestRemove(withGuests(), 'nope', 'Ada')).toBe(false);
 	});
 });

@@ -16,7 +16,8 @@
 		"@mv/core": "*",
 		"@mv/preview3d": "*",
 		"@mv/transport-ddp": "*",
-		"lucide-svelte": "^1.0.1"
+		"lucide-svelte": "^1.0.1",
+		"uqr": "^0.1.3"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",

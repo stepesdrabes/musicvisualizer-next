@@ -1,0 +1,89 @@
+import type { QueueState } from './queueModel.ts';
+import { EMPTY_QUEUE } from './queueModel.ts';
+
+const STORE_KEY = 'lightningstrike.guest';
+
+export interface Guest {
+	token: string;
+	name: string;
+}
+
+/**
+ * Who this phone is, remembered between visits.
+ *
+ * Kept in localStorage rather than a cookie because the server never needs to trust it: the
+ * token is what grants access, and the name only decides which rows this phone may take back.
+ * A guest who clears it is simply a new guest.
+ */
+export function loadGuest(): Guest | null {
+	if (typeof localStorage === 'undefined') return null;
+	try {
+		const raw = localStorage.getItem(STORE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as Partial<Guest>;
+		if (!parsed.token || !parsed.name) return null;
+		return { token: parsed.token, name: parsed.name };
+	} catch {
+		return null;
+	}
+}
+
+export function saveGuest(guest: Guest): void {
+	localStorage.setItem(STORE_KEY, JSON.stringify(guest));
+}
+
+export function forgetGuest(): void {
+	localStorage.removeItem(STORE_KEY);
+}
+
+/**
+ * A guest's view of the queue, over the same stream the desktop watches.
+ *
+ * Read-only: every change goes through /api/guest, which is a far smaller surface than the
+ * host API, and the result arrives back here the same way anyone else's would.
+ */
+export class GuestQueue {
+	state = $state<QueueState>(EMPTY_QUEUE);
+	failure = $state('');
+
+	private source: EventSource | null = null;
+
+	connect(): void {
+		if (this.source) return;
+		const es = new EventSource('/api/queue/stream');
+		es.addEventListener('queue', (ev) => {
+			this.state = JSON.parse((ev as MessageEvent).data) as QueueState;
+		});
+		this.source = es;
+	}
+
+	dispose(): void {
+		this.source?.close();
+		this.source = null;
+	}
+
+	private async post(guest: Guest, body: Record<string, unknown>): Promise<boolean> {
+		this.failure = '';
+		try {
+			const res = await fetch('/api/guest', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ ...guest, ...body })
+			});
+			if (res.ok) return true;
+			this.failure = (await res.text()).slice(0, 200);
+			return false;
+		} catch (e) {
+			this.failure = (e as Error).message;
+			return false;
+		}
+	}
+
+	add(guest: Guest, item: Record<string, unknown>): Promise<boolean> {
+		return this.post(guest, { action: 'add', item });
+	}
+
+	remove(guest: Guest, key: string): Promise<boolean> {
+		return this.post(guest, { action: 'remove', key });
+	}
+}

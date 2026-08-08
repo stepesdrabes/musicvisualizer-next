@@ -16,6 +16,7 @@ import { createDdpSink, type DdpTarget } from '@mv/transport-ddp';
 import { currentItem } from '$lib/queueModel.ts';
 import { queue } from '$lib/server/queueStore.ts';
 import { hardware } from '$lib/server/hardware.ts';
+import { isLocal } from '$lib/server/access.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -151,8 +152,10 @@ queue.subscribe((state) => {
 
 export const GET: RequestHandler = async () => json(output.status);
 
-export const POST: RequestHandler = async ({ request }) => {
-	const body = (await request.json()) as {
+export const POST: RequestHandler = async (event) => {
+	if (!isLocal(event)) error(403, 'the hardware belongs to the machine running the show');
+
+	const body = (await event.request.json()) as {
 		action: 'start' | 'stop' | 'sync';
 		trackId?: string;
 		hosts?: string[];
