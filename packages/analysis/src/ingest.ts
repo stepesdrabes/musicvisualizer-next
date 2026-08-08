@@ -44,6 +44,11 @@ export interface TrackMeta {
 	webpageUrl: string;
 	source: string;
 	/**
+	 * Seconds. Held here so a list of the cache can show run times without opening the
+	 * analyses, which are around 400 kB each and would be tens of megabytes for one panel.
+	 */
+	duration?: number;
+	/**
 	 * Dominant hue of the cover, degrees, or null when it has no colour worth taking. Cached
 	 * here because it is a property of the artwork rather than of the audio, so re-analysing
 	 * the track should not re-download the image.
@@ -110,7 +115,8 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			uploader: probed.uploader,
 			thumbnail: probed.thumbnail,
 			webpageUrl: probed.webpageUrl,
-			source
+			source,
+			duration: probed.duration
 		};
 		audioPath = await findAudioFile(id);
 		if (!audioPath) {
@@ -132,7 +138,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		audioPath = join(CACHE_DIR, `${id}${extname(original)}`);
 		if (!existsSync(audioPath)) await copyFile(original, audioPath);
 
-		meta = { id, title, uploader: 'local file', thumbnail: '', webpageUrl: '', source };
+		meta = { id, title, uploader: 'Local file', thumbnail: '', webpageUrl: '', source };
 	}
 
 	// Read from the previous meta rather than re-fetched: the image has not changed and the
@@ -142,6 +148,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		previous?.artHue !== undefined
 			? previous.artHue
 			: ((await artworkHue(meta.thumbnail)).hue ?? null);
+	meta.duration ??= previous?.duration;
 	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 
 	const relevel = opts.metricalLevel !== undefined && Math.abs(opts.metricalLevel - 1) > 1e-6;
@@ -152,6 +159,12 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			// meaning. Version mismatch has to discard it.
 			if (cached.version === ANALYSIS_VERSION) {
 				log('cached');
+				// Tracks analysed before meta carried a duration get one here, so a list of the
+				// cache does not have to open a 400 kB analysis per row to show a run time.
+				if (!meta.duration) {
+					meta.duration = cached.duration;
+					await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
+				}
 				return { id, audioPath, analysis: cached, meta, fromCache: true };
 			}
 		} catch {
@@ -195,5 +208,9 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));
+	if (!meta.duration) {
+		meta.duration = analysis.duration;
+		await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
+	}
 	return { id, audioPath, analysis, meta, fromCache: false };
 }
