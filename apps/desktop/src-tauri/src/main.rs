@@ -6,9 +6,21 @@ mod server;
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-/// Room for the traffic lights, which `titleBarStyle: Overlay` leaves floating over the app's
-/// own top bar. The web side reads it and insets its left cluster by the same amount, so the
-/// number lives in one place rather than being guessed on both sides of the boundary.
+/// The app's own top bar, which the window controls have to sit inside.
+#[cfg(target_os = "macos")]
+const TOP_BAR_HEIGHT: f64 = 56.0;
+
+/// Where the controls start, and how much room they need.
+///
+/// macOS puts them near the top of a 28pt title bar; this bar is twice that, so left alone
+/// they ride high above the wordmark beside them. The y centres a 12pt button in the bar:
+/// half the bar, less half the button.
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_X: f64 = 20.0;
+#[cfg(target_os = "macos")]
+const TRAFFIC_LIGHT_Y: f64 = TOP_BAR_HEIGHT / 2.0 - 6.0;
+
+/// Leading space the bar keeps clear of them: three buttons at 20pt spacing, plus a gap.
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_INSET: f64 = 78.0;
 #[cfg(not(target_os = "macos"))]
@@ -44,19 +56,45 @@ fn main() {
 
 			#[cfg(target_os = "macos")]
 			{
-				use tauri::TitleBarStyle;
+				use tauri::{LogicalPosition, TitleBarStyle};
 				// Overlay puts the page under the title bar; without hiding the title as well,
 				// the window's own name is drawn straight through the app's top bar.
-				builder = builder.title_bar_style(TitleBarStyle::Overlay).hidden_title(true);
+				builder = builder
+					.title_bar_style(TitleBarStyle::Overlay)
+					.hidden_title(true)
+					.traffic_light_position(LogicalPosition::new(TRAFFIC_LIGHT_X, TRAFFIC_LIGHT_Y));
 			}
 
 			let window = builder.build()?;
+
+			// Fullscreen takes the controls away, so the bar should stop holding a gap for them.
+			// Pushed as a custom property rather than an event the page subscribes to: this is
+			// one number the shell knows and the page only ever reads.
+			#[cfg(target_os = "macos")]
+			{
+				let follow = window.clone();
+				window.on_window_event(move |event| {
+					if !matches!(event, tauri::WindowEvent::Resized(_)) {
+						return;
+					}
+					let inset = match follow.is_fullscreen() {
+						Ok(true) => 0.0,
+						_ => TRAFFIC_LIGHT_INSET,
+					};
+					let _ = follow.eval(set_inset(inset));
+				});
+			}
 
 			window.show()?;
 			Ok(())
 		})
 		.run(tauri::generate_context!())
 		.expect("error while running LightningStrike");
+}
+
+/// The one line that tells the page how much room the window controls need.
+fn set_inset(inset: f64) -> String {
+	format!("document.documentElement.style.setProperty('--traffic-inset', '{inset}px')")
 }
 
 /// Hand the page what only the shell knows, before any of its own script runs.
@@ -68,8 +106,8 @@ fn shell_hints(server: &server::Server) -> String {
 	let missing = serde_json::to_string(&server.missing_tools).unwrap_or_else(|_| "[]".into());
 	format!(
 		"window.__LIGHTNINGSTRIKE__ = {{ desktop: true, platform: {platform:?}, \
-		 trafficLightInset: {inset}, missingTools: {missing} }};",
+		 missingTools: {missing} }}; {inset};",
 		platform = std::env::consts::OS,
-		inset = TRAFFIC_LIGHT_INSET,
+		inset = set_inset(TRAFFIC_LIGHT_INSET),
 	)
 }

@@ -11,7 +11,6 @@
 		busyLabel = '',
 		failure = '',
 		hardware,
-		inset = 0,
 		leftOpen = true,
 		rightOpen = true,
 		onsearch,
@@ -23,8 +22,6 @@
 		busyLabel?: string;
 		failure?: string;
 		hardware: HardwareStatus;
-		/** Leading space the desktop window's own controls need. Zero in a browser. */
-		inset?: number;
 		leftOpen?: boolean;
 		rightOpen?: boolean;
 		onsearch: (seed: string) => void;
@@ -48,7 +45,7 @@
 	}
 </script>
 
-<header class="floats" data-tauri-drag-region="deep" style:padding-left={`${12 + inset}px`}>
+<header class="floats" data-tauri-drag-region="deep">
 	<div class="side">
 		<Button
 			variant="ghost"
@@ -115,7 +112,9 @@
 		gap: 16px;
 		height: var(--topbar-h);
 		flex: none;
-		padding: 0 12px;
+		/* --traffic-inset is set by the desktop shell and is absent in a browser, where the
+		   window has no controls floating over this bar. */
+		padding: 0 12px 0 calc(12px + var(--traffic-inset, 0px));
 		background: var(--panel);
 		backdrop-filter: var(--panel-blur);
 		border-bottom: 1px solid var(--border);

@@ -1,26 +1,21 @@
 /**
  * What the desktop shell tells the page about itself.
  *
- * Injected as a global before any of the page's own script runs, rather than fetched, because
- * the top bar has to reserve space for the traffic lights on the very first frame and a round
- * trip would show the layout moving. Absent in a browser, which is the whole point: the same
- * build serves both and the web version reserves nothing.
+ * Injected as a global before any of the page's own script runs, rather than fetched, so the
+ * first paint already has it. Absent in a browser, which is the whole point: the same build
+ * serves both.
+ *
+ * The space the window controls need is not here: it changes when the window goes fullscreen,
+ * so the shell pushes it as the --traffic-inset custom property instead.
  */
 export interface ShellHints {
 	desktop: boolean;
 	platform: string;
-	/** Pixels of leading space the window's own controls need. Zero off macOS. */
-	trafficLightInset: number;
 	/** Command-line tools the analysis pipeline needs that are not on PATH. */
 	missingTools: string[];
 }
 
-const NONE: ShellHints = {
-	desktop: false,
-	platform: 'web',
-	trafficLightInset: 0,
-	missingTools: []
-};
+const NONE: ShellHints = { desktop: false, platform: 'web', missingTools: [] };
 
 declare global {
 	interface Window {
@@ -35,7 +30,6 @@ export function readShell(): ShellHints {
 	return {
 		desktop: true,
 		platform: given.platform ?? 'unknown',
-		trafficLightInset: given.trafficLightInset ?? 0,
 		missingTools: given.missingTools ?? []
 	};
 }

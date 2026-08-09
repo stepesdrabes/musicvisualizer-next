@@ -475,7 +475,6 @@
 		{busyLabel}
 		{failure}
 		hardware={hardware.status}
-		inset={shell.trafficLightInset}
 		{leftOpen}
 		{rightOpen}
 		onsearch={openSearch}
