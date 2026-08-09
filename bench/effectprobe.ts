@@ -1,14 +1,9 @@
 import {
 	BUILT_IN_EFFECTS,
 	DEFAULT_ROOM,
-	Mixer,
-	SLOT,
 	buildGeometry,
-	makePalette,
-	quietFrames,
-	scriptFrames,
-	type EffectDef,
-	type ShowFrame
+	measureEffect,
+	type EffectCharacter
 } from '@mv/core';
 
 /**
@@ -31,6 +26,10 @@ import {
  *           effect's response to drums, and the room is reported dead precisely where there are
  *           none, so this is the column that answers the complaint.
  *
+ * The measurement itself lives in `core` as `measureEffect`, because the authoring agent is
+ * shown the same five numbers for the effects it writes: a catalog judged one way and generated
+ * code judged another would be two standards wearing one set of column headings.
+ *
  *   node bench/effectprobe.ts [--role bed] [--sort fill]
  */
 const argv = process.argv.slice(2);
@@ -42,170 +41,19 @@ const onlyRole = flag('role');
 const sortBy = flag('sort') ?? 'role';
 
 const g = buildGeometry(DEFAULT_ROOM);
-/** Red base, cyan accent, yellow third: three hues far enough apart to tell apart by eye. */
-const palette = makePalette({ base: 0, accent: 180, third: 60, sat: 0.94, shade: 0.14, white: 0.06 });
-const DECLARED = [0, 180, 60];
-const TOLERANCE = 22;
-const LIT = 24;
 
-function hueOf(r: number, gr: number, b: number): number {
-	const max = Math.max(r, gr, b);
-	const min = Math.min(r, gr, b);
-	const d = max - min;
-	if (d < 1e-6) return -1;
-	let h: number;
-	if (max === r) h = ((gr - b) / d) % 6;
-	else if (max === gr) h = (b - r) / d + 2;
-	else h = (r - gr) / d + 4;
-	return (((h * 60) % 360) + 360) % 360;
-}
-const arc = (a: number, b: number) => {
-	const d = Math.abs(((a - b) % 360) + 360) % 360;
-	return Math.min(d, 360 - d);
-};
-
-/** Flatten everything the music drives, leaving the frame's clock and structure alone. */
-function deafen(frames: readonly ShowFrame[]): ShowFrame[] {
-	return frames.map((f) => {
-		const copy: ShowFrame = { ...f, bands: Float32Array.from(f.bands), spectrum: Float32Array.from(f.spectrum) };
-		copy.bands.fill(0.5);
-		copy.spectrum.fill(0.5);
-		copy.energy = 0.5;
-		copy.kick = false;
-		copy.snare = false;
-		copy.hat = false;
-		copy.kickEnv = 0;
-		copy.snareEnv = 0;
-		copy.hatEnv = 0;
-		return copy;
-	});
-}
-
-interface Row {
+interface Row extends EffectCharacter {
 	id: string;
 	role: string;
-	fill: number;
-	top10: number;
-	hue: number;
-	react: number;
-	quiet: number;
 }
-
-/** Run one effect alone in the mixer, which is what applies gamma and the output chain. */
-interface Measured {
-	bytes: Uint8Array[];
-	mean: number;
-}
-
-function measure(def: EffectDef, frames: readonly ShowFrame[]): Measured {
-	const mixer = new Mixer(g);
-	mixer.palette = palette;
-	mixer.intensity = 1;
-	mixer.floor = 0;
-	const layer = mixer.layers[def.role];
-	layer.setEffect(def, g);
-	const bytes: Uint8Array[] = [];
-	let total = 0;
-
-	for (const f of frames) {
-		mixer.render(f);
-		const snap = Uint8Array.from(mixer.bytes);
-		bytes.push(snap);
-		for (let i = 0; i < snap.length; i++) total += snap[i];
-	}
-	return { bytes, mean: total / Math.max(1, bytes.length * bytes[0].length) };
-}
-
 
 /** Roles that have to hold a quiet passage on their own. A transient is allowed to be still. */
 const QUIET_ROLES = new Set(['bed', 'accent', 'rhythm']);
 
-/**
- * Movement over a quiet passage, as a share of the effect's own mean level.
- *
- * Guarded against a near-black output rather than scaled by it: an effect delivering almost
- * nothing divides by almost nothing and reports spectacular reactivity it does not have.
- */
-function quietReact(live: Measured, deaf: Measured): number {
-	if (live.mean < 0.5) return 0;
-	let delta = 0;
-	const n = Math.min(live.bytes.length, deaf.bytes.length);
-	for (let k = 0; k < n; k++) {
-		const a = live.bytes[k];
-		const b = deaf.bytes[k];
-		for (let i = 0; i < a.length; i++) delta += Math.abs(a[i] - b[i]);
-	}
-	return delta / Math.max(1, n * live.bytes[0].length) / live.mean;
-}
-
 const rows: Row[] = [];
-const frames = scriptFrames();
-const flat = deafen(frames);
-const quiet = quietFrames();
-const quietFlat = deafen(quiet);
-
 for (const def of BUILT_IN_EFFECTS) {
 	if (onlyRole && def.role !== onlyRole) continue;
-
-	const live = measure(def, frames);
-	const deaf = measure(def, flat);
-	const quietLive = measure(def, quiet);
-	const quietDeaf = measure(def, quietFlat);
-
-	let litPixels = 0;
-	let pixels = 0;
-	let onHue = 0;
-	let litBytes = 0;
-	let concentration = 0;
-	let framesCounted = 0;
-	const levels: number[] = [];
-
-	for (const snap of live.bytes) {
-		const n = snap.length / 3;
-		levels.length = 0;
-		let frameTotal = 0;
-		for (let k = 0; k < n; k++) {
-			const i = k * 3;
-			const v = Math.max(snap[i], snap[i + 1], snap[i + 2]);
-			pixels++;
-			if (v >= LIT) litPixels++;
-			levels.push(v);
-			frameTotal += v;
-			if (v < LIT) continue;
-			litBytes += v;
-			const h = hueOf(snap[i], snap[i + 1], snap[i + 2]);
-			// A near-grey pixel has no hue to be wrong about; white is a declared colour here.
-			const grey = Math.max(snap[i], snap[i + 1], snap[i + 2]) - Math.min(snap[i], snap[i + 1], snap[i + 2]);
-			if (h < 0 || grey < 24 || DECLARED.some((d) => arc(h, d) <= TOLERANCE)) onHue += v;
-		}
-		if (frameTotal < 1) continue;
-		levels.sort((a, b) => b - a);
-		let top = 0;
-		const tenth = Math.max(1, Math.round(n / 10));
-		for (let k = 0; k < tenth; k++) top += levels[k];
-		concentration += top / frameTotal;
-		framesCounted++;
-	}
-
-	// Against the effect's own level, so a dim effect that nonetheless tracks the music is not
-	// penalised for being dim.
-	let delta = 0;
-	for (let i = 0; i < live.bytes.length; i++) {
-		for (let k = 0; k < live.bytes[i].length; k++) {
-			delta += Math.abs(live.bytes[i][k] - deaf.bytes[i][k]);
-		}
-	}
-	const norm = Math.max(1, live.bytes.length * live.bytes[0].length);
-
-	rows.push({
-		id: def.id,
-		role: def.role,
-		fill: pixels > 0 ? litPixels / pixels : 0,
-		top10: framesCounted > 0 ? concentration / framesCounted : 0,
-		hue: litBytes > 0 ? onHue / litBytes : 1,
-		react: live.mean > 0.5 ? delta / norm / live.mean : 0,
-		quiet: quietReact(quietLive, quietDeaf)
-	});
+	rows.push({ id: def.id, role: def.role, ...measureEffect(def, g) });
 }
 
 const order = ['bed', 'rhythm', 'transient', 'accent', 'master'];
@@ -252,4 +100,3 @@ emit(
 	0
 );
 emit('spotlights', rows.filter((r) => r.top10 > 0.45).length, 0);
-void SLOT;

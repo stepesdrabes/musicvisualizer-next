@@ -69,6 +69,7 @@ export { Layer, Mixer } from './mixer.ts';
 export { ShowPlayer } from './player.ts';
 export { BUILT_IN_EFFECTS, EffectRegistry } from './effects/index.ts';
 export { quietFrames, runGate, scriptFrames, type GateResult } from './effects/gate.ts';
+export { measureEffect, type EffectCharacter } from './effects/probe.ts';
 export {
 	SANDBOX_API,
 	compileGenerated,
