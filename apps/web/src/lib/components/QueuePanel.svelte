@@ -228,7 +228,9 @@
 		gap: 10px;
 		flex: 1;
 		min-width: 0;
-		padding: 7px 0 7px 8px;
+		/* The trailing space is the gap to the duration; without it a long title truncates
+		   hard against the clock and the two read as one string. */
+		padding: 7px 12px 7px 8px;
 		text-align: left;
 	}
 

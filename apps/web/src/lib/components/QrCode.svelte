@@ -4,10 +4,13 @@
 	let {
 		value,
 		size = 160,
+		fluid = false,
 		quiet = 2
 	}: {
 		value: string;
 		size?: number;
+		/** Fill the width available instead of taking a fixed one, staying square. */
+		fluid?: boolean;
 		/** Modules of empty margin. The spec says four; two scans fine on a lit screen. */
 		quiet?: number;
 	} = $props();
@@ -33,8 +36,9 @@
 
 <svg
 	viewBox={`0 0 ${span} ${span}`}
-	width={size}
-	height={size}
+	class:fluid
+	width={fluid ? undefined : size}
+	height={fluid ? undefined : size}
 	shape-rendering="crispEdges"
 	role="img"
 	aria-label="Scan to join the room">
@@ -46,5 +50,9 @@
 	svg {
 		display: block;
 		border-radius: var(--radius-sm);
+	}
+	.fluid {
+		width: 100%;
+		height: auto;
 	}
 </style>
