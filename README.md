@@ -49,7 +49,7 @@ apps/desktop          Tauri shell, runs apps/web as a Node sidecar
 apps/web              SvelteKit, one screen, plus the phone-sized guest page
 packages/preview3d    three.js room view          -> core
 packages/transport-ddp  DDP over UDP              -> core
-packages/author-ai    Claude Agent SDK, tools, sandbox  -> core, analysis, author-engine
+packages/author-ai    Agent SDK, tools, backends  -> core, analysis, author-engine
 packages/author-engine  deterministic show generation + the linter  -> core
 packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
 packages/core         contracts, geometry, colour, DSL, 63 effects, mixer, player
@@ -91,6 +91,17 @@ Its two acknowledged weaknesses are fixed here rather than carried over - the pe
 before anything else is chosen rather than every drop being identical, and no two consecutive
 cues may share a layer stack.
 
+The agent can also see what it made. `preview_show` plays the show through the same mixer that
+feeds the wire and reports what the room receives per cue: delivered brightness in bytes rather
+than in the authoring domain, how many walls are lit, movement across a phrase against shimmer
+at frame rate, which punctuation actually fires, and any bar that goes dark without a void or a
+blackout asking it to. A show can lint clean and still hand back a black intro; the linter is a
+static check and will never know.
+
+Which model does this is a choice in the app. Claude is the default. DeepSeek V4 Flash publishes
+an Anthropic-compatible endpoint, so a second backend is an environment for the same subprocess
+rather than a second agent loop, and it costs roughly two orders of magnitude less per show.
+
 ## Effects
 
 One effect per file in `packages/core/src/effects/`. Each declares taste metadata (energy
@@ -101,6 +112,14 @@ Claude writes two to five more per track, specific to that song. Each is admitte
 passing the same gate the built-ins pass: finite, non-negative, bounded pixels across a
 synthesised groove/build/void/drop journey; bitwise-identical output from two fresh
 instances, which catches a smuggled `Math.random`; and `reset()` restoring a fresh state.
+
+The gate answers whether an effect is legal, which is not the same question as whether it looks
+like anything, so an admitted effect is also measured: how much of the room it lights, how
+concentrated that light is, whether its colour is one the palette can produce, and how far it
+moves when the music drives it - asked twice, once over a drop and once over an intro with no
+kit in it at all. The first track authored after that landed produced an effect that passed
+every legality check while emitting nothing and ignoring the music; it took four revisions to
+become something, and none of them would have happened against a tool that only said "passed".
 
 Brevity is enforced rather than requested: the linter warns on a brief over ~150 words, on
 long cue notes, and on a show with fewer than two effects of its own. The effort belongs in
@@ -238,11 +257,16 @@ Authoring uses the Claude Agent SDK through your logged-in `claude` CLI. Note th
 2026-06-15, Agent SDK usage on a subscription plan draws from a separate monthly credit
 pool.
 
+To author with DeepSeek instead, paste a platform key into the field beside the button; it is
+kept in `cache/settings.json`, which is gitignored, and the settings API is loopback-only like
+everything else that spends money or drives hardware. `DEEPSEEK_API_KEY` in the environment
+wins over the stored one.
+
 ## Commands
 
 ```sh
 npm run dev            # the app
-npm test               # 434 tests
+npm test               # 463 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 

@@ -12,3 +12,4 @@ models/
 bench/clicktests/
 bench/renders/
 bench/models/
+bench/authored/

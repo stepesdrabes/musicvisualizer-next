@@ -131,8 +131,16 @@ one is the most promising and would be the first to try if a drop still reads fl
 
 - **Nobody has watched the room.** Every result from the last session is a number.
   `bench/render.ts` exists and was not run.
-- 11 effects still score under 0.02 on quiet reactivity, and 11 still reach past the palette for a
-  colour.
+- 11 effects still score under 0.02 on reactivity, and 10 of the ones that may appear in a quiet
+  section score under 0.02 there.
+- **No effect reaches past the palette for a colour.** The eleven that were reported as doing so
+  were an artefact of the probe, which compared each delivered pixel's hue against the palette's
+  hue in *degrees*. `hsv2rgb` is FastLED's rainbow ramp and spends no coordinates at all between
+  about 150 and 223 degrees, so a correctly addressed cyan accent left the room near 150 and was
+  counted as a colour the show never declared - exactly the trap `rampHueFor` was written to
+  document. Measured against the hues the palette actually delivers, the count is zero, and
+  `packages/core/src/effects/probe.test.ts` proves the column can still fail by failing a
+  hardcoded magenta.
 - `taste.quiet` has no test guarding it, unlike `carries`, because the probe it comes from needs
   the audio cache and a test may not depend on that. Regenerate with `bench/quietprobe.ts` after
   changing a quiet-pool effect, the spectrum, or the house floor.
