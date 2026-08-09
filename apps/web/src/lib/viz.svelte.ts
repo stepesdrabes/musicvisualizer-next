@@ -82,6 +82,10 @@ export class Viz {
 	}
 
 	async loadAudio(bytes: ArrayBuffer): Promise<void> {
+		// Whatever is playing belongs to the track being replaced. Without this the old source
+		// keeps running, `playing` stays true, and the `play()` that follows returns early: the
+		// previous track carries on while the new one never starts.
+		this.pause();
 		this.ctx ??= new AudioContext();
 		this.gain ??= (() => {
 			const g = this.ctx!.createGain();
