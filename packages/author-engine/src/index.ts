@@ -9,3 +9,11 @@ export {
 	type LintResult,
 	type Severity
 } from './lint.ts';
+export {
+	formatReading,
+	measureShow,
+	type CueReading,
+	type HitReading,
+	type MeasureOptions,
+	type ShowReading
+} from './measure.ts';

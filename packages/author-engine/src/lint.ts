@@ -34,6 +34,14 @@ export interface LintContext {
  * being punctuation whatever rate it runs at.
  */
 const SETTLE_BARS = 16;
+/**
+ * How long a void may hold the room before it stops reading as a held breath.
+ *
+ * Shared with `measureShow`, which excuses a cue-declared void from its dark-bar report up to
+ * exactly this length. Two instruments complaining about one passage taught the author that the
+ * strongest move in the vocabulary was a fault; past this, one of them still should.
+ */
+export const MAX_VOID_BARS = 2;
 /** Distinct hues across the whole show, not at once. See the colour section below. */
 const MAX_HUES = 6;
 const MAX_BRIEF_CHARS = 1100;
@@ -114,10 +122,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			// Only when something follows it. A track that ends in silence ends in a void, and
 			// that is the track ending rather than a held breath that outstayed its welcome.
 			const lengthBars = (next ? next.bar : lastBar + 1) - cue.bar;
-			if (next && lengthBars > 2) {
+			if (next && lengthBars > MAX_VOID_BARS) {
 				warn(
 					'void-too-long',
-					`the void at bar ${cue.bar} runs ${lengthBars} bars; past two it stops reading as a held breath`,
+					`the void at bar ${cue.bar} runs ${lengthBars} bars; past ${MAX_VOID_BARS} it stops reading as a held breath`,
 					cue.bar
 				);
 			}
