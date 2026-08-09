@@ -45,13 +45,14 @@ Dependencies flow downward only. `core` imports nothing at all, which is what le
 show run in a browser, in headless Node, and eventually on an ESP32.
 
 ```
-apps/web              SvelteKit, one screen
+apps/desktop          Tauri shell, runs apps/web as a Node sidecar
+apps/web              SvelteKit, one screen, plus the phone-sized guest page
 packages/preview3d    three.js room view          -> core
 packages/transport-ddp  DDP over UDP              -> core
 packages/author-ai    Claude Agent SDK, tools, sandbox  -> core, analysis, author-engine
 packages/author-engine  deterministic show generation + the linter  -> core
 packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
-packages/core         contracts, geometry, colour, DSL, 12 effects, mixer, player
+packages/core         contracts, geometry, colour, DSL, 63 effects, mixer, player
 ```
 
 The layering is enforced by separate `package.json` files rather than by convention: `core`
@@ -241,7 +242,7 @@ pool.
 
 ```sh
 npm run dev            # the app
-npm test               # 419 tests
+npm test               # 434 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 

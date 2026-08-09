@@ -7,9 +7,17 @@ this file is only the conventions.
 
 ```sh
 npm run dev      # the app on http://localhost:5180
-npm test         # vitest over packages/*/src/**/*.test.ts
+npm test         # vitest over packages/*/src/**/*.test.ts and apps/*/src/**/*.test.ts
 npm run check    # tsc --build across the packages, then svelte-check
 npm run build    # production build of apps/web
+```
+
+The desktop build, from `apps/desktop`. `bundle` runs the web build itself, so it cannot ship
+a stale server:
+
+```sh
+npm run bundle -w @mv/desktop   # build the server, fetch Node, assemble the runtime
+npm run build -w @mv/desktop    # LightningStrike.app
 ```
 
 Needs `ffmpeg`, `ffprobe` and `yt-dlp` on PATH, and Node 22+. Keep `check` and `test` green
@@ -18,6 +26,7 @@ before committing.
 ## Layering
 
 ```
+apps/desktop  -> apps/web (as a running process, not an import)
 apps/web      -> preview3d, transport-ddp, author-ai, author-engine, analysis, core
 author-ai     -> author-engine, analysis, core
 author-engine -> core
@@ -29,7 +38,11 @@ core          -> nothing
 same show run in a browser, in headless Node and eventually on a microcontroller. The
 `package.json` files enforce the direction; do not route around them.
 
-The app is the only entry point. No CLIs, no `scripts/`.
+The app is the only way to use this. No CLIs, no `scripts/` for driving it: if something is
+worth doing, it is worth a control in the interface.
+
+`apps/desktop/scripts/bundle.js` is not an exception to that. It assembles a build and is
+never run to use the product, in the same way `bench/` is never run to light a room.
 
 ## Comments
 
@@ -63,7 +76,7 @@ from bpm. `taste` metadata is what the linter enforces restraint with, so fill i
 Reach for the DSL before writing the loop by hand: `ringU`, `alphaFor`, `setPixel`,
 `fillSolid`, `stampOnStrip`, `ringsFor`/`scatter`, `fadeToBlack`, `PulseEnv`. Anything added
 under `src/dsl/` also becomes vocabulary for Claude-generated effects, so document it in
-`renderDslReference()` in `packages/author/src/catalog.ts`.
+`renderDslReference()` in `packages/author-ai/src/catalog.ts`.
 
 ## Contracts
 
@@ -110,5 +123,6 @@ carries a hue is competing with the thing being judged.
 Conventional Commits: `type(scope): subject`, imperative, body only when the reasoning is not
 obvious from the subject. Never add a co-author trailer.
 
-Only commit when asked. Stage explicit paths rather than `git add -A`: this repo has
-untracked work in `firmware/` that a blanket add will sweep into an unrelated commit.
+Only commit when asked. Stage explicit paths rather than `git add -A`: `apps/desktop` holds
+around 270 MB of assembled runtime that is ignored today only because someone remembered to
+ignore it, and `cache/` fills with whatever has been played.

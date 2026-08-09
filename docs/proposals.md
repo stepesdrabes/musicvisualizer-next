@@ -23,9 +23,8 @@ The three proposals below are ordered by that argument. The first is not a light
 
 ## 1. A way to mark a moment
 
-**The app offers three keys: space, and two arrows.** There is no way to record what the owner
-sees, so the only route from "that looked wrong" to a fix runs through prose, a guess about which
-subsystem is responsible, and a new probe.
+**The app has no way to record what the owner sees.** The only route from "that looked wrong" to
+a fix runs through prose, a guess about which subsystem is responsible, and a new probe.
 
 Record it instead. While the show plays, one key writes the current moment into the track's cache:
 bar, section, the cue's layer stack, its intensity and motion, and the time. A second key records
@@ -46,10 +45,9 @@ a record of which effects, in which sections, at which intensities, this room is
 a review interface and it must not touch the show contract. The value is in the capture, and a
 capture that takes a week will not get used.
 
-> **Coordination note.** This lives in `apps/web`, where a separate session is currently working on
-> a frontend overhaul. Agree the key bindings and where the mark surfaces in the UI with that work
-> before starting, or the two will collide. The cache format and the writing of it are independent
-> of any UI decision and can be settled first.
+> **Keys already taken**, since the frontend overhaul landed: space plays, the arrows seek,
+> shift-arrows seek further, `Cmd-K` opens the search palette, and `[` and `]` collapse the two
+> rails. A mark wants something under the other hand; `m` and `n` are both free.
 
 ## 2. Let a show be rerolled
 
