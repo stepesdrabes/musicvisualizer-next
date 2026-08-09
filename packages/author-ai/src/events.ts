@@ -2,7 +2,7 @@ import type { TrackAnalysis } from '@mv/core';
 
 /** What the author is doing, as it happens. Forwarded verbatim to the browser over SSE. */
 export type AuthorEvent =
-	| { type: 'phase'; phase: 'research' | 'brief' | 'build'; label: string }
+	| { type: 'phase'; phase: 'research' | 'brief' | 'build' | 'repair'; label: string }
 	| { type: 'thinking'; text: string }
 	| { type: 'tool'; id: string; name: string; detail: string }
 	| { type: 'result'; id: string; name: string; summary: string; ok: boolean }

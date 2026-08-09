@@ -7,6 +7,7 @@ import {
 	renderHeader,
 	renderMoments
 } from './catalog.ts';
+import { renderExamples } from './examples.ts';
 
 /**
  * Deliberately terse. Written to Anthropic's Opus 5 guidance: no self-verification
@@ -111,9 +112,25 @@ the arrangement, the feel of the vocal.
 - Deterministic: use Rng or hash01. Math.random, Date and performance are rejected.
 - Colour through SLOT so the show's palette reaches it. Speeds times ctx.motion, time
   constants from ctx.f.beatPeriod.
+- Anything the music drives goes through a BeatHold first. f.energy and the spectrum both move
+  every frame, and brightness multiplied by either shimmers against a beat it has nothing to do
+  with. A spectral term may walk the slot inside base..glow and no further: slot positions
+  differ in value, so a walk that crosses white is the spectrum driving brightness.
 
-test_effect admits or rejects each one and its failures name what to change. An effect is
-only in the show once it has passed and a cue references it.`;
+${renderExamples()}
+
+test_effect admits or rejects each one, and on a pass it measures what the effect looks like:
+
+  fill              share of the room lit. A bed is the floor of a cue and needs 22% or more.
+  brightest tenth   how concentrated the light is. A wash is 10%, a spotlight is near 100%.
+  on palette        share of lit bytes on a colour the show declared. Under 90% means something
+                    is computing a hue instead of addressing one.
+  reacts            how far the output moves when the music drives it, against its own level.
+                    Under 0.02 is an effect that renders the same with the music switched off.
+  in a quiet passage  the same, over an intro with no kit at all. This is the column that says
+                    whether the room is alive where there are no drums to carry it.
+
+An effect is only in the show once it has passed and a cue references it.`;
 
 const OUTPUT_CONTRACT = `# The show
 
@@ -148,7 +165,14 @@ What the validator holds you to:
 - Cues tile the track from bar 0, each running until the next one's bar.
 
 Tools come from the lightdesk server, so they appear as mcp__lightdesk__get_bars and so on.
-lint_show reports errors and warnings; errors block submission.`;
+lint_show reports errors and warnings; errors block submission.
+
+preview_show plays the show through the mixer that feeds the LEDs and reports what the room
+actually receives. It is the only thing here that can see: the linter checks a show against the
+grid without rendering it, so a show that lints clean can still hand back a black intro, three
+dark walls, or a hit nothing ever fires. Read it before you submit, and read it in bytes -
+gamma sends an authoring value of 0.2 to byte 8, so a cue at "0.3 intensity" may be nothing at
+all. A quiet passage wants drift without ripple: movement across a phrase, not shimmer.`;
 
 const CLOSING = `<operating_context>
 You are operating autonomously. Nobody is watching in real time. Choose an approach and
@@ -198,6 +222,10 @@ ${renderBarTable(analysis)}
 
 ---
 
+This is the first of two passes, and it is the planning one. test_effect, lint_show,
+preview_show and submit_show are not here yet and nothing is wrong: they arrive with the second
+pass, which is where the show gets written. Plan as though you had them, because you will.
+
 Look the track up, then write a SHORT plan. Under 150 words total, as terse lines, not prose:
 
 - what it is: artist, scene, and the sentence "this track is ___, room should feel ___"
@@ -218,7 +246,7 @@ ${brief}
 ---
 
 Build it. Write the effects and get each through test_effect, then the cue list against the
-bar table, then lint and submit.
+bar table, then lint, preview and submit.
 
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
 Keep notes short.`;
@@ -252,6 +280,37 @@ Revise it into your plan. Change what carries meaning and leave what merely work
 
 Keep the draft's coverage. A bar the draft lights and yours does not is a bar that goes dark.
 
+Keep its punctuation too. The hits are placed against measured boundaries and the phrase grid:
+a strobe out of the build, black cut to the drop's downbeat, the slam on it, a bump answering a
+crash the analyser heard. Drop one only where your plan puts something else at that bar, and if
+you come back with a handful where the draft had many, you have quietly taken the hands off the
+show.
+
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
-Lint and submit when it says what your brief says. Keep notes short.`;
+Lint, preview, and submit when it says what your brief says. Keep notes short.`;
+}
+
+/**
+ * The one retry, when a build pass ended without submitting.
+ *
+ * Deliberately narrow. Everything the previous pass achieved is still on the session - the
+ * effects it registered are compiled and usable, and the analysis is whatever it settled on -
+ * so the instruction is to finish rather than to reconsider. A prompt that reopened the design
+ * here would spend the retry redoing the part that already worked.
+ */
+export function buildRepairPrompt(analysis: TrackAnalysis, log: readonly string[]): string {
+	const tail = log.slice(-14);
+	return `The previous pass ended without a submitted show. This is what it did:
+
+${tail.length > 0 ? tail.join('\n') : '(no tools were called)'}
+
+---
+
+Finish it. Any effect listed above as passed is still registered and can be named in a cue, so
+do not write it again; list_effects shows what you have. Assemble the cue list, lint it, preview
+it, and submit.
+
+analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
+Nothing here needs redesigning - a complete show submitted now is worth more than a better one
+that is not.`;
 }

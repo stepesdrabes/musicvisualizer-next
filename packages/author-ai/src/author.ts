@@ -1,6 +1,13 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { CLAUDE, environmentFor, type AuthorProvider, type EffortLevel } from './provider.ts';
 import type { Geometry, Show, TrackAnalysis } from '@mv/core';
-import { buildBriefPrompt, buildRevisePrompt, buildShowPrompt, buildSystemPrompt } from './prompt.ts';
+import {
+	buildBriefPrompt,
+	buildRepairPrompt,
+	buildRevisePrompt,
+	buildShowPrompt,
+	buildSystemPrompt
+} from './prompt.ts';
 import { buildTools, createSession, type AuthorSession } from './tools.ts';
 import {
 	describeToolCall,
@@ -12,10 +19,13 @@ import {
 } from './events.ts';
 
 export interface AuthorOptions {
+	/** Which backend authors the show. Claude when absent. */
+	provider?: AuthorProvider;
+	/** Overrides the provider's model, for pinning a specific snapshot. */
 	model?: string;
 	/** Opus 5 guidance: start high, reserve xhigh for the hardest stage. */
-	briefEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-	showEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+	briefEffort?: EffortLevel;
+	showEffort?: EffortLevel;
 	/** Absolute path to the decoded audio, so the agent can probe it itself. */
 	audioPath?: string;
 	/** Called after `reanalyse`, so the caller can persist the corrected grid. */
@@ -125,7 +135,9 @@ export async function authorShow(
 	};
 
 	const systemPrompt = buildSystemPrompt();
-	const model = opts.model ?? 'claude-opus-5';
+	const provider = opts.provider ?? CLAUDE;
+	const model = opts.model ?? provider.model;
+	const env = environmentFor(provider);
 	const names = new Map<string, string>();
 	const researchTools = buildTools(session, 'research');
 	const writeTools = buildTools(session, 'build');
@@ -138,7 +150,8 @@ export async function authorShow(
 			options: {
 				model,
 				systemPrompt,
-				effort: opts.briefEffort ?? 'high',
+				env,
+				effort: provider.effort(opts.briefEffort ?? 'high'),
 				mcpServers: { lightdesk: researchTools },
 				allowedTools: INVESTIGATION_TOOLS,
 				permissionMode: 'bypassPermissions',
@@ -174,7 +187,8 @@ export async function authorShow(
 			options: {
 				model,
 				systemPrompt,
-				effort: opts.showEffort ?? 'high',
+				env,
+				effort: provider.effort(opts.showEffort ?? 'high'),
 				mcpServers: { lightdesk: writeTools },
 				allowedTools: INVESTIGATION_TOOLS,
 				permissionMode: 'bypassPermissions',
@@ -186,6 +200,32 @@ export async function authorShow(
 		names
 	);
 
+	// A build pass that ends without submitting has usually done nearly all of the work: the
+	// effects are registered on the session and the cue list exists somewhere in a turn that ran
+	// out. Throwing that away costs the whole run, so it gets one more pass with the tool log in
+	// front of it. Once, because a second failure is a different problem.
+	if (!session.submitted) {
+		emit({ type: 'phase', phase: 'repair', label: 'Recovering the show' });
+		await run(
+			query({
+				prompt: buildRepairPrompt(session.analysis, session.log),
+				options: {
+					model,
+					systemPrompt,
+					env,
+					effort: provider.effort(opts.showEffort ?? 'high'),
+					mcpServers: { lightdesk: writeTools },
+					allowedTools: INVESTIGATION_TOOLS,
+					permissionMode: 'bypassPermissions',
+					allowDangerouslySkipPermissions: true,
+					maxTurns: 30
+				}
+			}),
+			emit,
+			names
+		);
+	}
+
 	if (!session.submitted) {
 		throw new Error(
 			`the author finished without submitting a show. Tool log:\n${session.log.join('\n')}`
@@ -193,7 +233,7 @@ export async function authorShow(
 	}
 
 	return {
-		show: { ...session.submitted, authoredBy: 'claude' },
+		show: { ...session.submitted, authoredBy: provider.id },
 		brief,
 		analysis: session.analysis,
 		log: session.log

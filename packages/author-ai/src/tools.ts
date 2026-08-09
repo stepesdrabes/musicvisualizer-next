@@ -1,10 +1,18 @@
 import { tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import type { EffectDef, GeneratedEffect, Geometry, Show, TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS, barTimeAt, compileGenerated } from '@mv/core';
+import type {
+	EffectCharacter,
+	EffectDef,
+	GeneratedEffect,
+	Geometry,
+	LayerRole,
+	Show,
+	TrackAnalysis
+} from '@mv/core';
+import { BUILT_IN_EFFECTS, barTimeAt, compileGenerated, measureEffect } from '@mv/core';
 import { analyzeTrack, decodeAudio } from '@mv/analysis';
 import { renderArrangementChart, renderBarTable, renderCatalog } from './catalog.ts';
-import { formatFindings, lintShow } from '@mv/author-engine';
+import { formatFindings, formatReading, lintShow, measureShow } from '@mv/author-engine';
 import { coerceShow, showSchema } from './showSchema.ts';
 
 /** Mutated by the tools as the author works; read afterwards by the caller. */
@@ -18,6 +26,16 @@ export interface AuthorSession {
 	compiled: Map<string, EffectDef>;
 	submitted: Show | null;
 	log: string[];
+	/**
+	 * Whether a submission has already been handed back once.
+	 *
+	 * A show that lints clean can still be one the room cannot see, and the linter is a static
+	 * check that will never know. The first submit carrying anything unanswered - a warning, a
+	 * bar that goes dark, a hit that never reaches the room - is returned with all of it. Once
+	 * only, so this is a reading the author has to take rather than a gate it can be trapped
+	 * behind: the second submit is accepted on the same terms as before, errors aside.
+	 */
+	pushedBack: boolean;
 	onAnalysis?: (analysis: TrackAnalysis, reason: string) => void;
 }
 
@@ -35,8 +53,48 @@ export function createSession(
 		generated: new Map(),
 		compiled: new Map(),
 		submitted: null,
-		log: []
+		log: [],
+		pushedBack: false
 	};
+}
+
+/**
+ * The five numbers, and only the ones that are a problem spelled out.
+ *
+ * The legend lives in the system prompt rather than here: repeating it on every call would cost
+ * more than the measurement, and an author that has read it once needs the figures rather than
+ * the explanation.
+ */
+function describeCharacter(role: LayerRole, c: EffectCharacter): string {
+	const lines = [
+		`fill ${Math.round(100 * c.fill)}% · brightest tenth ${Math.round(100 * c.top10)}% · on palette ${Math.round(
+			100 * c.hue
+		)}% · reacts ${c.react.toFixed(2)} · in a quiet passage ${c.quiet.toFixed(2)}`
+	];
+
+	if (role === 'bed' && c.fill < 0.22) {
+		lines.push(
+			`It lights ${Math.round(100 * c.fill)}% of the room. A bed is the floor of a cue, and under 22% there is no floor.`
+		);
+	}
+	if (c.top10 > 0.45) {
+		lines.push(
+			`${Math.round(100 * c.top10)}% of its light is in a tenth of the pixels: that is a spotlight. Intended?`
+		);
+	}
+	if (c.hue < 0.9) {
+		lines.push(
+			`${Math.round(100 * (1 - c.hue))}% of its lit bytes are on a hue the palette cannot produce. Address colour through SLOT.`
+		);
+	}
+	if (c.react < 0.02) {
+		lines.push('It renders the same with the music switched off. Nothing in it reads the frame.');
+	} else if (c.quiet < 0.02 && role !== 'transient') {
+		lines.push(
+			'It moves on the drums and nothing else, so in an intro or a breakdown it will hold still. The spectrum is what has resolution where the kit does not.'
+		);
+	}
+	return lines.join('\n  ');
 }
 
 function effectMap(session: AuthorSession): Map<string, EffectDef> {
@@ -217,7 +275,7 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 
 	const testEffect = tool(
 		'test_effect',
-		'Compile a generated effect and run the admission gate: finite bounded pixels, bitwise determinism across fresh instances, and reset() restoring a fresh state. Returns pass or the exact failures.',
+		'Compile a generated effect, run the admission gate (finite bounded pixels, bitwise determinism across fresh instances, reset() restoring a fresh state), and measure what it looks like. Returns the exact failures, or pass plus its five numbers.',
 		{
 			id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/).describe('camelCase id, unique'),
 			name: z.string(),
@@ -259,9 +317,15 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			}
 			session.generated.set(gen.id, gen);
 			session.compiled.set(gen.id, result.def);
-			session.log.push(`test_effect ${input.id}: passed`);
+			const character = measureEffect(result.def, session.geometry);
+			session.log.push(
+				`test_effect ${input.id}: passed, fill ${character.fill.toFixed(2)} react ${character.react.toFixed(2)}`
+			);
 			return text(
-				`PASSED. "${input.id}" is registered as a ${input.role} effect and may be used in cues.`
+				[
+					`PASSED. "${input.id}" is registered as a ${input.role} effect and may be used in cues.`,
+					`  ${describeCharacter(input.role, character)}`
+				].join('\n')
 			);
 		}
 	);
@@ -288,11 +352,39 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 		{ annotations: { readOnlyHint: true } }
 	);
 
-	const submit = tool(
-		'submit_show',
-		'Submit the finished Show. Rejected unless it lints with zero errors.',
+	const preview = tool(
+		'preview_show',
+		'Play a Show through the same mixer that feeds the LEDs and report what the room receives: delivered brightness, coverage, how much of the room each cue reaches, movement, shimmer, and which punctuation actually fires. This is the only tool that can see what a show looks like.',
 		{ show: showSchema },
 		async ({ show }) => {
+			const { show: candidate, error } = coerceShow(show);
+			if (!candidate) return text(`Not read: ${error}`);
+			candidate.generatedEffects = [...session.generated.values()];
+			const reading = measureShow(
+				candidate,
+				session.analysis,
+				effectMap(session),
+				session.geometry
+			);
+			session.log.push(
+				`preview_show: contrast ${reading.contrast.toFixed(2)}x, ${reading.darkBars.length} dark bar(s)`
+			);
+			return text(formatReading(reading));
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const submit = tool(
+		'submit_show',
+		'Submit the finished Show. Rejected unless it lints with zero errors. The first submission carrying anything unanswered comes back with the reading; name the warnings you are keeping on purpose in acceptedWarnings and submit again.',
+		{
+			show: showSchema,
+			acceptedWarnings: z
+				.array(z.string())
+				.optional()
+				.describe('Rule names from lint_show you are keeping deliberately, e.g. ["single-bed"]')
+		},
+		async ({ show, acceptedWarnings }) => {
 			const { show: candidate, error } = coerceShow(show);
 			if (!candidate) return text(`Not accepted: ${error}`);
 			const result = lintShow(candidate, {
@@ -304,13 +396,55 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 					`NOT ACCEPTED, ${result.errors.length} error(s) remain:\n${formatFindings(result)}`
 				);
 			}
+
 			candidate.generatedEffects = [...session.generated.values()];
+			const reading = measureShow(
+				candidate,
+				session.analysis,
+				effectMap(session),
+				session.geometry
+			);
+			const dead = reading.hits.filter((h) => !h.fired);
+			const answered = new Set(acceptedWarnings ?? []);
+			const unanswered = result.warnings.filter((w) => !answered.has(w.rule));
+
+			// Handed back once, with everything at once. A show that lints clean can still be one
+			// the room cannot see, and neither the dark bar nor the hit that never fires is
+			// something a static check will ever find.
+			if (
+				!session.pushedBack &&
+				(unanswered.length > 0 || dead.length > 0 || reading.darkBars.length > 0)
+			) {
+				session.pushedBack = true;
+				session.log.push(
+					`submit_show: handed back with ${unanswered.length} warning(s), ${dead.length} dead hit(s), ${reading.darkBars.length} dark bar(s)`
+				);
+				return text(
+					[
+						'NOT ACCEPTED yet. It lints clean; this is what it does in the room.',
+						'',
+						formatReading(reading),
+						'',
+						unanswered.length > 0
+							? `Warnings you have not answered:\n${unanswered
+									.map((w) => `- [${w.rule}]${w.bar !== undefined ? ` (bar ${w.bar})` : ''} ${w.message}`)
+									.join('\n')}`
+							: 'No warnings outstanding.',
+						'',
+						'Fix what is worth fixing, then submit again. Anything you are keeping on purpose goes in acceptedWarnings by rule name, and the next submission is accepted.'
+					].join('\n')
+				);
+			}
+
 			session.submitted = candidate;
 			session.log.push('submit_show: accepted');
 			return text(
-				`Accepted: ${candidate.cues.length} cues, ${candidate.hits.length} hits, ${
-					candidate.generatedEffects.length
-				} generated effect(s), ${result.warnings.length} warning(s) noted.`
+				[
+					`Accepted: ${candidate.cues.length} cues, ${candidate.hits.length} hits, ${candidate.generatedEffects.length} generated effect(s).`,
+					`Delivered contrast ${reading.contrast.toFixed(2)}x, ${
+						reading.hits.length - dead.length
+					}/${reading.hits.length} hits firing, ${result.warnings.length} warning(s) noted.`
+				].join('\n')
 			);
 		}
 	);
@@ -320,6 +454,10 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 		version: '1.0.0',
 		instructions:
 			'Tools for authoring a lighting show against a pre-analysed track. All timing is by bar index.',
+		// There are ten of these and every one of them is load-bearing: deferred behind tool
+		// search they cost two round trips before any work starts, and a backend that searches
+		// badly finds a show it cannot submit rather than a tool it cannot see.
+		alwaysLoad: true,
 		tools:
 			phase === 'research'
 				? [getBars, getOnsets, getDraft, audioFile, audioStats, reanalyse, listEffects]
@@ -333,6 +471,7 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 						listEffects,
 						testEffect,
 						lint,
+						preview,
 						submit
 					]
 	});

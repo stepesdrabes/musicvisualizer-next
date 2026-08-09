@@ -109,8 +109,12 @@ export interface Show {
 	 * Who composed it. Optional so shows written before this field still load; a reader
 	 * without it can fall back to whether the show has effects of its own, which only the
 	 * agent produces.
+	 *
+	 * The model backends are named individually rather than lumped together as "ai": which one
+	 * wrote a show is the only way to tell, months later, whether a night that looked good was
+	 * worth what it cost.
 	 */
-	authoredBy?: 'engine' | 'claude';
+	authoredBy?: 'engine' | 'claude' | 'deepseek';
 	palette: ShowPalette;
 	defaults: {
 		intensity: number;

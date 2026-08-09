@@ -45,6 +45,12 @@ Envelopes
   new PulseEnv() -> .fire(strength) .decay(dt, beatPeriod, beats) .reset()
   new FlashEnvelope(hold, releaseTau) -> .fire(s) .update(dt) .reset()
   new Schmitt(lo, hi) -> .update(v) · ratchet(current, target, dt, riseTau)
+  new BeatHold(glideBeats = 0.12) -> .update(target, f.beat, f.dt, f.beatPeriod) .reset()
+    Read once per beat, hold, glide in beats. What anything driven by the music passes through
+    before it reaches the room: the spectrum and f.energy both move every frame, so an effect
+    following either directly shimmers at the frame rate against a beat it has no relationship
+    to. Latched, every change lands ON a beat by construction. Long glide for a position so it
+    arrives, short for a colour so it steps, 0 for a true sample and hold.
 
 Buffers (out is length g.count*3, RGB interleaved, persistent across frames)
   fadeToBlack(buf, dt, tau) - never clear, always decay
