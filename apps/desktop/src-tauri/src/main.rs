@@ -65,7 +65,9 @@ fn main() {
 					.traffic_light_position(LogicalPosition::new(TRAFFIC_LIGHT_X, TRAFFIC_LIGHT_Y));
 			}
 
-			let window = builder.build()?;
+			// A failure from here on aborts the process before `RunEvent::Exit` can run, so the
+			// sidecar has to be ended on the way out or it survives an app that never opened.
+			let window = builder.build().inspect_err(|_| server::stop(&handle))?;
 
 			// Fullscreen takes the controls away, so the bar should stop holding a gap for them.
 			// Pushed as a custom property rather than an event the page subscribes to: this is
@@ -85,11 +87,19 @@ fn main() {
 				});
 			}
 
-			window.show()?;
+			window.show().inspect_err(|_| server::stop(&handle))?;
 			Ok(())
 		})
-		.run(tauri::generate_context!())
-		.expect("error while running LightningStrike");
+		.build(tauri::generate_context!())
+		.expect("error while building LightningStrike")
+		// The sidecar is a separate process and does not go away on its own. Without this the
+		// server survives the window that started it, keeps its DDP loop running and carries on
+		// lighting the room, and the next launch starts a second one beside it.
+		.run(|app, event| {
+			if let tauri::RunEvent::Exit = event {
+				server::stop(app);
+			}
+		});
 }
 
 /// The one line that tells the page how much room the window controls need.

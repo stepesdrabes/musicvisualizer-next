@@ -17,6 +17,7 @@ pub struct Stats {
 	gap_min_us: u32,
 	gap_max_us: u32,
 	asm_max_us: u32,
+	led_max_us: u32,
 	late: [u32; 3],
 }
 
@@ -33,16 +34,22 @@ impl Stats {
 			gap_min_us: u32::MAX,
 			gap_max_us: 0,
 			asm_max_us: 0,
+			led_max_us: 0,
 			late: [0; 3],
 		}
 	}
 
-	/// `gap_us` is PUSH to PUSH, `asm_us` is first packet of the frame to its PUSH.
-	pub fn on_frame(&mut self, gap_us: u32, asm_us: u32) {
+	/// `gap_us` is PUSH to PUSH, `asm_us` is first packet of the frame to its PUSH, `led_us` is
+	/// how long presenting it took. The last is here because everything else on this line is a
+	/// measurement of the network, and it is the only part of the budget the board itself
+	/// spends: if it ever approaches the 16.7 ms frame, the numbers beside it stop being about
+	/// the radio.
+	pub fn on_frame(&mut self, gap_us: u32, asm_us: u32, led_us: u32) {
 		self.frames += 1;
 		self.gap_min_us = self.gap_min_us.min(gap_us);
 		self.gap_max_us = self.gap_max_us.max(gap_us);
 		self.asm_max_us = self.asm_max_us.max(asm_us);
+		self.led_max_us = self.led_max_us.max(led_us);
 
 		// A max on its own cannot tell one stumble apart from constant stutter, and 16.7 ms is
 		// the frame budget these are placed around.
@@ -63,7 +70,7 @@ impl Stats {
 		let _ = write!(
 			line,
 			"up {}s  {} px  {} pkt/s  {} KB/s  {} fps  gap {}/{} ms  late {}/{}/{}  asm {} ms  \
-			 seqgap {}  bad {}  oob {}  torn {}",
+			 led {} us  seqgap {}  bad {}  oob {}  torn {}",
 			uptime_s,
 			pixels,
 			self.packets as u64 * 1000 / ms,
@@ -75,6 +82,7 @@ impl Stats {
 			self.late[1],
 			self.late[2],
 			Tenths(self.asm_max_us / 100),
+			self.led_max_us,
 			self.seq_gaps,
 			self.bad,
 			self.out_of_range,

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { faultsIn, parseIdentity, parseTelemetry, type DeviceTelemetry } from './hardware.ts';
+import {
+	drivesStrips,
+	faultsIn,
+	parseIdentity,
+	parseTelemetry,
+	type DeviceTelemetry
+} from './hardware.ts';
 
 // The exact line firmware/src/hello.rs formats.
 const HELLO = 'room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds stub';
@@ -7,7 +13,7 @@ const HELLO = 'room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4
 // The exact line firmware/src/stats.rs formats, and the shorter one FIRMWARE.md documents.
 const STATS =
 	'up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  ' +
-	'asm 2.1 ms  seqgap 0  bad 0  oob 0  torn 0';
+	'asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0';
 const STATS_NO_LATE =
 	'up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  asm 2.1 ms  ' +
 	'seqgap 0  bad 0  oob 0  torn 0';
@@ -29,6 +35,17 @@ describe('parseIdentity', () => {
 
 	it('reports a real LED output once the firmware drives one', () => {
 		expect(parseIdentity(HELLO.replace('leds stub', 'leds ws2812'), 'h')?.leds).toBe('ws2812');
+	});
+
+	it('counts only a strip output as lighting the room', () => {
+		const kind = (leds: string) =>
+			drivesStrips(parseIdentity(HELLO.replace('leds stub', `leds ${leds}`), 'h'));
+		expect(kind('ws2812')).toBe(true);
+		// Both of these receive the whole fixture and light none of it, so the panel has to
+		// keep saying the room is dark rather than reading `monitor` as an output.
+		expect(kind('stub')).toBe(false);
+		expect(kind('monitor')).toBe(false);
+		expect(drivesStrips(null)).toBe(false);
 	});
 
 	it('ignores whatever else is on the port', () => {

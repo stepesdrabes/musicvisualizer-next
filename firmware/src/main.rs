@@ -74,6 +74,11 @@ async fn main(spawner: Spawner) {
 
 	spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
 
+	// Before the radio, so the wiring check is the first thing the board does and a join that
+	// never lands cannot hide it.
+	let mut leds = LedOutput::new(p.PWM_SLICE1, p.PIN_18, p.PIN_19, p.PWM_SLICE2, p.PIN_20);
+	leds.selftest().await;
+
 	let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
 	let clm = aligned_bytes!("../cyw43-firmware/43439A0_clm.bin");
 	let nvram = aligned_bytes!("../cyw43-firmware/nvram_rp2040.bin");
@@ -142,7 +147,6 @@ async fn main(spawner: Spawner) {
 	socket.bind(DDP_PORT).unwrap();
 
 	let mut frame = Frame::new();
-	let mut leds = LedOutput::new();
 	let mut stats = Stats::new();
 
 	let boot = Instant::now();
@@ -193,14 +197,18 @@ async fn main(spawner: Spawner) {
 				}
 
 				if p.push {
+					let presented = Instant::now();
 					leds.present(frame.pixels()).await;
+					let led = (Instant::now() - presented).as_micros() as u32;
 					if !frame.close() {
 						stats.torn += 1;
 					}
 
+					// All three spans are measured from `now`, the moment PUSH arrived, so
+					// what the LED costs cannot leak into the two numbers about the network.
 					let gap = last_push.map_or(0, |t| (now - t).as_micros() as u32);
 					let assembled = frame_start.map_or(0, |t| (now - t).as_micros() as u32);
-					stats.on_frame(gap, assembled);
+					stats.on_frame(gap, assembled, led);
 					last_push = Some(now);
 					frame_start = None;
 				}
@@ -208,6 +216,9 @@ async fn main(spawner: Spawner) {
 			Either::First(Err(_)) => stats.bad += 1,
 			Either::Second(_) => {
 				let now = Instant::now();
+				if stats.frames == 0 {
+					leds.blank();
+				}
 				let line = stats.drain(
 					(now - boot).as_secs(),
 					(now - reported).as_millis(),

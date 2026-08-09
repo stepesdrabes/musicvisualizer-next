@@ -25,6 +25,9 @@ cyw43 = { version = "0.7.0", features = ["log"] }
 cyw43-pio = "0.10.0"
 
 cortex-m = { version = "0.7.6", features = ["inline-asm"] }
+# For SetDutyCycle, which writes the compare register and nothing else. Already in the tree
+# under embassy-rp, so this names it rather than adding it.
+embedded-hal = "1.0"
 cortex-m-rt = "0.7.0"
 critical-section = "1.1"
 heapless = "0.9"

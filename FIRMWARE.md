@@ -5,9 +5,10 @@ what actually arrived. Source is in `firmware/`.
 
 This is the measurement build, not the product. It joins WiFi, listens on port 4048,
 reassembles frames, and once a second says how many packets and frames it got, how far apart
-they were, and what went missing. **Driving the LED strips is a stub** (`src/leds.rs`), so the
-numbers describe the network path and nothing else. Wire the strips in and the same numbers
-would be confounded by the 30 us per LED that WS2812 costs.
+they were, and what went missing. **It does not drive the strips.** What it does instead is
+summarise each frame onto one RGB LED (`src/leds.rs`), which is enough to watch a show arrive
+before there are any strips to watch it on, and cheap enough not to confound the numbers the
+way the 30 us per LED of the strips would.
 
 ## What it measured
 
@@ -19,8 +20,8 @@ network. Repeated 20 and 30 second runs at the full 1320-pixel fixture.
 concern that shaped the original design, cyw43's four fixed receive buffers
 (`ch::State<1514, 4, 4>`) against three datagrams per frame, **did not materialise**. Dropping
 to 330 px and one datagram per frame changed nothing measurable, so the fixture does not need
-splitting for throughput. The README's "one output per strip" remains true for WS2812 timing,
-but not for the network.
+splitting for throughput. The README's "one output per strip" remains true for the strips'
+own timing, but not for the network.
 
 **Delivery timing is the problem, and it is the radio.** Per 30 second run, counting frames
 arriving more than 20 / 50 / 100 ms after the one before:
@@ -92,6 +93,84 @@ room-node on 192.168.1.57, DDP :4048, stats -> :4049
 Put that address into the board panel in the app, top right. A DHCP reservation is worth
 setting up, since the hostname offered is `room-node` and nothing else advertises it.
 
+## The monitor LED
+
+One common-cathode RGB LED, which is the whole 1320-pixel fixture reduced to a single point.
+It is the answer to a real gap in this build: `fps 60.0 seqgap 0` says the bytes arrived, and
+says nothing about whether they are a show.
+
+```
+                          resistor
+  GP18  physical 24  ----[ 330 ]----  R
+  GP19  physical 25  ----[ 100 ]----  G
+  GP20  physical 26  ----[ 100 ]----  B
+  GND   physical 23  ---------------  -
+```
+
+Those four board pins are physically adjacent and in the order the LED's own legs are, and
+GP18/19/20 fall on PWM slice 1 A and B and slice 2 A, none of which cyw43 wants. The resistors
+are unequal because the supply is: red drops 1.3 V across its own where green and blue have
+barely 0.2 V to give, so at equal resistance the red swamps them. If green or blue still read
+weak, drop to 68 ohm before touching `TRIM` in `leds.rs`; if red dominates, `TRIM` is the
+cheaper fix. **Never wire the LED without resistors** - at 3.3 V the red junction has nothing
+limiting it but the pad.
+
+**On every boot it plays red, green, blue, half a second each**, before the radio comes up. Which
+leg of an RGB LED is which is not something the firmware can discover, and a swapped pair looks
+exactly like the show being wrong - the right light, at the wrong time, in the wrong colour. If
+the order that lights is not red, green, blue, the wiring is the fault and nothing further up is
+worth reading.
+
+What it shows once frames arrive:
+
+- **Colour** is the frame's mean, per channel, divided by whichever channel is largest. Dark
+  pixels contribute nothing to a sum, so that is already weighted toward the lit part of the
+  room, and the division leaves hue and saturation exactly as they arrived.
+- **Brightness** is the **90th percentile** of `max(r,g,b)`, so a tenth of the fixture is above
+  it, taken straight to the duty cycle with no gain of its own. A 256-bin histogram gets it in
+  one pass and 512 bytes, where a percentile would otherwise want a sort.
+
+**Nothing rescales that on the board, and nothing should.** The mixer auto-exposes at track
+scale, holds a house floor under every cue and compresses its own highlights, so what arrives on
+the wire is already the level the room is meant to sit at. A second gain here can only measure
+the show against itself, and normalising against the loudest frame of the last half minute
+leaves every other frame below it by construction - a room that reads bright on screen and dim
+on the LED. That is the invariant worth keeping: the host owns exposure, the same way it owns
+gamma.
+
+A percentile rather than a mean because **a room is not as bright as its average**. Half the
+fixture lit at full reads as a bright room; averaging over the dark half calls it half lit,
+which is the one error a single LED standing in for 1320 cannot afford. Measured through the
+same mixer that feeds the wire, per section:
+
+| section | perceived brightness |
+|---|---|
+| drop | 0.90 |
+| groove | 0.66 |
+| build | 0.61 |
+| outro / breakdown / intro | 0.28 to 0.34 |
+| void | 0.00 |
+
+Median 0.70 across a whole track, dark 2% of the time. The arrangement is legible on one LED,
+which is what it is for.
+
+One constant scales all of that: `MAX_DUTY` in `leds.rs`, the duty a full-scale room gets. The
+room and this LED are not the same instrument. A wall of 1320 diffused pixels seen from across a
+room is a wash; a 5 mm die seen from a desk is a point source, and past a few milliamps it stops
+reading as a colour and starts reading as glare - white, whatever it is emitting, because the
+cones under that small an angle saturate. That takes the top of the range away and flattens
+everything below it into one bright smear. Raise it if the LED is dim, lower it if bright
+sections stop being distinguishable. **A diffuser over the dome buys more than any value here
+does**, because it is the angular size causing the glare: a water-clear LED shows three separate
+dies that bloom together into white, where a frosted one mixes them.
+
+None of this is DSP the board invented. It is arithmetic on the bytes the strips would have
+got, so a wrong colour or a pulse on the offbeat is a wrong colour or a pulse on the offbeat.
+
+A single LED cannot show light moving across a room, so everything a show says at constant flux
+is lost on it. That is the ceiling on what this can tell you, and it is why the strips are still
+the next thing on the list.
+
 ## Answering "are you there"
 
 The stats stream below only goes to whoever is already sending DDP, which leaves a host with
@@ -100,7 +179,7 @@ So the board also answers a query, on the DDP port, at any time:
 
 ```
 -> ?room-node
-<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds stub
+<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds monitor
 ```
 
 The reply goes back to the asker's own source port, so nothing has to be listening on 4049 for
@@ -108,8 +187,9 @@ this to work. A leading `?` is `0x3f`, and DDP version 1 puts `0b01` in the top 
 first byte, so `hello.rs` and `ddp.rs` can never both claim a datagram; the query is checked
 first and never counts against `bad`.
 
-`leds` is read from `leds.rs` rather than written in `hello.rs`, so it says `stub` until the
-strips are actually driven and the app stops warning that the room will stay dark.
+`leds` is read from `leds.rs` rather than written in `hello.rs`, so it changes with the output
+and not with a string somebody remembered to update. `stub` and `monitor` both leave the walls
+dark, and the app warns on both; only `ws2815` will mean the room is lit.
 
 ## Reading the stats line
 
@@ -117,7 +197,7 @@ One line a second on the console, and the same line as a UDP datagram to port 40
 host last sent DDP. That second copy is for boards already on a wall: `nc -lu 4049`.
 
 ```
-up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  asm 2.1 ms  seqgap 0  bad 0  oob 0  torn 0
+up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0
 ```
 
 | Field | Means |
@@ -126,7 +206,9 @@ up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  asm 2.1 ms  
 | `pkt/s`, `KB/s` | what arrived, headers included |
 | `fps` | PUSH flags per second. **This is the headline number.** 60.0 is the target |
 | `gap` | shortest and longest PUSH to PUSH interval. The max is the jitter that matters |
+| `late` | frames arriving more than 20 / 50 / 100 ms after the one before |
 | `asm` | worst first-packet to PUSH span, so how long a frame took to arrive in pieces |
+| `led` | worst frame summarised onto the monitor LED. Every other field here measures the network; this is the only part of the 16.7 ms the board spends itself, so it is what says whether they still do |
 | `seqgap` | DDP sequence steps that were not +1 |
 | `bad` | datagrams rejected by the parser |
 | `oob` | writes past the end of the buffer, meaning the host drives more pixels than this build holds |
@@ -170,7 +252,7 @@ main.rs    bringup, then one loop selecting between a packet and the 1 Hz report
 ddp.rs     header parser, no Embassy imports
 frame.rs   the framebuffer, PUSH latch and tear detection
 stats.rs   interval counters and the one line they format into
-leds.rs    stub
+leds.rs    the frame reduced to one RGB LED, on PWM
 config.rs  compile-time knobs
 ```
 
@@ -186,10 +268,12 @@ The host owns gamma. `quantize()` in `packages/core/src/output.ts` encodes at 2.
 the wire, so these bytes reach the strips untouched.
 
 Resource split, fixed by cyw43 taking the first of everything: it holds **PIO0 SM0, DMA_CH0** and
-GPIO 23, 24, 25 and 29. That leaves PIO1 entirely free for LED output. The onboard LED is on the
-CYW43 chip rather than a GPIO, so it cannot indicate anything before WiFi is up.
+GPIO 23, 24, 25 and 29. That leaves PIO1 entirely free for LED output, and the monitor LED takes
+only PWM slices 1 and 2, which nothing else here wants. The onboard LED is on the CYW43 chip
+rather than a GPIO, so it still cannot indicate anything before WiFi is up: solid means the join
+has not landed, blinking means it has.
 
-Current cost: **340 KiB of 2 MB flash** (235 KiB of that is the three cyw43 blobs) and **37 KiB
+Current cost: **343 KiB of 2 MB flash** (235 KiB of that is the three cyw43 blobs) and **37 KiB
 of 264 KiB RAM**.
 
 ## What is left
@@ -204,18 +288,36 @@ because the show is deterministic and the host can render that far ahead and can
 drift apart over a track, so occupancy has to steer the present period slowly; and a seek or
 pause has to flush, or the room replays stale frames.
 
+**The strips are WS2815**, 12 V, 60 LED/m, one IC per LED. Decided before any were bought, and
+the reasons are all at the scale this room is: 300 pixels is a 5 m run, which is where 5 V sags
+badly enough to need injecting at both ends, and the finished room is **79 A at 5 V against about
+33 A at 12 V**. WS2815 is constant-current, so brightness does not fall off along a run, and it
+carries a backup data line, so one dead LED does not take the rest of the strip with it - which
+matters rather more in 1320 soldered-up pixels than on a bench.
+
+None of that reaches the firmware. It is the same single-wire 800 kHz protocol as WS2812B, so the
+driver, the pin plan and the timing arithmetic below are unchanged. The two places it does show
+up are the reset gap and the power budget, both noted here.
+
 **Drive the strips.** `embassy_rp::pio_programs::ws2812::PioWs2812` is a first-party driver, so
 this is wiring rather than writing. Put it on PIO1 SM0 to SM3 with DMA_CH2 to CH5. The arithmetic
-that decides the layout: WS2812 is 30 us per LED, so 16.7 ms buys about 555 pixels on one line
-and the room's 1320 need at least three lines, four for margin. They have to be awaited together
-with `join!`. Awaiting them one after another costs 39.6 ms no matter how many state machines
-are involved, which is 25 fps.
+that decides the layout: 30 us per LED, so 16.7 ms buys about 555 pixels on one line and the
+room's 1320 need at least three lines, four for margin. They have to be awaited together with
+`join!`. Awaiting them one after another costs 39.6 ms no matter how many state machines are
+involved, which is 25 fps.
 
-**Check the strip revision before trusting the reset gap.** Embassy's driver has a private
-`RESET_DELAY` of 55 us. That satisfies the original WS2812B datasheet but not WS2812B-V5, which
-wants 280 us; below it, back-to-back frames merge and colour walks down the strip. 280 us is 1.7%
-of a frame, so the fix is free, but the constant is private and needs either a vendored driver or
-an added delay.
+One 5 m strip is 300 pixels, which is exactly `Wall N` in `geometry.ts` and 9 ms of data, so a
+single run fits one line at 60 Hz with room to spare. That is the case to build first.
+
+**The reset gap has to be lengthened.** Embassy's driver has a private `RESET_DELAY` of 55 us,
+which satisfies the original WS2812B datasheet and nothing since: WS2815 wants **280 us**, as does
+WS2812B-V5. Below it, back-to-back frames merge and colour walks down the strip. 280 us is 1.7% of
+a frame, so the fix is free, but the constant is private and needs either a vendored driver or an
+added delay. With WS2815 chosen this is no longer conditional on which reel arrives.
+
+**Level shift the data line.** The Pico drives 3.3 V and WS2815 wants its logic high referenced to
+5 V, so a 74AHCT125 or SN74HCT245 sits between them. Without it the strip usually works, which is
+worse than failing: it fails later, intermittently, and looks like a network fault.
 
 **Reconnect handling.** There is none: the join is retried at boot and that is all. Note before
 building it that `is_link_up()` always returns true after the first connect (embassy #4612), so
@@ -229,7 +331,8 @@ only against captured output from the real sender.
 
 **A watchdog**, so a wedged cyw43 recovers without someone walking to the board.
 
-**Power.** Out of scope for the firmware but blocking for a lit room: 1320 WS2812s at full white
-draw roughly 79 A at 5 V. The mixer's headroom and `compressHighlights` mean real shows never
-approach that, but the supply and injection points have to be sized before any of this is
-switched on.
+**Power.** Out of scope for the firmware but blocking for a lit room: 1320 WS2815s at full white
+draw roughly **33 A at 12 V**, against the 79 A the same room would have wanted at 5 V. The
+mixer's headroom and `compressHighlights` mean real shows never approach either figure, but the
+supply and injection points have to be sized before any of this is switched on. One 5 m test run
+is 300 pixels and about 7.5 A, which a 12 V 10 A supply covers outright.

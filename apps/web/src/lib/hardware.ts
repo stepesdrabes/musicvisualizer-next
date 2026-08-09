@@ -18,8 +18,20 @@ export interface DeviceIdentity {
 	pixels: number;
 	ddpPort: number;
 	statsPort: number;
-	/** `stub` while the build does not drive strips. Anything else is a real output. */
+	/** What the build does with a frame: `stub` scores it, `monitor` puts it on one LED. */
 	leds: string;
+}
+
+/**
+ * Whether a frame reaching this board reaches the room.
+ *
+ * Two builds receive the whole fixture and light none of it, and the difference matters to
+ * whoever is reading these numbers: `stub` only counts packets, `monitor` summarises the frame
+ * onto a single RGB LED so the path can be judged before there are strips to judge it with.
+ * Both leave the walls dark, so both have to say so.
+ */
+export function drivesStrips(identity: DeviceIdentity | null): boolean {
+	return identity !== null && identity.leds !== 'stub' && identity.leds !== 'monitor';
 }
 
 /** One second of what actually arrived, reported by the board itself. */

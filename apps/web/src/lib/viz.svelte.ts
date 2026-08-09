@@ -194,7 +194,7 @@ export class Viz {
 	}
 
 	private frame(dt: number): void {
-		const frame: ShowFrame = this.player.update(Math.max(0, this.heardPosition()), dt);
+		const frame: ShowFrame = this.player.update(Math.max(0, this.heardPosition), dt);
 		this.mixer.render(frame);
 		this.roomRenderer?.render(this.mixer.bytes, dt);
 		this.publishReadout(dt, frame);
@@ -203,8 +203,12 @@ export class Viz {
 	/**
 	 * Where the listener actually is, which is behind where the audio clock has been scheduled
 	 * to by however long the output path takes.
+	 *
+	 * Public because the room has to render this instant and not `position`. Anything driven
+	 * off the raw audio clock leads what is being heard by the whole output latency, which is
+	 * tens of milliseconds over a speaker and a few hundred over Bluetooth.
 	 */
-	private heardPosition(): number {
+	get heardPosition(): number {
 		const latency =
 			(this.ctx as (AudioContext & { outputLatency?: number }) | null)?.outputLatency ??
 			this.ctx?.baseLatency ??

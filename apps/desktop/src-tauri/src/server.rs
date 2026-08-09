@@ -1,10 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 use crate::env;
@@ -18,6 +19,14 @@ pub struct Server {
 	pub port: u16,
 	pub missing_tools: Vec<&'static str>,
 }
+
+/// The running sidecar, held so that quitting can end it.
+///
+/// Nothing else owns it: the handle `spawn` returns kills the process on request but not on
+/// drop, so letting it fall out of scope leaves a Node server that outlives the window,
+/// reparented to init and still streaming DDP at the room. That is not a leaked handle, it is
+/// a room that keeps lighting after the app is gone.
+struct Sidecar(Mutex<Option<CommandChild>>);
 
 /// Start the bundled Node server and wait until it answers.
 ///
@@ -53,6 +62,7 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 		.env("NODE_ENV", "production");
 
 	let (mut rx, child) = sidecar.spawn().map_err(|e| format!("cannot start server: {e}"))?;
+	app.manage(Sidecar(Mutex::new(Some(child))));
 
 	// The child outlives this function, so its output has to be drained or the pipe fills and
 	// the server blocks on its own logging. Forwarded to stderr, where `tauri dev` shows it.
@@ -74,9 +84,23 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 	match wait_until_listening(port) {
 		true => Ok(Server { port, missing_tools }),
 		false => {
-			let _ = child.kill();
+			stop(app);
 			Err(format!("the server did not answer on port {port} within 20 seconds"))
 		}
+	}
+}
+
+/// End the sidecar. Idempotent, because both the failed-start path and the exit path call it.
+///
+/// The queue is written beside its file and renamed, so there is no half-written state to
+/// protect here and a signal is enough.
+pub fn stop(app: &AppHandle) {
+	let Some(sidecar) = app.try_state::<Sidecar>() else {
+		return;
+	};
+	let child = sidecar.0.lock().ok().and_then(|mut held| held.take());
+	if let Some(child) = child {
+		let _ = child.kill();
 	}
 }
 

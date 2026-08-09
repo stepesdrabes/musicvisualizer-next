@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { faultsIn, type HardwareStatus } from '$lib/hardware.ts';
+	import { drivesStrips, faultsIn, type HardwareStatus } from '$lib/hardware.ts';
 	import { uptime } from '$lib/hardware.svelte.ts';
 	import Dialog from '$lib/ui/Dialog.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -42,6 +42,7 @@
 	const identity = $derived(status.identity);
 	const telemetry = $derived(status.telemetry);
 	const faults = $derived(telemetry ? faultsIn(telemetry) : []);
+	const dark = $derived(identity !== null && !drivesStrips(identity));
 	const dirty = $derived(draft.trim() !== status.host);
 
 	function apply() {
@@ -120,6 +121,8 @@
 					<dd>
 						{#if identity.leds === 'stub'}
 							<span class="warn">Not wired</span>
+						{:else if identity.leds === 'monitor'}
+							<span class="warn">One LED</span>
 						{:else}
 							<span class="mono">{identity.leds}</span>
 						{/if}
@@ -201,7 +204,7 @@
 		{/if}
 	</div>
 
-	{#if identity?.leds === 'stub'}
+	{#if dark}
 		<footer>
 			<Icon name="alert" size={13} />
 			This build receives and scores the stream but does not drive the strips, so the room
