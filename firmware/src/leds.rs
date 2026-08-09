@@ -1,5 +1,7 @@
 use embassy_rp::Peri;
-use embassy_rp::peripherals::{PIN_18, PIN_19, PIN_20, PWM_SLICE1, PWM_SLICE2};
+use embassy_rp::peripherals::{
+	PIN_18, PIN_19, PIN_20, PIN_26, PIN_27, PIN_28, PWM_SLICE1, PWM_SLICE2, PWM_SLICE5, PWM_SLICE6,
+};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm};
 use embassy_time::Timer;
 use embedded_hal::pwm::SetDutyCycle;
@@ -39,34 +41,60 @@ const MAX_DUTY: u32 = 16384;
 /// two weak channels have no headroom left to find.
 const TRIM: [u32; 3] = [256, 256, 256];
 
-/// One RGB LED standing in for the whole fixture, so the DDP path can be judged before there
+/// Two RGB LEDs standing in for the whole fixture, so the DDP path can be judged before there
 /// are any strips to judge it with.
 ///
-/// Common cathode to GND, and one series resistor per colour to GP18, GP19, GP20. Those three
-/// are physically pins 24, 25 and 26 with a ground at 23, which puts the four in the order the
-/// LED's own legs are in. They also fall on PWM slice 1 channels A and B and slice 2 channel A,
-/// none of which cyw43 wants: it takes PIO0 SM0, DMA_CH0 and GPIO 23, 24, 25 and 29.
+/// Both show the same colour, which is the point rather than a simplification. Brightness is
+/// total flux and glare is flux per unit of solid angle, so two emitters at the same current
+/// are twice the light with none of the whitening that comes from driving one of them harder.
+/// Spread them apart, or put them behind one diffuser, and the gain is real.
+///
+/// Common cathode to GND, one series resistor per colour:
+///
+/// ```text
+///   LED 1   R GP18   G GP19   B GP20     physical 24, 25, 26, ground at 23
+///   LED 2   R GP26   G GP27   B GP28     physical 31, 32, 34
+/// ```
+///
+/// Each LED takes one slice for red and green on channels A and B, plus channel A of a second
+/// slice for blue. None of that is contended: cyw43 holds PIO0 SM0, DMA_CH0 and GPIO 23, 24,
+/// 25 and 29, and wants no PWM at all. A second LED that is not fitted costs nothing but two
+/// idle slices, so this drives six channels whether or not both are there.
 pub struct LedOutput {
-	rg: Pwm<'static>,
-	b: Pwm<'static>,
+	/// Red on channel A, green on channel B, one slice per LED.
+	rg: [Pwm<'static>; 2],
+	/// Blue, which needs a slice of its own because the pair above is spoken for.
+	blue: [Pwm<'static>; 2],
 	last: (u16, u16, u16),
 }
 
 impl LedOutput {
+	#[allow(clippy::too_many_arguments)]
 	pub fn new(
-		slice_rg: Peri<'static, PWM_SLICE1>,
-		pin_r: Peri<'static, PIN_18>,
-		pin_g: Peri<'static, PIN_19>,
-		slice_b: Peri<'static, PWM_SLICE2>,
-		pin_b: Peri<'static, PIN_20>,
+		slice_rg1: Peri<'static, PWM_SLICE1>,
+		r1: Peri<'static, PIN_18>,
+		g1: Peri<'static, PIN_19>,
+		slice_b1: Peri<'static, PWM_SLICE2>,
+		b1: Peri<'static, PIN_20>,
+		slice_rg2: Peri<'static, PWM_SLICE5>,
+		r2: Peri<'static, PIN_26>,
+		g2: Peri<'static, PIN_27>,
+		slice_b2: Peri<'static, PWM_SLICE6>,
+		b2: Peri<'static, PIN_28>,
 	) -> Self {
 		// Default top and divider are 16 bits at 125 MHz / 65536, about 1.9 kHz. Far enough
 		// above the eye not to flicker and nowhere near 60 Hz, so it cannot beat with the
 		// frame rate and invent a throb that is not in the show.
 		let cfg = PwmConfig::default();
 		Self {
-			rg: Pwm::new_output_ab(slice_rg, pin_r, pin_g, cfg.clone()),
-			b: Pwm::new_output_a(slice_b, pin_b, cfg),
+			rg: [
+				Pwm::new_output_ab(slice_rg1, r1, g1, cfg.clone()),
+				Pwm::new_output_ab(slice_rg2, r2, g2, cfg.clone()),
+			],
+			blue: [
+				Pwm::new_output_a(slice_b1, b1, cfg.clone()),
+				Pwm::new_output_a(slice_b2, b2, cfg),
+			],
 			// Matches the zero compare the config above starts at, so the first real write is
 			// never skipped as a no-op.
 			last: (0, 0, 0),
@@ -172,15 +200,19 @@ impl LedOutput {
 		}
 		self.last = (r, g, b);
 
-		let (chan_r, chan_g) = self.rg.split_by_ref();
-		if let Some(mut c) = chan_r {
-			let _ = c.set_duty_cycle(r);
+		for pair in &mut self.rg {
+			let (chan_r, chan_g) = pair.split_by_ref();
+			if let Some(mut c) = chan_r {
+				let _ = c.set_duty_cycle(r);
+			}
+			if let Some(mut c) = chan_g {
+				let _ = c.set_duty_cycle(g);
+			}
 		}
-		if let Some(mut c) = chan_g {
-			let _ = c.set_duty_cycle(g);
-		}
-		if let Some(mut c) = self.b.split_by_ref().0 {
-			let _ = c.set_duty_cycle(b);
+		for single in &mut self.blue {
+			if let Some(mut c) = single.split_by_ref().0 {
+				let _ = c.set_duty_cycle(b);
+			}
 		}
 	}
 }

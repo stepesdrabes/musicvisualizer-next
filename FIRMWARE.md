@@ -95,25 +95,40 @@ setting up, since the hostname offered is `room-node` and nothing else advertise
 
 ## The monitor LED
 
-One common-cathode RGB LED, which is the whole 1320-pixel fixture reduced to a single point.
-It is the answer to a real gap in this build: `fps 60.0 seqgap 0` says the bytes arrived, and
-says nothing about whether they are a show.
+Two common-cathode RGB LEDs, which are the whole 1320-pixel fixture reduced to a point. They
+are the answer to a real gap in this build: `fps 60.0 seqgap 0` says the bytes arrived, and says
+nothing about whether they are a show.
 
 ```
-                          resistor
-  GP18  physical 24  ----[ 330 ]----  R
-  GP19  physical 25  ----[ 100 ]----  G
-  GP20  physical 26  ----[ 100 ]----  B
-  GND   physical 23  ---------------  -
+                             resistor
+  LED 1   GP18  physical 24  --[ 330 ]--  R
+          GP19  physical 25  --[ 100 ]--  G
+          GP20  physical 26  --[ 100 ]--  B
+          GND   physical 23  -----------  -
+
+  LED 2   GP26  physical 31  --[ 330 ]--  R
+          GP27  physical 32  --[ 100 ]--  G
+          GP28  physical 34  --[ 100 ]--  B
+          GND   physical 38  -----------  -
 ```
 
-Those four board pins are physically adjacent and in the order the LED's own legs are, and
-GP18/19/20 fall on PWM slice 1 A and B and slice 2 A, none of which cyw43 wants. The resistors
-are unequal because the supply is: red drops 1.3 V across its own where green and blue have
-barely 0.2 V to give, so at equal resistance the red swamps them. If green or blue still read
-weak, drop to 68 ohm before touching `TRIM` in `leds.rs`; if red dominates, `TRIM` is the
-cheaper fix. **Never wire the LED without resistors** - at 3.3 V the red junction has nothing
-limiting it but the pad.
+Each LED takes one PWM slice for red and green on channels A and B, plus channel A of a second
+slice for blue. Nothing there is contended: cyw43 holds PIO0 SM0, DMA_CH0 and GPIO 23, 24, 25
+and 29, and wants no PWM at all. **Both LEDs always show the same colour**, and a second LED
+that is not fitted costs nothing but two idle slices, so one is a valid setup too.
+
+Two rather than one because of what limits this thing. Brightness is total flux; glare is flux
+per unit of solid angle. Driving one LED harder raises both, and past a few milliamps the second
+one wins: the die stops reading as a colour and starts reading as white, taking the top of the
+range with it. A second emitter at the same current is twice the light and no more glare. Spread
+them apart, or sit them behind one diffuser, and it is a straight gain. `MAX_DUTY` is the lever
+that trades the two against each other; this is the one that does not.
+
+The resistors are unequal because the supply is: red drops 1.3 V across its own where green and
+blue have barely 0.2 V to give, so at equal resistance the red swamps them. If green or blue read
+weak, drop to 68 ohm before touching `TRIM` in `leds.rs`; if red dominates, `TRIM` is the cheaper
+fix, and it applies to both LEDs. **Never wire an LED without resistors** - at 3.3 V the red
+junction has nothing limiting it but the pad.
 
 **On every boot it plays red, green, blue, half a second each**, before the radio comes up. Which
 leg of an RGB LED is which is not something the firmware can discover, and a swapped pair looks

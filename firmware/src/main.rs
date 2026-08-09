@@ -76,7 +76,18 @@ async fn main(spawner: Spawner) {
 
 	// Before the radio, so the wiring check is the first thing the board does and a join that
 	// never lands cannot hide it.
-	let mut leds = LedOutput::new(p.PWM_SLICE1, p.PIN_18, p.PIN_19, p.PWM_SLICE2, p.PIN_20);
+	let mut leds = LedOutput::new(
+		p.PWM_SLICE1,
+		p.PIN_18,
+		p.PIN_19,
+		p.PWM_SLICE2,
+		p.PIN_20,
+		p.PWM_SLICE5,
+		p.PIN_26,
+		p.PIN_27,
+		p.PWM_SLICE6,
+		p.PIN_28,
+	);
 	leds.selftest().await;
 
 	let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
