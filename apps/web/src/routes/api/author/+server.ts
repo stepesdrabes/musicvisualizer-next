@@ -10,7 +10,9 @@ import {
 } from '@mv/core';
 import { analysisPath, findAudioFile, isValidId, readMeta, showPath } from '@mv/analysis';
 import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
-import { reviseShow, type AuthorEvent } from '@mv/author-ai';
+import { reviseShow, type AuthorEvent, type BackendId } from '@mv/author-ai';
+import { isLocal } from '$lib/server/access.ts';
+import { settings } from '$lib/server/settings.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -18,9 +20,18 @@ import type { RequestHandler } from './$types';
  * forwarded as it happens: watching it fetch bars 40-56, then reject its own effect, then
  * lint clean, is far more informative than a spinner.
  */
-export const GET: RequestHandler = async ({ url, request }) => {
+export const GET: RequestHandler = async (event) => {
+	const { url, request } = event;
+	// Authoring spends credits, and the server binds every interface so phones in the room can
+	// reach the guest pages. Being on the same WiFi is not the same as running the night.
+	if (!isLocal(event)) error(403, 'authoring belongs to the machine running the show');
+
 	const id = url.searchParams.get('id');
 	if (!id || !isValidId(id)) error(400, 'valid track id required');
+
+	const asked = url.searchParams.get('backend') ?? (await settings.read()).authorBackend;
+	const chosen = await settings.provider((asked === 'deepseek' ? 'deepseek' : 'claude') as BackendId);
+	if ('error' in chosen) error(400, chosen.error);
 
 	let analysis: TrackAnalysis;
 	try {
@@ -63,9 +74,13 @@ export const GET: RequestHandler = async ({ url, request }) => {
 			let grid = analysis;
 
 			try {
-				send('event', { type: 'note', text: `authoring ${analysis.title}` } satisfies AuthorEvent);
+				send('event', {
+					type: 'note',
+					text: `authoring ${analysis.title} with ${chosen.provider.label}`
+				} satisfies AuthorEvent);
 
 				const result = await reviseShow(grid, geometry, draft, {
+					provider: chosen.provider,
 					audioPath,
 					onAnalysis: (next) => (grid = next),
 					onEvent: (e) => send('event', e)

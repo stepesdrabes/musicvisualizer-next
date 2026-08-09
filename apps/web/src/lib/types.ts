@@ -46,6 +46,15 @@ export interface LoadState {
 	progress: number | null;
 }
 
+/** Mirrors @mv/author-ai BackendId. */
+export type AuthorBackend = 'claude' | 'deepseek';
+
+/** Mirrors PublicSettings from the server. The key itself never crosses this boundary. */
+export interface Settings {
+	hasDeepseekKey: boolean;
+	authorBackend: AuthorBackend;
+}
+
 /** One line in the authoring activity feed. */
 export interface Step {
 	id: string;

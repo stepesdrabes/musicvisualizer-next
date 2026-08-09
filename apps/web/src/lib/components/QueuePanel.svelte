@@ -117,8 +117,10 @@
 				</button>
 
 				<div class="right">
-					{#if item.authored === 'claude'}
-						<Badge variant="live" title="Claude designed this show">
+					{#if item.authored === 'claude' || item.authored === 'deepseek'}
+						<Badge
+							variant="live"
+							title="{item.authored === 'claude' ? 'Claude' : 'DeepSeek'} designed this show">
 							<Icon name="sparkles" size={11} />
 						</Badge>
 					{/if}

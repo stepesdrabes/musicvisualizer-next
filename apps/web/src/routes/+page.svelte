@@ -6,7 +6,15 @@
 	import { installHint, readShell } from '$lib/shell.svelte.ts';
 	import { indexOfKey } from '$lib/queueModel.ts';
 	import type { Candidate } from '$lib/search.svelte.ts';
-	import type { AuthorEvent, LibraryEntry, LoadState, Step, TrackMeta } from '$lib/types.ts';
+	import type {
+		AuthorBackend,
+		AuthorEvent,
+		LibraryEntry,
+		LoadState,
+		Settings,
+		Step,
+		TrackMeta
+	} from '$lib/types.ts';
 	import Backdrop from '$components/Backdrop.svelte';
 	import HardwareModal from '$components/HardwareModal.svelte';
 	import Inspector from '$components/Inspector.svelte';
@@ -44,6 +52,7 @@
 	let steps = $state<Step[]>([]);
 	let warnings = $state<string[]>([]);
 	let library = $state<LibraryEntry[]>([]);
+	let settings = $state<Settings>({ hasDeepseekKey: false, authorBackend: 'claude' });
 
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
@@ -109,6 +118,35 @@
 		}
 	}
 
+	async function refreshSettings() {
+		try {
+			const res = await fetch('/api/settings');
+			if (res.ok) settings = (await res.json()) as Settings;
+		} catch {
+			// Loopback only, so a failure here means a guest page, where authoring is not offered.
+		}
+	}
+
+	/** Persisted, because which model to spend is a decision that outlives one track. */
+	async function patchSettings(patch: Partial<Settings & { deepseekApiKey: string }>) {
+		const res = await fetch('/api/settings', {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(patch)
+		});
+		if (res.ok) settings = (await res.json()) as Settings;
+		else note(`settings: ${await res.text()}`);
+	}
+
+	function chooseBackend(backend: AuthorBackend) {
+		settings = { ...settings, authorBackend: backend };
+		void patchSettings({ authorBackend: backend });
+	}
+
+	function saveDeepseekKey(key: string) {
+		void patchSettings({ deepseekApiKey: key });
+	}
+
 	$effect(() => {
 		const v = new Viz();
 		v.onReadout = (r) => (readout = r);
@@ -119,6 +157,7 @@
 		queue.connect();
 		hardware.connect();
 		void refreshLibrary();
+		void refreshSettings();
 		return () => {
 			v.dispose();
 			queue.dispose();
@@ -132,13 +171,21 @@
 
 	// Keep the hardware clock aligned with the audio that is actually playing. Half a second
 	// is plenty: the server extrapolates between syncs from its own monotonic clock.
+	//
+	// `heardPosition`, not `position`: the preview already subtracts the output latency so it
+	// lines up with what reaches the ear, and sending the raw audio clock instead put the room
+	// that far ahead of both. Read off the viz rather than the readout for the same reason it
+	// is not read from anywhere else here - the readout is a `$state` object republished at
+	// 20 Hz, and touching it inside this effect re-subscribed that often, which cleared the
+	// interval before it could ever fire and turned two posts a second into twenty.
 	$effect(() => {
-		if (!ddpRunning) return;
+		const v = viz;
+		if (!ddpRunning || !v) return;
 		const send = () =>
 			postJson('/api/output', {
 				action: 'sync',
-				position: readout.position,
-				playing: readout.playing
+				position: v.heardPosition,
+				playing: v.isPlaying
 			}).catch(() => {});
 		void send();
 		const timer = setInterval(send, 500);
@@ -296,7 +343,7 @@
 		}
 	}
 
-	function author() {
+	function author(backend: AuthorBackend) {
 		if (!trackId || !analysis || !viz) return;
 		warnings = [];
 		steps = [];
@@ -366,7 +413,9 @@
 			}
 		}
 
-		const es = new EventSource(`/api/author?id=${encodeURIComponent(trackId)}`);
+		const es = new EventSource(
+			`/api/author?id=${encodeURIComponent(trackId)}&backend=${encodeURIComponent(backend)}`
+		);
 
 		es.addEventListener('event', (ev) => handle(JSON.parse((ev as MessageEvent).data) as AuthorEvent));
 
@@ -507,9 +556,12 @@
 				{log}
 				{steps}
 				{warnings}
+				{settings}
 				canAuthor={!!analysis}
 				authoring={load.phase === 'authoring'}
 				onauthor={author}
+				onbackend={chooseBackend}
+				onkey={saveDeepseekKey}
 				onrelevel={relevel}
 				{relevelling} />
 		{/if}

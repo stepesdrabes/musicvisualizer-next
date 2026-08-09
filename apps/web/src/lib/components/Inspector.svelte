@@ -1,12 +1,13 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
-	import type { Step } from '$lib/types.ts';
+	import type { AuthorBackend, Settings, Step } from '$lib/types.ts';
 	import { titleCase } from '$lib/format.ts';
 	import Activity from './Activity.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
+	import Input from '$lib/ui/Input.svelte';
 	import Section from '$lib/ui/Section.svelte';
 	import Spinner from '$lib/ui/Spinner.svelte';
 	import Tabs from '$lib/ui/Tabs.svelte';
@@ -18,9 +19,12 @@
 		log,
 		steps,
 		warnings,
+		settings,
 		canAuthor = false,
 		authoring = false,
 		onauthor,
+		onbackend,
+		onkey,
 		onrelevel,
 		relevelling = false
 	}: {
@@ -30,12 +34,30 @@
 		log: string[];
 		steps: Step[];
 		warnings: string[];
+		settings: Settings;
 		canAuthor?: boolean;
 		authoring?: boolean;
-		onauthor: () => void;
+		onauthor: (backend: AuthorBackend) => void;
+		onbackend: (backend: AuthorBackend) => void;
+		onkey: (key: string) => void;
 		onrelevel: (level: number) => void;
 		relevelling?: boolean;
 	} = $props();
+
+	/**
+	 * Which model spends the evening's credits.
+	 *
+	 * A choice rather than a setting because the two are not interchangeable: one costs about a
+	 * hundred times what the other does, and which one a track deserves is a decision made while
+	 * looking at the track.
+	 */
+	const BACKENDS: { id: AuthorBackend; label: string; note: string }[] = [
+		{ id: 'claude', label: 'Claude', note: 'Opus 5' },
+		{ id: 'deepseek', label: 'DeepSeek', note: 'V4 Flash, far cheaper per show' }
+	];
+
+	const backend = $derived(settings.authorBackend);
+	let draftKey = $state('');
 
 	const TABS = [
 		{ id: 'show', label: 'Show' },
@@ -83,15 +105,46 @@
 	<div class="scroll">
 		{#if tab === 'show'}
 			<div class="action">
-				<Button variant="primary" disabled={!canAuthor || authoring} onclick={onauthor}>
+				<Button variant="primary" disabled={!canAuthor || authoring} onclick={() => onauthor(backend)}>
 					{#if authoring}
 						<Spinner size={14} />
 						Designing
 					{:else}
 						<Icon name="sparkles" size={15} />
-						{show ? 'Revise with Claude' : 'Design with Claude'}
+						{show ? 'Revise with' : 'Design with'}
+						{BACKENDS.find((b) => b.id === backend)?.label}
 					{/if}
 				</Button>
+
+				<div class="backends" role="group" aria-label="Which model designs the show">
+					{#each BACKENDS as option (option.id)}
+						<button
+							class="pick"
+							class:on={backend === option.id}
+							disabled={authoring}
+							title={option.id === 'deepseek' && !settings.hasDeepseekKey
+								? 'Needs a DeepSeek API key'
+								: option.note}
+							onclick={() => onbackend(option.id)}>
+							{option.label}
+						</button>
+					{/each}
+				</div>
+
+				{#if backend === 'deepseek' && !settings.hasDeepseekKey}
+					<form
+						class="key"
+						onsubmit={(e) => {
+							e.preventDefault();
+							onkey(draftKey);
+							draftKey = '';
+						}}>
+						<Input bind:value={draftKey} placeholder="DeepSeek API key" size="sm" />
+						<Button type="submit" size="sm" variant="outline" disabled={draftKey.trim().length === 0}>
+							Save
+						</Button>
+					</form>
+				{/if}
 			</div>
 
 			{#if analysis}
@@ -263,6 +316,45 @@
 	}
 	.action :global(.btn) {
 		width: 100%;
+	}
+
+	.backends {
+		display: flex;
+		gap: 2px;
+		margin-top: 8px;
+		padding: 2px;
+		border-radius: var(--radius-md);
+		background: var(--muted);
+	}
+	.pick {
+		flex: 1;
+		padding: 5px 0;
+		border-radius: calc(var(--radius-md) - 3px);
+		font-size: 12px;
+		color: var(--subtle-foreground);
+		transition:
+			background-color 0.13s ease,
+			color 0.13s ease;
+	}
+	.pick:hover:not(:disabled) {
+		color: var(--foreground);
+	}
+	.pick.on {
+		background: var(--card-raised);
+		color: var(--foreground);
+	}
+	.pick:disabled {
+		opacity: 0.4;
+	}
+
+	.key {
+		display: flex;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.key :global(.btn) {
+		width: auto;
+		flex: none;
 	}
 
 	dl {

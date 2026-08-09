@@ -15,7 +15,7 @@ export type ItemStatus =
 	| 'ready'
 	| 'error';
 
-export type Authored = 'none' | 'engine' | 'claude';
+export type Authored = 'none' | 'engine' | 'claude' | 'deepseek';
 
 export interface QueueItem {
 	/**
