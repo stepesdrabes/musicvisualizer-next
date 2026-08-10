@@ -107,6 +107,22 @@ export function buildTimeline(
 	return { sections, cues, markers };
 }
 
+/**
+ * The cue holding the room at a given bar, or undefined before the first one starts.
+ *
+ * A search rather than a reverse-and-find: nothing requires a show to store its cues in bar
+ * order, and an agent's show is whatever JSON the model wrote. Taking the last one that starts
+ * at or before the bar is only the live cue if the list happens to be sorted.
+ */
+export function activeCue(show: Show | null, bar: number): Show['cues'][number] | undefined {
+	if (!show) return undefined;
+	let best: Show['cues'][number] | undefined;
+	for (const cue of show.cues) {
+		if (cue.bar <= bar && (!best || cue.bar > best.bar)) best = cue;
+	}
+	return best;
+}
+
 /** Onsets counted into one bucket per pixel column, for a lane too short to draw them singly. */
 export function densityColumns(
 	times: readonly number[],

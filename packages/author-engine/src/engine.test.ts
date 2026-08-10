@@ -270,6 +270,17 @@ describe('determinism', () => {
 	it('pins the show to the grid it was written against', () => {
 		expect(show.analysisHash).toBe(analysis.hash);
 	});
+
+	it('records which roll produced it, so a composition can be named after the fact', () => {
+		expect(show.seed).toBeGreaterThan(0);
+		expect(composeShow(analysis, { seed: 12345 }).seed).toBe(12345);
+	});
+
+	it('gives a different show for a different roll of the same track', () => {
+		const other = composeShow(analysis, { seed: (show.seed ?? 1) + 7919 });
+		expect(other.analysisHash).toBe(show.analysisHash);
+		expect(JSON.stringify(other.cues)).not.toBe(JSON.stringify(show.cues));
+	});
 });
 
 describe('prose', () => {

@@ -15,12 +15,21 @@ interface SettingsFile {
 	deepseekApiKey?: string;
 	/** Which backend the authoring button spends by default. */
 	authorBackend?: BackendId;
+	/**
+	 * How far ahead of the audio the strips are driven, milliseconds.
+	 *
+	 * DDP and WLED add transport delay the compiler cannot know, and it varies with the board,
+	 * the network and the controller. So it belongs to the installation rather than to a track,
+	 * and it is dialled by eye against the real room. Positive runs the room early.
+	 */
+	outputOffsetMs?: number;
 }
 
 export interface PublicSettings {
 	/** Never the key itself. Whether one is stored is all the interface needs to know. */
 	hasDeepseekKey: boolean;
 	authorBackend: BackendId;
+	outputOffsetMs: number;
 }
 
 class Settings {
@@ -40,7 +49,8 @@ class Settings {
 		const file = await this.load();
 		return {
 			hasDeepseekKey: typeof file.deepseekApiKey === 'string' && file.deepseekApiKey.length > 0,
-			authorBackend: file.authorBackend ?? 'claude'
+			authorBackend: file.authorBackend ?? 'claude',
+			outputOffsetMs: file.outputOffsetMs ?? 0
 		};
 	}
 

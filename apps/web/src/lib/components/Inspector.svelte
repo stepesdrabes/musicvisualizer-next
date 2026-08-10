@@ -3,6 +3,7 @@
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import type { AuthorBackend, Settings, Step } from '$lib/types.ts';
 	import { titleCase } from '$lib/format.ts';
+	import { activeCue } from '$lib/timeline.ts';
 	import Activity from './Activity.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -26,7 +27,9 @@
 		onbackend,
 		onkey,
 		onrelevel,
-		relevelling = false
+		onreroll,
+		relevelling = false,
+		rerolling = false
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
@@ -41,7 +44,9 @@
 		onbackend: (backend: AuthorBackend) => void;
 		onkey: (key: string) => void;
 		onrelevel: (level: number) => void;
+		onreroll: () => void;
 		relevelling?: boolean;
+		rerolling?: boolean;
 	} = $props();
 
 	/**
@@ -84,9 +89,11 @@
 		if (logEl) logEl.scrollTop = logEl.scrollHeight;
 	});
 
-	const activeCue = $derived(
-		show ? [...show.cues].reverse().find((c) => c.bar <= readout.bar) : undefined
-	);
+	const liveCue = $derived(activeCue(show, readout.bar));
+
+	// Rerolling runs the engine, so on an agent's show it would spend nothing and throw away
+	// something that cost credits. Revising is how that one is changed.
+	const byAgent = $derived(show !== null && !!show.authoredBy && show.authoredBy !== 'engine');
 	const liveTabs = $derived(steps.some((s) => s.state === 'pending') ? ['design'] : []);
 
 	function layerList(cue: Show['cues'][number]): string {
@@ -114,6 +121,21 @@
 						{show ? 'Revise with' : 'Design with'}
 						{BACKENDS.find((b) => b.id === backend)?.label}
 					{/if}
+				</Button>
+
+				<Button
+					variant="outline"
+					disabled={!show || authoring || rerolling || byAgent}
+					title={byAgent
+						? `${show?.authoredBy} wrote this one, and the engine cannot improve on it. Revise instead.`
+						: 'Compose this track again, differently'}
+					onclick={onreroll}>
+					{#if rerolling}
+						<Spinner size={14} />
+					{:else}
+						<Icon name="retry" size={15} />
+					{/if}
+					Reroll
 				</Button>
 
 				<div class="backends" role="group" aria-label="Which model designs the show">
@@ -264,7 +286,7 @@
 					</thead>
 					<tbody>
 						{#each show.cues as c (c.bar)}
-							<tr class:now={activeCue?.bar === c.bar}>
+							<tr class:now={liveCue?.bar === c.bar}>
 								<td class="mono">{c.bar}</td>
 								<td>
 									<span class="dot" style:background={`var(--sec-${c.section})`}></span>{titleCase(

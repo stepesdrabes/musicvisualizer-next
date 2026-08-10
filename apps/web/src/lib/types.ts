@@ -62,6 +62,8 @@ export type AuthorBackend = 'claude' | 'deepseek';
 export interface Settings {
 	hasDeepseekKey: boolean;
 	authorBackend: AuthorBackend;
+	/** How far ahead of the audio the strips run, milliseconds. Positive is early. */
+	outputOffsetMs: number;
 }
 
 /** One line in the authoring activity feed. */

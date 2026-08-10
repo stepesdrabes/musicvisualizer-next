@@ -75,7 +75,8 @@ interface Slot {
  */
 export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): Show {
 	const effects = opts.effects ?? BUILT_IN_EFFECTS;
-	const rng = new Rng(opts.seed ?? seedFrom(analysis.hash));
+	const seed = opts.seed ?? seedFrom(analysis.hash);
+	const rng = new Rng(seed);
 	const picker = new EffectPicker(effects, rng);
 	const palette = choosePalette(analysis, rng, opts.artHue);
 
@@ -195,6 +196,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		analysisHash: analysis.hash,
 		brief: writeBrief(analysis, palette.name ?? 'unnamed'),
 		authoredBy: 'engine',
+		seed,
 		palette,
 		defaults: { intensity: 0.7, motion: 1, fadeBeats: 2 },
 		generatedEffects: [],

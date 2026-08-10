@@ -6,7 +6,8 @@
 		step = 0.01,
 		width,
 		ariaLabel,
-		oninput
+		oninput,
+		onchange
 	}: {
 		value?: number;
 		min?: number;
@@ -16,6 +17,8 @@
 		ariaLabel: string;
 		/** For owners that keep the value somewhere a two-way binding cannot reach. */
 		oninput?: (v: number) => void;
+		/** Once, on release. For an owner that persists the value rather than just following it. */
+		onchange?: (v: number) => void;
 	} = $props();
 
 	const pct = $derived(max > min ? ((value - min) / (max - min)) * 100 : 0);
@@ -30,6 +33,7 @@
 	bind:value
 	aria-label={ariaLabel}
 	oninput={(e) => oninput?.(Number(e.currentTarget.value))}
+	onchange={(e) => onchange?.(Number(e.currentTarget.value))}
 	style:width
 	style:--pct={`${pct}%`} />
 

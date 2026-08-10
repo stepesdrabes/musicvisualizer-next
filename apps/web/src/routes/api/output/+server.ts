@@ -99,10 +99,16 @@ class Output {
 		}, 1000 / 60);
 	}
 
-	sync(position: number, playing: boolean): void {
+	/**
+	 * The trim rides along on the sync rather than needing the stream restarted, so it can be
+	 * dialled against the real strips while they are lit. Undefined leaves it alone: a sync that
+	 * does not mention it is not asking for zero.
+	 */
+	sync(position: number, playing: boolean, offsetMs?: number): void {
 		this.position = position;
 		this.playing = playing;
 		this.syncedAt = performance.now();
+		if (typeof offsetMs === 'number' && Number.isFinite(offsetMs)) this.offsetMs = offsetMs;
 	}
 
 	async stop(): Promise<void> {
@@ -171,7 +177,7 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	if (body.action === 'sync') {
-		output.sync(body.position ?? 0, body.playing ?? false);
+		output.sync(body.position ?? 0, body.playing ?? false, body.offsetMs);
 		return json(output.status);
 	}
 

@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { drivesStrips, faultsIn, type HardwareStatus } from '$lib/hardware.ts';
+	import {
+		OFFSET_MAX_MS,
+		OFFSET_MIN_MS,
+		drivesStrips,
+		faultsIn,
+		type HardwareStatus
+	} from '$lib/hardware.ts';
 	import { uptime } from '$lib/hardware.svelte.ts';
 	import Dialog from '$lib/ui/Dialog.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
+	import Slider from '$lib/ui/Slider.svelte';
 	import Spinner from '$lib/ui/Spinner.svelte';
 	import PicoBoard from './PicoBoard.svelte';
 	import StatusDot from './StatusDot.svelte';
@@ -12,18 +19,27 @@
 		open = false,
 		status,
 		canStream = false,
+		offsetMs = 0,
 		onclose,
 		onhost,
 		onprobe,
+		onoffset,
+		onoffsetdone,
 		ontoggleOutput
 	}: {
 		open?: boolean;
 		status: HardwareStatus;
 		/** A show has to be loaded before there is anything to send. */
 		canStream?: boolean;
+		/** How far ahead of the audio the strips run, milliseconds. */
+		offsetMs?: number;
 		onclose: () => void;
 		onhost: (host: string) => void;
 		onprobe: (host: string) => void;
+		/** While the trim is being dragged. The running stream picks it up on its next sync. */
+		onoffset: (ms: number) => void;
+		/** On release, which is the only point worth writing to disk. */
+		onoffsetdone: (ms: number) => void;
 		ontoggleOutput: () => void;
 	} = $props();
 
@@ -98,6 +114,21 @@
 			{status.streaming ? 'Stop' : 'Send show'}
 		</Button>
 	</div>
+
+	{#if status.host}
+		<div class="trim">
+			<span>Lead</span>
+			<Slider
+				value={offsetMs}
+				min={OFFSET_MIN_MS}
+				max={OFFSET_MAX_MS}
+				step={5}
+				ariaLabel="How far ahead of the audio the strips run"
+				oninput={onoffset}
+				onchange={onoffsetdone} />
+			<span class="ms mono">{offsetMs > 0 ? '+' : ''}{offsetMs} ms</span>
+		</div>
+	{/if}
 
 	<div class="body">
 		<div class="device">
@@ -284,6 +315,27 @@
 	.field input:focus {
 		outline: none;
 		border-color: var(--ring);
+	}
+
+	.trim {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 11px 16px;
+		flex: none;
+		border-bottom: 1px solid var(--border);
+		font-size: 13px;
+		color: var(--muted-foreground);
+	}
+	.trim :global(.slider) {
+		flex: 1;
+		min-width: 0;
+	}
+	.ms {
+		/* Fixed, so the digits changing under the thumb do not shove the slider around. */
+		width: 58px;
+		text-align: right;
+		flex: none;
 	}
 
 	.body {

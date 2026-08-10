@@ -52,7 +52,11 @@
 	let steps = $state<Step[]>([]);
 	let warnings = $state<string[]>([]);
 	let library = $state<LibraryEntry[]>([]);
-	let settings = $state<Settings>({ hasDeepseekKey: false, authorBackend: 'claude' });
+	let settings = $state<Settings>({
+		hasDeepseekKey: false,
+		authorBackend: 'claude',
+		outputOffsetMs: 0
+	});
 
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
@@ -66,6 +70,12 @@
 
 	let volume = $state(0.8);
 	let relevelling = $state(false);
+	let rerolling = $state(false);
+
+	// Deliberately not `$state`: the sync effect below reads it, and a reactive read there would
+	// re-subscribe on every step of the trim, tearing down the interval it just built. The slider
+	// displays `settings.outputOffsetMs`; this is the copy the wire is driven from.
+	let wireOffsetMs = 0;
 
 	// The server owns the address and whether it is streaming; this only ever reads them.
 	const ddpHost = $derived(hardware.status.host);
@@ -121,7 +131,10 @@
 	async function refreshSettings() {
 		try {
 			const res = await fetch('/api/settings');
-			if (res.ok) settings = (await res.json()) as Settings;
+			if (res.ok) {
+				settings = (await res.json()) as Settings;
+				wireOffsetMs = settings.outputOffsetMs;
+			}
 		} catch {
 			// Loopback only, so a failure here means a guest page, where authoring is not offered.
 		}
@@ -145,6 +158,18 @@
 
 	function saveDeepseekKey(key: string) {
 		void patchSettings({ deepseekApiKey: key });
+	}
+
+	/** Dragging: the running stream takes it on its next sync, half a second at the worst. */
+	function moveOffset(ms: number) {
+		wireOffsetMs = ms;
+		settings = { ...settings, outputOffsetMs: ms };
+	}
+
+	/** Released. One write, rather than one per step of the drag. */
+	function saveOffset(ms: number) {
+		moveOffset(ms);
+		void patchSettings({ outputOffsetMs: ms });
 	}
 
 	$effect(() => {
@@ -185,7 +210,8 @@
 			postJson('/api/output', {
 				action: 'sync',
 				position: v.heardPosition,
-				playing: v.isPlaying
+				playing: v.isPlaying,
+				offsetMs: wireOffsetMs
 			}).catch(() => {});
 		void send();
 		const timer = setInterval(send, 500);
@@ -255,7 +281,7 @@
 			// Starting here rather than on the queue event: a track that is not decoded yet
 			// cannot play, and asking it to would just silently do nothing.
 			await viz.play();
-			if (ddpRunning) void postJson('/api/output', { action: 'start', trackId: id, hosts: hosts() });
+			if (ddpRunning) void startOutput(id);
 		} catch (e) {
 			setPhase('error', (e as Error).message);
 			note(`ERROR ${(e as Error).message}`);
@@ -269,6 +295,22 @@
 			.filter(Boolean);
 	}
 
+	/**
+	 * Point the server's own renderer at a track.
+	 *
+	 * Also how a changed show reaches the strips: the output reads the show from disk when it
+	 * starts and never again, so rerolling or authoring one while streaming leaves the room
+	 * playing the composition it was handed.
+	 */
+	function startOutput(id: string) {
+		return postJson('/api/output', {
+			action: 'start',
+			trackId: id,
+			hosts: hosts(),
+			offsetMs: wireOffsetMs
+		});
+	}
+
 	async function toggleOutput() {
 		if (ddpRunning) {
 			await postJson('/api/output', { action: 'stop' });
@@ -276,7 +318,7 @@
 			return;
 		}
 		if (!trackId || hosts().length === 0) return;
-		const res = await postJson('/api/output', { action: 'start', trackId, hosts: hosts() });
+		const res = await startOutput(trackId);
 		note(res.ok ? `DDP output to ${ddpHost}` : `ERROR ${await res.text()}`);
 	}
 
@@ -340,6 +382,33 @@
 			setPhase('error', (e as Error).message);
 		} finally {
 			relevelling = false;
+		}
+	}
+
+	/**
+	 * Compose the same track again with a different roll.
+	 *
+	 * The engine composes in about a millisecond, so this is a parameter and a button rather
+	 * than a feature: the show that comes back is the same composer's work under a different
+	 * seed, not a different composer.
+	 */
+	async function reroll() {
+		if (!trackId || !viz || rerolling) return;
+		rerolling = true;
+		try {
+			const res = await postJson(`/api/track/${trackId}/show`, {});
+			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
+			const data = (await res.json()) as { show: Show };
+			show = data.show;
+			viz.loadShow(analysis!, data.show);
+			warnings = [];
+			note(`rerolled: ${data.show.cues.length} cues, seed ${data.show.seed}`);
+			if (ddpRunning) void startOutput(trackId);
+			void refreshLibrary();
+		} catch (e) {
+			note(`ERROR ${(e as Error).message}`);
+		} finally {
+			rerolling = false;
 		}
 	}
 
@@ -456,6 +525,9 @@
 			});
 			note(`show ready: ${data.show.cues.length} cues, ${data.show.generatedEffects.length} generated`);
 			setPhase('ready', '');
+			// The server's renderer read the old show off disk when it started and will not look
+			// again, so without this the strips keep playing the draft the agent just replaced.
+			if (ddpRunning && trackId) void startOutput(trackId);
 			void refreshLibrary();
 			es.close();
 		});
@@ -563,7 +635,9 @@
 				onbackend={chooseBackend}
 				onkey={saveDeepseekKey}
 				onrelevel={relevel}
-				{relevelling} />
+				onreroll={reroll}
+				{relevelling}
+				{rerolling} />
 		{/if}
 	</div>
 
@@ -602,8 +676,11 @@
 	status={hardware.status}
 	canStream={!!show}
 	onclose={() => (hardwareOpen = false)}
+	offsetMs={settings.outputOffsetMs}
 	onhost={(h) => void hardware.setHost(h)}
 	onprobe={(h) => void hardware.probe(h)}
+	onoffset={moveOffset}
+	onoffsetdone={saveOffset}
 	ontoggleOutput={toggleOutput} />
 
 <style>

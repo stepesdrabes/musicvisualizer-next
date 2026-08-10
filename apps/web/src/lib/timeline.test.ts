@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Show, TrackAnalysis } from '@mv/core';
-import { buildTimeline, densityColumns } from './timeline.ts';
+import { activeCue, buildTimeline, densityColumns } from './timeline.ts';
 
 const beatPeriod = 60 / 120;
 
@@ -147,6 +147,24 @@ describe('buildTimeline', () => {
 		const bare = buildTimeline(analysis(), null, 128);
 		expect(bare.sections).toHaveLength(2);
 		expect(bare.cues).toEqual([]);
+	});
+});
+
+describe('activeCue', () => {
+	it('finds the cue holding the room, not the one stored last', () => {
+		// The fixture lists bar 16 before bar 0, which is what a reverse-and-find gets wrong.
+		expect(activeCue(show(), 20)?.bar).toBe(16);
+		expect(activeCue(show(), 4)?.bar).toBe(0);
+	});
+
+	it('takes the cue that starts exactly on the bar being asked about', () => {
+		expect(activeCue(show(), 16)?.bar).toBe(16);
+	});
+
+	it('has no answer before the first cue, or without a show', () => {
+		const early: Show = { ...show(), cues: [{ ...show().cues[0], bar: 8 }] };
+		expect(activeCue(early, 4)).toBeUndefined();
+		expect(activeCue(null, 4)).toBeUndefined();
 	});
 });
 

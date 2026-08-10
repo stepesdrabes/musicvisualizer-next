@@ -115,6 +115,15 @@ export interface Show {
 	 * worth what it cost.
 	 */
 	authoredBy?: 'engine' | 'claude' | 'deepseek';
+	/**
+	 * Which roll of the engine produced this, or the draft an agent revised.
+	 *
+	 * The seed defaults to the analysis hash, so a track composes to one show forever unless
+	 * something asks for another. Once it can, the hash no longer identifies the composition and
+	 * this is the only thing that does: without it, a show that looked good is unreachable the
+	 * moment the next roll overwrites it. Optional so shows written before the field still load.
+	 */
+	seed?: number;
 	palette: ShowPalette;
 	defaults: {
 		intensity: number;

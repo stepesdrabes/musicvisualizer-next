@@ -86,6 +86,10 @@ export const GET: RequestHandler = async (event) => {
 					onEvent: (e) => send('event', e)
 				});
 				grid = result.analysis;
+				// The agent's show is parsed by a non-strict schema, which drops fields it does not
+				// declare. The draft's roll is one of them, and it is what says which composition
+				// this one was revised from.
+				result.show.seed ??= draft.seed;
 
 				const effects = new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
 				const rejected: string[] = [];

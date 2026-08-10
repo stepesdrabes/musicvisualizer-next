@@ -130,6 +130,16 @@ export type LinkState =
 	| 'streaming'
 	| 'degraded';
 
+/**
+ * How far the wire may be trimmed against the audio, milliseconds.
+ *
+ * Positive runs the room early, which is the direction that needs the range: DDP buffering,
+ * WiFi jitter and WLED's own frame queue all delay the strips and none of them push the other
+ * way. The negative end is there for a board on wired ethernet beating a Bluetooth speaker.
+ */
+export const OFFSET_MIN_MS = -100;
+export const OFFSET_MAX_MS = 250;
+
 export interface HardwareStatus {
 	host: string;
 	state: LinkState;
