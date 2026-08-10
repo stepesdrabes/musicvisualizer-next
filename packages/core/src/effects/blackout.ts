@@ -10,7 +10,14 @@ export const blackout: EffectDef = {
 	blurb: 'Everything off but a faint keep-alive on the beam. The void, held.',
 	taste: {
 		energy: 1,
-		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
+		// The void's bed and nothing else's.
+		//
+		// This used to declare every section, which reads as "darkness is always available" and
+		// is true only of the one section that means it. It also made this the ONLY bed legal in
+		// a one-bar cue in a drop, and the peak's opening cue is one bar because that is how long
+		// a master burst holds the room - so the biggest moment of every show was lit by a bed
+		// that emits nothing but a keep-alive on the beam.
+		sections: ['void'],
 		minBars: 1,
 		maxBars: 4,
 		peakReserved: false,

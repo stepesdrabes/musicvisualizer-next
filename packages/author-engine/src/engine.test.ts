@@ -148,10 +148,31 @@ describe('colour', () => {
 });
 
 describe('punctuation', () => {
+	// A void is dark because its CUE is dark: intensity 0.05 and no house floor. A blackout hit
+	// on top of that says nothing the room was not already saying, which is why the one flash a
+	// show gets is not spent here unless nothing bigger wanted it.
 	it('cuts the light in every void', () => {
 		for (const span of analysis.sections) {
-			if (span.kind !== 'void' || span.startBar < 16) continue;
-			expect(show.hits.some((h) => h.kind === 'blackout' && h.bar === span.startBar)).toBe(true);
+			if (span.kind !== 'void') continue;
+			const cue = show.cues.find((c) => c.bar === span.startBar);
+			expect(cue?.section).toBe('void');
+			expect(cue?.intensity ?? 1).toBeLessThan(0.1);
+		}
+	});
+
+	it('spends one flash in the whole show, and spends it late', () => {
+		const flashes = show.hits.filter((h) => h.kind === 'strobe' || h.kind === 'blackout');
+		expect(flashes.length).toBeLessThanOrEqual(1);
+		// Whatever it is, it belongs to the biggest moment rather than to the first one that
+		// could have taken it.
+		const peak = analysis.sections.find((s) => s.energyRank === 1)!;
+		for (const flash of flashes) expect(flash.bar).toBeGreaterThanOrEqual(peak.startBar - 4);
+	});
+
+	it('slams every drop, which is the punctuation that is not rationed', () => {
+		const drops = analysis.sections.filter((s) => s.kind === 'drop');
+		for (const drop of drops) {
+			expect(show.hits.some((h) => h.kind === 'slam' && h.bar === drop.startBar)).toBe(true);
 		}
 	});
 

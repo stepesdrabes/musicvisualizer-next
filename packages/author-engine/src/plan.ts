@@ -103,6 +103,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 
 	const cues: Cue[] = [];
 	let grooveIndex = 0;
+	let peakCue = -1;
 
 	for (const slot of slots) {
 		const layers: Partial<Record<LayerRole, LayerSpec>> = {};
@@ -141,10 +142,18 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				break;
 
 			case 'breakdown':
-				// One texture on top of the bed, and only sometimes: a breakdown that keeps
-				// everything running is not a breakdown.
-				if (rng.float() < 0.5) {
-					add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare }));
+				// A texture on top of the bed, always. This used to be a coin toss, on the grounds
+				// that a breakdown which keeps everything running is not a breakdown - but what it
+				// actually produced was a passage lit by one slow bed and nothing else, half the
+				// time. Taking the drums out is what makes a breakdown; taking the light out makes
+				// it look broken.
+				add('accent', picker.pick({ role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare }));
+				// The kit, where the passage still has one. A breakdown with a beat under it is
+				// common in this repertoire and the room should be answering it; a genuinely
+				// stripped one has no onsets to answer and gets nothing, which is the difference
+				// the coin toss was reaching for and could not see.
+				if (kickDensity(analysis, slot) > 0.25) {
+					add('transient', picker.pick({ role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy }));
 				}
 				break;
 
@@ -173,7 +182,10 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				break;
 		}
 
-		if (slot.peak && peakMaster) layers.master = { effect: peakMaster.id };
+		if (slot.peak && peakMaster) {
+			layers.master = { effect: peakMaster.id };
+			peakCue = cues.length;
+		}
 
 		cues.push({
 			bar: slot.bar,
@@ -187,6 +199,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		});
 	}
 
+	carryThePeak(cues, peakCue);
 	stripBuilds(cues);
 
 	return {
@@ -286,7 +299,11 @@ function intensityFor(slot: Slot, spread = 0): number {
 	const base: Record<SectionKind, number> = {
 		intro: 0.46,
 		groove: 0.68,
-		breakdown: 0.42,
+		// Not 0.42, for the reason the outro is not 0.32: gamma 2.2 leaves very little room
+		// under byte 10 to say anything in, and movement is delivered in bytes, so a passage
+		// held down there cannot react however reactive its layers are. A breakdown also sits
+		// mid-track with the room already warm, so it has less to prove than the intro does.
+		breakdown: 0.54,
 		build: 0.62,
 		void: 0.05,
 		drop: 0.9,
@@ -316,14 +333,24 @@ function motionFor(slot: Slot): number {
 	const base: Record<SectionKind, number> = {
 		intro: 0.28,
 		groove: 1,
-		breakdown: 0.34,
+		// Not 0.34. Motion scales every speed an effect declares, so a third of it turned the one
+		// layer a breakdown had into a still picture. A breakdown is quieter than a groove, not
+		// slower than one: what comes out is the arrangement, not the clock.
+		breakdown: 0.7,
 		build: 1.15,
 		void: 0.4,
 		drop: 1.25,
 		outro: 0.24
 	};
 	const climb = slot.section === 'build' && slot.of > 1 ? (slot.index / (slot.of - 1)) * 0.2 : 0;
-	return Math.round((base[slot.section] + climb) * 100) / 100;
+	// An outro that is still the whole band playing is not a fade, and an intro that opens on the
+	// full arrangement is not a hush. These two carry the lowest motion in the table because they
+	// usually deserve it; where the passage is as loud as the track gets, that assumption throttles
+	// every speed its layers declare and lights a live room at a quarter speed. Energy is
+	// normalised within the track, so a genuinely quiet one is untouched.
+	const bookend = slot.section === 'intro' || slot.section === 'outro';
+	const lively = bookend ? (0.85 - base[slot.section]) * slot.energy : 0;
+	return Math.round((base[slot.section] + climb + lively) * 100) / 100;
 }
 
 /**
@@ -439,6 +466,31 @@ function noteFor(slot: Slot): string {
 }
 
 /**
+ * The peak's burst rides on the peak's look rather than replacing it with a one-bar one.
+ *
+ * That opening cue is only as long as the master effect holds the room, which is a bar. Almost
+ * nothing in the catalog is legal in a bar - no rhythm effect at all - so picking layers for it
+ * drew from a pool of one or none, and the biggest moment of the show came out as a bed that
+ * emits nothing, no kit, and whatever single accent happened to be short enough. Deterministic,
+ * so it happened in every show.
+ *
+ * A burst is a moment on top of a look, not a look. Taking the one the section goes on to hold
+ * means the room does not drop out underneath the hit, and the master is still the only thing
+ * that changes when it lands.
+ */
+function carryThePeak(cues: Cue[], at: number): void {
+	if (at < 0) return;
+	const burst = cues[at];
+	const next = cues[at + 1];
+	// Only from the same section. If the peak is one cue long there is nothing to inherit and
+	// its own picks, degenerate or not, are all there is.
+	if (!burst || !next || next.section !== burst.section) return;
+	const master = burst.layers.master;
+	burst.layers = { ...next.layers };
+	if (master) burst.layers.master = master;
+}
+
+/**
  * A build must run fewer layers than the drop it leads into. Lighting strips in parallel with
  * the music: a build reintroduces at the drop, it does not add before it.
  */
@@ -465,10 +517,16 @@ function countLayers(cue: Cue): number {
 /**
  * Punctuation. The part that puts hands on the show.
  *
- * Every drop gets the same treatment the genre has used for thirty years: the room strobes
- * through the last bars of the build, cuts to black on the bar before, and slams back on the
- * downbeat. Doing it once and calling it restraint is how a show ends up boring - the move is
- * the vocabulary, not the surprise, and what makes the peak the peak is everything around it.
+ * Every drop slams on its downbeat, and the phrases inside the loud passages are answered with
+ * colour. What happens at most once is the flash: one strobe or one blackout in the whole show,
+ * never both and never twice.
+ *
+ * That is a correction rather than a preference. This used to strobe out of every build, cut to
+ * black before every drop and strobe again on alternate phrases inside them, on the grounds that
+ * the move is the vocabulary rather than the surprise. On a four-minute rock track it produced
+ * five strobes and two blackouts, and past the second one the room has said the only thing a
+ * flash says. Spent once, on the biggest moment that can hold it, it is the loudest thing in the
+ * show again.
  */
 function planHits(analysis: TrackAnalysis, slots: Slot[]): Hit[] {
 	const hits: Hit[] = [];
@@ -513,59 +571,84 @@ function planHits(analysis: TrackAnalysis, slots: Slot[]): Hit[] {
 		const beat = barsBack * beatsPerBar - beats;
 		return beat > 0 ? { bar, beat } : { bar };
 	};
+	/**
+	 * Strobes and blackouts share one allowance for the whole show, and it is one.
+	 *
+	 * Counted together rather than separately because they are the same gesture from the
+	 * audience's side: the room stops being a room and becomes an event. Two of those in a song
+	 * is one too many whichever way round they come.
+	 */
+	let flashes = 0;
+	const spendFlash = (hit: Hit): boolean => {
+		if (flashes >= 1) return false;
+		flashes++;
+		hits.push(hit);
+		return true;
+	};
 
-	for (const span of analysis.sections) {
-		if (span.kind !== 'void') continue;
-		// Starts where the sound stopped, which is a measurement. Where the cap makes it shorter
-		// than the void, the rest is covered by the void cue itself: its intensity is 0.05 and
-		// its house floor is zero, so the room is already dark there without a hit saying so.
-		hits.push({
-			bar: span.startBar,
-			kind: 'blackout',
-			beats: blackBeats(span.startBar, span.lengthBars),
-			note: 'cut with the bass'
-		});
-	}
-
-	for (const slot of slots) {
-		if (slot.section !== 'drop' || slot.index > 0) continue;
-
+	const dropOpeners = slots.filter((s) => s.section === 'drop' && s.index === 0);
+	for (const slot of dropOpeners) {
 		hits.push({
 			bar: slot.bar,
 			kind: 'slam',
 			beats: bars(1),
 			note: slot.peak ? 'the drop this whole track has been about' : 'the drop lands'
 		});
+	}
 
+	// The peak first, then by how loud the passage is, so the one flash lands on the biggest
+	// moment that can hold it rather than on whichever drop happens to come first. Ordering by
+	// bar instead put it on the opening drop of a track whose third one was the point.
+	const byImportance = [...dropOpeners].sort(
+		(a, b) => Number(b.peak) - Number(a.peak) || a.span.energyRank - b.span.energyRank || a.bar - b.bar
+	);
+	for (const slot of byImportance) {
+		if (flashes >= 1) break;
+		if (slot.bar < SETTLE_BARS) continue;
 		const before = slots.find((s) => s.endBar === slot.bar);
+		// A drop arriving out of a void is already the silence-then-slam figure and does not need
+		// a card spent on saying so again.
 		if (!before || before.section === 'void') continue;
 
-		// The held breath: black ending exactly ON the drop downbeat, and only as many beats of
-		// it as read as a breath rather than as a fault. It used to be half a bar from the START
-		// of the bar before, which handed the room back before the thing the silence set up; a
-		// whole bar fixed that and was four beats long, which is the same mistake at the other
-		// end. Counted in beats and placed backwards from the downbeat, it can be both.
-		const wantsHeld = before.section === 'build' && before.endBar - before.bar >= 2;
-		const heldBeats = wantsHeld ? blackBeats(slot.bar - 1, 1) : 0;
-		const held = heldBeats > 0 ? Math.ceil(heldBeats / beatsPerBar) : 0;
-		if (heldBeats > 0) {
-			hits.push({ ...endingAt(slot.bar, heldBeats), kind: 'blackout', beats: heldBeats, note: 'the held breath' });
-		}
-
-		// Strobe, then black, then slam: one figure in three parts, each handing over on a
-		// downbeat. Running the strobe under the blackout instead left the two fighting for the
-		// same bar, which the priority table has to settle and the audience only ever sees one
-		// of. Two bars on the peak, one elsewhere - the difference is what tells an audience
-		// which of the three drops was the one.
-		const room = before.endBar - before.bar - held - 1;
-		const runFor = strobeBars(slot.bar - held, Math.min(slot.peak ? 2 : 1, room));
+		// Strobe first, because it is the bigger of the two and the one this genre is built on.
+		// Two bars on the peak where the passage before it has room: the length is what tells an
+		// audience this was the drop rather than a drop.
+		const room = before.endBar - before.bar - 1;
+		const runFor = strobeBars(slot.bar, Math.min(slot.peak ? 2 : 1, room));
 		if (perBeat > 0 && runFor > 0) {
-			hits.push({
-				bar: slot.bar - held - runFor,
+			spendFlash({
+				bar: slot.bar - runFor,
 				kind: 'strobe',
 				beats: bars(runFor),
 				params: { perBeat },
-				note: 'strobing out of the build'
+				note: slot.peak ? 'strobing into the one that matters' : 'strobing out of the build'
+			});
+			continue;
+		}
+
+		// The held breath: black ending exactly ON the drop downbeat, and only as many beats of
+		// it as read as a breath rather than as a fault. The fallback rather than the partner -
+		// at a tempo too slow to strobe inside the cap, silence is the gesture still available -
+		// and it wants a build behind it, because holding a breath needs something to hold it
+		// out of.
+		if (before.section !== 'build' || before.endBar - before.bar < 2) continue;
+		const heldBeats = blackBeats(slot.bar - 1, 1);
+		if (heldBeats > 0) {
+			spendFlash({ ...endingAt(slot.bar, heldBeats), kind: 'blackout', beats: heldBeats, note: 'the held breath' });
+		}
+	}
+
+	// A void that never got the allowance still goes dark: the void CUE carries intensity 0.05
+	// and a house floor of zero, so the room is already black there without a hit saying so.
+	// This is only worth spending on where nothing bigger wanted it.
+	if (flashes < 1) {
+		const hush = analysis.sections.find((s) => s.kind === 'void');
+		if (hush) {
+			spendFlash({
+				bar: hush.startBar,
+				kind: 'blackout',
+				beats: blackBeats(hush.startBar, hush.lengthBars),
+				note: 'cut with the bass'
 			});
 		}
 	}
@@ -574,9 +657,10 @@ function planHits(analysis: TrackAnalysis, slots: Slot[]): Hit[] {
 	// runs eight bars of steady wash is the definition of a show going flat: the genre
 	// punctuates all the way through, and the energy of the passage is what says how often.
 	//
-	// Alternating rather than repeating, because the second strobe of a drop is worth much less
-	// than the first. A colour flood is the same size of gesture reached by a different route,
-	// so the passage keeps being punctuated without any one card being spent twice running.
+	// Colour only. This used to alternate a flood with a strobe, which is where most of a show's
+	// strobes came from: three or four of them inside the drops, none of which was the one the
+	// build had been pointing at. A flood is the same size of gesture reached without spending
+	// the card the whole show is saving.
 	let phraseIndex = 0;
 	for (const slot of slots) {
 		if (slot.section !== 'drop' && slot.section !== 'groove') continue;
@@ -597,26 +681,11 @@ function planHits(analysis: TrackAnalysis, slots: Slot[]): Hit[] {
 			bar < slot.endBar;
 			bar += every
 		) {
-			// A bump lands ON the phrase downbeat; a strobe runs INTO it and stops there, which
-			// is why one is placed early by its own length and the other is not.
-			if (phraseIndex++ % 2 === 1) {
-				if (clear(bar, bar + 1)) {
-					hits.push({ bar, kind: 'bump', beats: bars(1), note: 'colour flood on the phrase' });
-				}
-				continue;
-			}
-			// One bar, never two. Inside a passage the strobe is a comma, and the long one is
-			// reserved for the run into a drop where it is the whole sentence.
-			// Measured back from the downbeat it runs INTO, which is the span it will occupy.
-			const runFor = strobeBars(bar, 1);
-			if (runFor > 0 && bar - runFor >= slot.bar && clear(bar - runFor, bar)) {
-				hits.push({
-					bar: bar - runFor,
-					kind: 'strobe',
-					beats: bars(runFor),
-					params: { perBeat },
-					note: 'strobing into the phrase'
-				});
+			// Every other phrase, so the passage is punctuated without the answer becoming the
+			// thing that is expected. The skipped one is what makes the next one land.
+			if (phraseIndex++ % 2 === 0) continue;
+			if (clear(bar, bar + 1)) {
+				hits.push({ bar, kind: 'bump', beats: bars(1), note: 'colour flood on the phrase' });
 			}
 		}
 	}

@@ -44,7 +44,7 @@ Colour
 
 Safety, non-negotiable
 - Perceived strobe at or below 3 Hz, and the raw rate never in the 10-25 Hz band.
-- No strobe over 2 bars, 8 bars between them, under 8% of the track.
+- No strobe over 2 bars. One strobe or one blackout in a show, never both, never twice.
 - A blinder is a downbeat at the biggest moment, rarely otherwise. Nothing big in bars 0-15.
 - Blackouts are explicit and bounded.`;
 
@@ -281,10 +281,13 @@ Revise it into your plan. Change what carries meaning and leave what merely work
 Keep the draft's coverage. A bar the draft lights and yours does not is a bar that goes dark.
 
 Keep its punctuation too. The hits are placed against measured boundaries and the phrase grid:
-a strobe out of the build, black cut to the drop's downbeat, the slam on it, a bump answering a
-crash the analyser heard. Drop one only where your plan puts something else at that bar, and if
-you come back with a handful where the draft had many, you have quietly taken the hands off the
-show.
+the slam on each drop's downbeat, a colour flood answering alternate phrases, a bump on a crash
+the analyser heard. Drop one only where your plan puts something else at that bar, and if you
+come back with a handful where the draft had many, you have quietly taken the hands off the show.
+
+The exception is the flash. One strobe OR one blackout in the whole show, never both and never
+twice; the linter rejects a second. Move it if the draft spent it somewhere your reading of the
+track disagrees with, but spend it once, on the moment you named in the brief.
 
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
 Lint, preview, and submit when it says what your brief says. Keep notes short.`;

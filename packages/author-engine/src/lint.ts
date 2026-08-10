@@ -147,9 +147,29 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	const peakUses = new Map<string, number[]>();
 	const stacks: string[] = [];
 
+	const cueEnd = (i: number) => (i + 1 < cues.length ? cues[i + 1].bar : lastBar + 1);
+
+	/**
+	 * How long an effect actually runs, across cue boundaries.
+	 *
+	 * The mixer keeps an effect instance while the id in a role does not change, so two
+	 * consecutive cues naming the same bed are one continuous run and not two short ones.
+	 * `minBars` asks whether a look gets long enough to read, which is a question about the run
+	 * rather than about where an author happened to split it - and the peak's burst cue is a bar
+	 * precisely so the master is not held longer, with the section's own look carried underneath.
+	 * Measured per cue, that reported every layer under a burst as starved.
+	 */
+	const runBars = (i: number, role: LayerRole, id: string): number => {
+		let from = i;
+		while (from > 0 && cues[from - 1].layers[role]?.effect === id) from--;
+		let to = i;
+		while (to + 1 < cues.length && cues[to + 1].layers[role]?.effect === id) to++;
+		return cueEnd(to) - cues[from].bar;
+	};
+
 	for (let i = 0; i < cues.length; i++) {
 		const cue = cues[i];
-		const endBar = i + 1 < cues.length ? cues[i + 1].bar : lastBar + 1;
+		const endBar = cueEnd(i);
 		const lengthBars = endBar - cue.bar;
 		const parts: string[] = [];
 
@@ -185,10 +205,11 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 					cue.bar
 				);
 			}
-			if (lengthBars < def.taste.minBars) {
+			const heldFor = runBars(i, role, spec.effect);
+			if (heldFor < def.taste.minBars) {
 				warn(
 					'cue-too-short',
-					`"${def.id}" wants at least ${def.taste.minBars} bars but gets ${lengthBars} at bar ${cue.bar}`,
+					`"${def.id}" wants at least ${def.taste.minBars} bars but gets ${heldFor} at bar ${cue.bar}`,
 					cue.bar
 				);
 			}
@@ -396,6 +417,23 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 				}
 			}
 		}
+	}
+
+	// One flash in the whole show, counting strobes and blackouts together.
+	//
+	// The same allowance the engine plans against, checked here so an agent's show cannot spend
+	// more. Counted together because they are one gesture from the audience's side: the room
+	// stops being a room and becomes an event, and the second time it happens it is a lighting
+	// rig. An error rather than a warning, because it is the difference between a show with a
+	// biggest moment and a show without one.
+	const flashes = hits.filter((h) => h.kind === 'strobe' || h.kind === 'blackout');
+	if (flashes.length > 1) {
+		const where = flashes.map((h) => `${h.kind} at ${h.bar}`).join(', ');
+		err(
+			'flash-budget',
+			`${flashes.length} strobes and blackouts (${where}); a show gets one, spent on the moment that deserves it`,
+			flashes[1].bar
+		);
 	}
 
 	// Punctuation is anchored to something an audience can hear: the phrase grid, a boundary the
