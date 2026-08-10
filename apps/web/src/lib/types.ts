@@ -13,10 +13,19 @@ export interface TrackMeta {
 	duration?: number;
 }
 
+/**
+ * Which author a track already has, if any.
+ *
+ * One definition rather than one per consumer: the queue row, the search candidate and the
+ * library entry all carry it, and when DeepSeek was added only two of the three learned about
+ * it. The backends are named individually for the reason `Show.authoredBy` gives.
+ */
+export type Authored = 'none' | 'engine' | 'claude' | 'deepseek';
+
 /** Mirrors @mv/analysis LibraryEntry. */
 export interface LibraryEntry extends TrackMeta {
 	analysed: boolean;
-	authored: 'none' | 'engine' | 'claude';
+	authored: Authored;
 	updatedAt: number;
 }
 

@@ -31,27 +31,28 @@ async function durationFromAnalysis(path: string): Promise<number | null> {
 export interface LibraryEntry extends TrackMeta {
 	/** An analysis exists, so this track loads without touching the network. */
 	analysed: boolean;
-	authored: 'none' | 'engine' | 'claude';
+	authored: 'none' | 'engine' | 'claude' | 'deepseek';
 	/** When the track was last ingested or authored, for ordering by recency. */
 	updatedAt: number;
 }
 
 interface ShowStamp {
-	authored: 'engine' | 'claude';
+	authored: 'engine' | 'claude' | 'deepseek';
 	updatedAt: number;
 }
 
 /**
- * Whether a show was written by the engine or revised by Claude.
+ * Which of the two authors wrote a show, and which model if it was the agent.
  *
  * Shows carry `authoredBy` from this version on; anything written before it is judged by
- * whether it has effects of its own, which only the agent produces.
+ * whether it has effects of its own, which only the agent produces. That fallback cannot name
+ * a backend, so it answers `claude`: DeepSeek postdates every show old enough to need it.
  */
 async function readShowStamp(path: string): Promise<ShowStamp | null> {
 	try {
 		const [raw, info] = await Promise.all([readFile(path, 'utf8'), stat(path)]);
 		const show = JSON.parse(raw) as {
-			authoredBy?: 'engine' | 'claude';
+			authoredBy?: 'engine' | 'claude' | 'deepseek';
 			generatedEffects?: unknown[];
 		};
 		const authored =

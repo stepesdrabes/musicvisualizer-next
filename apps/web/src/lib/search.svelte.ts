@@ -1,4 +1,4 @@
-import type { LibraryEntry, SearchResult } from '$lib/types.ts';
+import type { Authored, LibraryEntry, SearchResult } from '$lib/types.ts';
 
 export interface Candidate {
 	/** Where it came from, which decides the badge and whether picking it costs a download. */
@@ -9,7 +9,7 @@ export interface Candidate {
 	uploader: string;
 	thumbnail: string;
 	duration: number;
-	authored: 'none' | 'engine' | 'claude';
+	authored: Authored;
 }
 
 const URL_LIKE = /^(https?:\/\/|\/|~\/|[A-Za-z]:\\)/;

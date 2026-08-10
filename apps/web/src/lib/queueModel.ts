@@ -7,6 +7,8 @@
  * The server module owns persistence; this owns the meaning.
  */
 
+import type { Authored } from '$lib/types.ts';
+
 export type ItemStatus =
 	| 'pending'
 	| 'resolving'
@@ -14,8 +16,6 @@ export type ItemStatus =
 	| 'analysing'
 	| 'ready'
 	| 'error';
-
-export type Authored = 'none' | 'engine' | 'claude' | 'deepseek';
 
 export interface QueueItem {
 	/**
