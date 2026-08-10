@@ -72,7 +72,7 @@ const VISIBLE = 8;
 const FAST_TAU = 0.08;
 const SLOW_TAU = 0.5;
 
-/** Which kinds the contrast ratio is taken between. The same pair `bench/contrastprobe.ts` uses. */
+/** Which kinds the contrast ratio is taken between: the loudest against the three quiet ones. */
 const LOUD: ReadonlySet<SectionKind> = new Set<SectionKind>(['drop']);
 const QUIET: ReadonlySet<SectionKind> = new Set<SectionKind>(['breakdown', 'intro', 'outro']);
 

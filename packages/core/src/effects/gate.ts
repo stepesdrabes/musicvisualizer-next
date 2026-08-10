@@ -244,7 +244,7 @@ export function runGate(def: EffectDef, g: Geometry): GateResult {
  * The gate's own journey has no such section, so nothing has ever been checked against the one
  * case the room is reported to look dead in. It is deliberately NOT part of `SCRIPT`: pass/fail
  * has to stay comparable across sessions, and this asks a quality question rather than a
- * correctness one. `bench/effectprobe.ts` is what reads it.
+ * correctness one. `measureEffect` is what reads it.
  *
  * The spectrum here moves the way a real quiet passage does - a slow tilt, a wandering peak and a
  * band that comes and goes - while `energy` barely changes. An effect that holds still through

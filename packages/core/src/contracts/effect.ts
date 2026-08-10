@@ -72,17 +72,18 @@ export interface EffectTaste {
 	/**
 	 * How much this moves over a quiet passage, as a share of its own mean level.
 	 *
-	 * Bytes of delivered movement, from `bench/quietprobe.ts`, which substitutes the effect into
-	 * the quiet cues of the cached corpus and renders them. NOT from `effectprobe`'s synthetic
-	 * `quiet` column: that journey spreads a wandering peak across every band where a real sparse
-	 * intro has content in a handful and silence in the rest, and it reverses the ranking. Chosen
-	 * by the synthetic number, `nebula` leads the beds and delivers 1.02 on real tracks; chosen by
-	 * this one, `spectrumBed` leads and delivers 4.41. Only the beds and accents that can appear
-	 * in a quiet section declare it; absent means it has never been asked to hold one.
+	 * Bytes of delivered movement, measured by substituting the effect into the quiet cues of a
+	 * cached corpus and rendering them. NOT a synthetic journey's `quiet` column: that spreads a
+	 * wandering peak across every band where a real sparse intro has content in a handful and
+	 * silence in the rest, and it reverses the ranking. Chosen by the synthetic number, `nebula`
+	 * leads the beds and delivers 1.02 on real tracks; chosen by this one, `spectrumBed` leads
+	 * and delivers 4.41. Only the beds and accents that can appear in a quiet section declare it;
+	 * absent means it has never been asked to hold one.
 	 *
-	 * Nothing asserts these, because the probe needs the audio cache and a test may not. Regenerate
-	 * with `node bench/quietprobe.ts` after any change to an effect in the quiet pool, to the
-	 * spectrum, or to the house floor - all three move the numbers.
+	 * These are stored measurements with no producer left in the tree, and nothing asserts them
+	 * because measuring needs the audio cache and a test may not depend on it. Changing an effect
+	 * in the quiet pool, the spectrum or the house floor invalidates whatever it declares here,
+	 * and re-measuring means writing the instrument first.
 	 *
 	 * The planner prefers a high one where there is nothing else happening. Measured on a real
 	 * intro, the pair the picker chose delivered 1.27 bytes of movement where the two most

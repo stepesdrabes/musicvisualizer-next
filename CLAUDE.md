@@ -41,8 +41,9 @@ same show run in a browser, in headless Node and eventually on a microcontroller
 The app is the only way to use this. No CLIs, no `scripts/` for driving it: if something is
 worth doing, it is worth a control in the interface.
 
-`apps/desktop/scripts/bundle.js` is not an exception to that. It assembles a build and is
-never run to use the product, in the same way `bench/` is never run to light a room.
+`apps/desktop/scripts/bundle.js` is not an exception to that. It assembles a build and is never
+run to use the product. Measurement harnesses are the other kind of exception: they answer a
+question about the room, they never light one, and nothing shipped may import them.
 
 ## Comments
 

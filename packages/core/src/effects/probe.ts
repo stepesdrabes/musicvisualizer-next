@@ -29,9 +29,9 @@ export interface EffectCharacter {
 }
 
 /**
- * Red base, cyan accent, yellow third: three hues far enough apart to tell apart by eye, and
- * the same three `bench/effectprobe.ts` has always used, so the numbers stay comparable with
- * the recorded baselines.
+ * Red base, cyan accent, yellow third: three hues far enough apart to tell apart by eye. Held
+ * fixed rather than taken from the show, so a character measured today is comparable with one
+ * measured against a different palette months ago.
  */
 const PROBE_PALETTE = makePalette({
 	base: 0,
