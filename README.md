@@ -77,7 +77,9 @@ a complete show from the analysis alone in about a millisecond: it covers every 
 each effect inside the taste metadata it declares, reserves the biggest look in the catalog
 for the peak section and nowhere else, climbs the intensity through a build, cuts the light in
 every void, and lints clean. It is deterministic - the seed is the analysis hash, so the same
-track is the same show every time, and a different track is a different one.
+track is the same show every time, and a different track is a different one. Reroll steps that
+seed and composes again, which is how a favourite track stops being one picture forever without
+giving up a bug that reproduces.
 
 What it cannot do is know what the song is. So `author-ai` does not write a show; it revises
 that one. Handing the agent a draft that already satisfies every structural rule spends it on
@@ -195,14 +197,14 @@ Everything else is greyscale, because the LEDs have to be the only saturated thi
   on it. Hovering shows bar number and section.
 - **Timeline drawer**, under the player, holds the raw LED bands - the exact bytes that go on
   the wire - and four lanes of sections, cues, drum density and punctuation.
-- **Inspector** has four tabs: the show (Revise with Claude, tempo, arrangement, palette,
+- **Inspector** has four tabs: the show (Revise with Claude, Reroll, tempo, arrangement, palette,
   Claude's brief, the generated effects, linter notes), the cue sheet with the live cue
   highlighted, **design** (a live feed of what the agent is doing - every tool call, its
   arguments and its result, as it happens), and the raw log. It switches to design
   automatically while a show is being authored.
 - **The board**, top right, is a live readout rather than a button: a dot and the frame rate
   the hardware itself reports. Opening it gives the address field, what the board says it is,
-  and how the stream is actually arriving. See `FIRMWARE.md`.
+  how the stream is actually arriving, and the lead trim. See `FIRMWARE.md`.
 
 Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s. Cmd-K opens the palette,
 `[` and `]` collapse the two rails.
@@ -266,7 +268,7 @@ wins over the stored one.
 
 ```sh
 npm run dev            # the app
-npm test               # 463 tests
+npm test               # 469 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
