@@ -1,8 +1,8 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { sample } from '../color/palette.ts';
-import { Band } from '../contracts/frame.ts';
 import { alphaFor, clamp, envelope, paletteArc } from '../dsl/math.ts';
-import { BeatHold } from '../dsl/env.ts';
+import { Follower } from '../dsl/env.ts';
+import { bandBetween } from '../dsl/spectrum.ts';
 import { nblend, setPixel } from '../dsl/buffer.ts';
 import { noise3 } from '../dsl/wave.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -32,7 +32,9 @@ export const iridescence: EffectDef = {
 	create(g) {
 		const buf = new Float32Array(g.count * 3);
 		const rgb: [number, number, number] = [0, 0, 0];
-		const passage = new BeatHold(0.45);
+		// How loud the passage is, which is a level and belongs slow. `f.energy` is beat resolution
+		// whatever it is passed through, so this only ever sets where the bed sits.
+		const passage = new Follower(0.1, 0.7);
 		let clock = 0;
 		let level = 0;
 
@@ -46,11 +48,13 @@ export const iridescence: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift, motion } = ctx;
 
-				clock += f.dt * 0.05 * motion * (1 + f.bands[Band.Mid] * 0.8);
+				// The mid of the spectrum rather than `f.bands`, so the field's travel answers the
+				// arrangement within the bar instead of stepping once a beat.
+				clock += f.dt * 0.05 * motion * (1 + bandBetween(f, 0.3, 0.7) * 0.8);
 				// The floor is high because the cue's own intensity already says the passage is
 				// quiet. A bed that dims itself as well is dimmed twice, and two multiplications
 				// of a number under one is how an intro reached byte zero.
-				const passageLevel = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const passageLevel = passage.update(f.energy, f.dt);
 				level = envelope(level, clamp(0.55 + passageLevel * 0.45), f.dt, 0.15, 0.9);
 				const bright = level * (0.52 + p.intensity * 0.95);
 				const scale = 1.5 + p.scale * 5;

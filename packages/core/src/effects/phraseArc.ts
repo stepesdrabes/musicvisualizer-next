@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, lerp, smoothstep } from '../dsl/math.ts';
-import { BeatHold } from '../dsl/env.ts';
+import { Follower } from '../dsl/env.ts';
 import { ringU } from '../dsl/space.ts';
 import { spectralTilt } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
@@ -33,12 +33,12 @@ export const phraseArc: EffectDef = {
 	},
 	params: [INTENSITY, param('bars', 'Bar lift', 0.45), param('sweep', 'How far it travels', 0.6)],
 	create(g) {
-		// The passage's own level, latched on the beat. `f.energy` is beat-resolution data that
-		// the player interpolates per frame, so multiplying brightness by it directly slides
-		// the whole room continuously - the same shimmer the spectrum caused, by another route.
-		// Glided over most of a beat so it arrives as a swell rather than a step.
-		const level = new BeatHold(0.45);
-		const lean = new BeatHold(0.3);
+		// Both say where the room sits rather than what it is doing, so both are slow. `f.energy`
+		// is beat resolution whatever it is passed through; the tilt is followed rather than
+		// latched so a phrase opening up moves the field while it opens instead of at the next
+		// downbeat.
+		const level = new Follower(0.1, 0.7);
+		const lean = new Follower(0.12, 0.45);
 		return {
 			reset() {
 				level.reset();
@@ -52,16 +52,14 @@ export const phraseArc: EffectDef = {
 				const arc = smoothstep(0, 0.55, f.phrasePhase) * (1 - smoothstep(0.75, 1, f.phrasePhase));
 				const barLift = smoothstep(0, 0.3, f.barPhase) * (1 - smoothstep(0.5, 1, f.barPhase));
 				const swell = clamp(0.45 + arc * 0.5 + barLift * p.bars * 0.35);
-				const heard = level.update(f.energy, f.beat, f.dt, f.beatPeriod);
+				const heard = level.update(f.energy, f.dt);
 				const gain = (0.5 + p.intensity * 0.85) * clamp(0.45 + heard * 0.55);
 				// The whole field slides around the room across the phrase, so a long passage is
 				// never twice in the same place even though nothing in it is fast. Quantised to
 				// whole periods of the lobe below, which repeats every half turn: `phrasePhase`
 				// restarts at each phrase, and any other distance teleports the field with it.
 				const travel = f.phrasePhase * Math.round(p.sweep * 4 * motion) * 0.5;
-				// Latched on the beat: where the lobes sit is the music's business, but it moving
-				// every frame is what turns a slow field into a shimmer.
-				const tilt = lean.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				const tilt = lean.update(spectralTilt(f), f.dt);
 				// How far up the palette the swell reaches follows the same number, so a passage
 				// opening up pales rather than only brightens. Inside the base hue on purpose: a
 				// walk between two of the show's hues spends most of its time on neither.
@@ -77,9 +75,20 @@ export const phraseArc: EffectDef = {
 					// than as one slab changing level.
 					// Shallow lobes. At a 4x swing between the bright side and the dim one this was
 					// a bed that lit two walls and left two, which no amount of mean brightness fixes.
-					const lobe = 0.79 + 0.21 * Math.cos((u * 2 - tilt) * Math.PI * 2);
+					const wave = Math.cos((u * 2 - tilt) * Math.PI * 2);
+					const lobe = 0.79 + 0.21 * wave;
 					const v = clamp(swell * lobe);
-					const slot = lerp(SLOT.base, top, v * 0.9);
+					// The two lobes are two colours, not two brightnesses of one.
+					//
+					// The constraint above still holds and is the reason this is done HERE: a
+					// spectral term may not walk the slot across `white`, because slot positions
+					// differ in luminance and that turns a colour into a brightness. A term that
+					// varies by POSITION does not - it is fixed for a given pixel and moves only
+					// as slowly as the field itself travels - so the near side can hold the room's
+					// own hue while the far side answers in the third, and nothing blinks. Filling
+					// 86% of the room in one hue was the cost of not separating those two cases.
+					const near = lerp(SLOT.base, top, v * 0.9);
+					const slot = lerp(near, SLOT.third, clamp(0.5 - wave * 0.5) * (0.6 + tilt * 0.4));
 					setSample(out, i, palette, slot + hueShift, (0.38 + v * 0.62) * gain);
 				}
 			}

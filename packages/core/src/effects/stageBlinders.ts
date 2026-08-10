@@ -3,7 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
 import { fillSolid } from '../dsl/buffer.ts';
-import { BeatHold, PulseEnv } from '../dsl/env.ts';
+import { Follower, PulseEnv } from '../dsl/env.ts';
 import { spectralTilt } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -27,9 +27,9 @@ export const stageBlinders: EffectDef = {
 	params: [INTENSITY, param('everyBeat', 'Every beat', 0, 0, 1, 1)],
 	create(g) {
 		const env = new PulseEnv();
-		// Which colour the filament cools toward, latched so it steps on the beat rather than
-		// sliding through the palette between slams.
-		const tint = new BeatHold(0.15);
+		// Which colour the filament cools toward. Slow: this is where the room settles between
+		// slams, not something that should chase the mix.
+		const tint = new Follower(0.08, 0.35);
 
 		return {
 			reset() {
@@ -39,7 +39,7 @@ export const stageBlinders: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
-				const at = tint.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				const at = tint.update(spectralTilt(f), f.dt);
 
 				const everyBeat = p.everyBeat > 0.5 || f.section === 'drop';
 				// A blinder answers the drums. Struck off the envelopes rather than the booleans:

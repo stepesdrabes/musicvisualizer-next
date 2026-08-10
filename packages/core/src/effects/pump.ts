@@ -1,12 +1,21 @@
 import type { EffectDef } from '../contracts/effect.ts';
-import { Band } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, envelope, lerp } from '../dsl/math.ts';
 import { pulse } from '../dsl/wave.ts';
-import { BeatHold, PulseEnv } from '../dsl/env.ts';
+import { Follower, PulseEnv } from '../dsl/env.ts';
+import { bandBetween, spectralTilt } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
 
+/**
+ * The duck is the groove: the gap a kick carves out of everything else is what an ear hears as
+ * the pump, so this is one gesture the whole room shares.
+ *
+ * It arrives across the room rather than everywhere at once. A sidechain in a physical space
+ * reaches the far wall after the near one, and the room is five metres deep; without the lag
+ * this filled 83% of the room with one flat level and one flat hue, which is a layer that
+ * swamps everything mixed under it while saying less than any of them.
+ */
 export const pump: EffectDef = {
 	id: 'pump',
 	name: 'Pump',
@@ -23,19 +32,37 @@ export const pump: EffectDef = {
 		INTENSITY,
 		param('duck', 'Duck mode', 1, 0, 1, 1),
 		param('depth', 'Depth', 0.65),
-		param('decay', 'Decay beats', 0.5, 0.1, 2)
+		param('decay', 'Decay beats', 0.5, 0.1, 2),
+		param('sweep', 'How far the duck lags across the room', 0.5)
 	],
-	create() {
+	create(g) {
 		const env = new PulseEnv();
-		// The passage's own level and the low band's colour, both read once per beat. Both are
-		// beat-resolution data the player interpolates per frame, so a brightness or a hue taken
-		// from them raw slides continuously between beats instead of moving with the music.
-		const passage = new BeatHold(0.4);
-		const tone = new BeatHold(0.15);
+		// The passage's own level. `f.energy` is beat resolution whatever it is passed through,
+		// so this only ever says how loud the passage is, and it belongs slow.
+		const passage = new Follower(0.08, 0.6);
+		/**
+		 * Which of the show's colours the room pumps in.
+		 *
+		 * Slow, and deliberately not the level: the slots differ in luminance as well as hue, so
+		 * a colour driven at the speed of the kick is a second brightness envelope fighting the
+		 * first. This walks over about a bar, so it reads as the passage changing rather than as
+		 * the room flickering.
+		 */
+		const tone = new Follower(0.18, 0.7);
 		// How much kick there is to duck against. A sidechain with no kick under it is a flat
 		// wall of colour, so as this fades the bar grid takes the groove over.
 		let drive = 0;
 		let base = 0;
+
+		// The room's depth axis, normalised, so the duck can travel along it.
+		let lo = Infinity;
+		let hi = -Infinity;
+		for (let i = 0; i < g.count; i++) {
+			if (g.ny[i] < lo) lo = g.ny[i];
+			if (g.ny[i] > hi) hi = g.ny[i];
+		}
+		const span = hi - lo || 1;
+
 		return {
 			reset() {
 				env.reset();
@@ -45,27 +72,49 @@ export const pump: EffectDef = {
 				base = 0;
 			},
 			render(out, ctx) {
-				const { f, g, p, palette, motion } = ctx;
-				const passageLevel = passage.update(f.energy, f.beat, f.dt, f.beatPeriod);
-				base = envelope(base, clamp(0.4 + 0.6 * passageLevel), f.dt, 0.06, 0.4);
+				const { f, p, palette, motion } = ctx;
+				base = envelope(base, clamp(0.4 + 0.6 * passage.update(f.energy, f.dt)), f.dt, 0.06, 0.4);
 				drive = envelope(drive, clamp(f.kickEnv * 1.4), f.dt, 0.01, f.beatPeriod * 3);
 
-				let level: number;
-				if (p.duck > 0.5) {
-					// Sidechain: the gap the kick carves out IS the groove.
-					const duck = Math.max(clamp(f.kickEnv), (1 - drive) * pulse(f.beatPhase, 5));
-					level = base * (1 - duck * p.depth);
-				} else {
-					if (f.downbeat) env.fire(1);
-					level =
-						base * (1 - p.depth + env.decay(f.dt, f.beatPeriod, p.decay / Math.max(0.05, motion)) * p.depth);
-				}
+				// How far behind the near wall the far one is, as a fraction of the ducking
+				// gesture. Small: past about a fifth the room stops reading as one pump and starts
+				// reading as two.
+				const lag = p.sweep * 0.18;
 
-				const bright = level * p.intensity;
-				const low = tone.update(f.bands[Band.Low], f.beat, f.dt, f.beatPeriod);
-				const slot = lerp(SLOT.base, SLOT.glow, clamp(low));
+				// Where the mix is sitting decides which colour the room pumps in, and how much
+				// low end there is decides how deep into it. A bass-only passage stays home; one
+				// that has opened up at the top answers in the third.
+				const bright = bandBetween(f, 0.45, 1);
+				const colour = tone.update(clamp(spectralTilt(f) * 0.7 + bright * 0.6), f.dt);
+
+				const gain = p.intensity;
+				const decayed =
+					p.duck > 0.5 ? 0 : env.decay(f.dt, f.beatPeriod, p.decay / Math.max(0.05, motion));
+				if (p.duck <= 0.5 && f.downbeat) env.fire(1);
+
 				for (let i = 0; i < g.count; i++) {
-					setSample(out, i, palette, slot + ctx.hueShift, bright);
+					// 0 at the near wall, 1 at the far one. The duck reaches here this much later,
+					// and the far wall also sits further up the palette: the room pumps as a
+					// gradient rather than as one colour, and how far the gradient opens is how
+					// far the mix has opened. A single slot written to every pixel is what made
+					// this one flat hue across 83% of the room.
+					const depth = (g.ny[i] - lo) / span;
+					const slot =
+						lerp(SLOT.base, SLOT.third, depth * (0.45 + colour * 0.55)) + ctx.hueShift;
+					let level: number;
+					if (p.duck > 0.5) {
+						// Sidechain: the gap the kick carves out IS the groove. The lag is taken off
+						// the beat phase rather than off the envelope, so the far wall ducks to the
+						// same shape a moment later instead of to a shallower one.
+						const phase = f.beatPhase - depth * lag;
+						const grid = (1 - drive) * pulse(phase - Math.floor(phase), 5);
+						const duck = Math.max(clamp(f.kickEnv) * (1 - depth * lag * 2.2), grid);
+						level = base * (1 - duck * p.depth);
+					} else {
+						const held = Math.max(0, decayed - depth * lag);
+						level = base * (1 - p.depth + held * p.depth);
+					}
+					setSample(out, i, palette, slot, level * gain);
 				}
 			}
 		};

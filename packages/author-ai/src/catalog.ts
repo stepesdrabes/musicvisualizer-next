@@ -45,12 +45,17 @@ Envelopes
   new PulseEnv() -> .fire(strength) .decay(dt, beatPeriod, beats) .reset()
   new FlashEnvelope(hold, releaseTau) -> .fire(s) .update(dt) .reset()
   new Schmitt(lo, hi) -> .update(v) · ratchet(current, target, dt, riseTau)
+  new Follower(attackTau = 0.025, releaseTau = 0.14) -> .update(target, f.dt) .reset()
+    Fast up, slower down, in SECONDS. What anything reading f.spectrum passes through. The
+    spectrum is a real 50 Hz measurement and carries a few per cent of frame-to-frame noise, so
+    a value wired straight to it shimmers; a 25 ms attack is under the eye's integration window,
+    so a transient still arrives looking instant while the noise averages out. Reach for this
+    first: it is what makes a room look like it is listening.
   new BeatHold(glideBeats = 0.12) -> .update(target, f.beat, f.dt, f.beatPeriod) .reset()
-    Read once per beat, hold, glide in beats. What anything driven by the music passes through
-    before it reaches the room: the spectrum and f.energy both move every frame, so an effect
-    following either directly shimmers at the frame rate against a beat it has no relationship
-    to. Latched, every change lands ON a beat by construction. Long glide for a position so it
-    arrives, short for a colour so it steps, 0 for a true sample and hold.
+    Read once per beat, hold, glide in beats. Quantises to the grid, which also throws away
+    every stab, cymbal and word between beats, so this is for things that SHOULD only move on
+    the beat - a colour the room settles into, a lobe position that should not wander. It is
+    not the default answer to shimmer; Follower is.
 
 Buffers (out is length g.count*3, RGB interleaved, persistent across frames)
   fadeToBlack(buf, dt, tau) - never clear, always decay

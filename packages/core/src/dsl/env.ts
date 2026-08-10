@@ -59,6 +59,54 @@ export class FlashEnvelope {
 	}
 }
 
+/**
+ * Follows a continuously moving signal: fast up, slower down, in seconds rather than in beats.
+ *
+ * What anything reading `f.spectrum` should pass through. The spectrum is a real 50 Hz
+ * measurement resampled per frame, so it carries a few per cent of frame-to-frame noise, and an
+ * effect wired straight to it shimmers. `BeatHold` removes that by sampling once a beat, which
+ * also removes every guitar stab, cymbal and word that happens between beats - most of what
+ * makes a room look like it is listening.
+ *
+ * An attack in the tens of milliseconds is under the eye's integration window, so a transient
+ * arrives looking instant while noise, which alternates sign every frame or two, is averaged
+ * away. The longer release is what stops the room strobing on the back of every note: the eye
+ * forgives a slow decay and objects loudly to a fast one.
+ *
+ * Defaults are a compromise picked for level: 25 ms up reads as immediate, 140 ms down is about
+ * a sixteenth at 110 bpm, so a chord rings out rather than snapping off. Pass a longer attack
+ * for a position, which should never teleport, and a shorter one for a meter tip.
+ */
+export class Follower {
+	value = 0;
+	private readonly attackTau: number;
+	private readonly releaseTau: number;
+	private started = false;
+
+	constructor(attackTau = 0.025, releaseTau = 0.14) {
+		this.attackTau = attackTau;
+		this.releaseTau = releaseTau;
+	}
+
+	update(target: number, dt: number): number {
+		// Straight to the first reading. Rising from zero over the first frames of a cue is a
+		// fade nobody asked for, and on a one-bar cue it is most of the cue.
+		if (!this.started) {
+			this.started = true;
+			this.value = target;
+			return this.value;
+		}
+		const tau = target > this.value ? this.attackTau : this.releaseTau;
+		this.value += (target - this.value) * alphaFor(dt, tau);
+		return this.value;
+	}
+
+	reset(): void {
+		this.value = 0;
+		this.started = false;
+	}
+}
+
 /** Hysteresis, so a value hovering at a threshold does not chatter. */
 export class Schmitt {
 	private state: boolean;

@@ -2,40 +2,50 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
-import { BeatHold } from '../dsl/env.ts';
+import { Follower } from '../dsl/env.ts';
 import { ringU } from '../dsl/space.ts';
-import { bandAt, spectralTilt } from '../dsl/spectrum.ts';
+import { bandAt, spectralTilt, spectrumFocus } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
- * The room laid out low to high, and read in COLOUR rather than in level.
+ * The room laid out low to high, following the spectrum as it actually moves.
  *
- * The first version of this drove brightness from each band and shimmered: the spectrum moves
- * continuously and carries several per cent of frame-to-frame noise, so a bed following it
- * flickers against a beat it has no relationship to. A bed's brightness belongs to the section
- * and the cue; what the spectrum is good for is saying WHAT COLOUR each part of the room is,
- * which the eye reads as the arrangement moving and never as a blink.
+ * Each tap is a meter for its own slice of the range: the bass end answers the riff, the top
+ * end answers the cymbals, and the two do it independently, which is what makes the room read
+ * as an arrangement rather than as one level with a shape drawn on it.
  *
- * Latched on the beat, so the colour walks the room in time with the music rather than crawling.
+ * Followed rather than latched. A beat latch was here to remove frame-rate shimmer, at the cost
+ * of every stab and cymbal between beats, which in this repertoire is most of the music. The
+ * shimmer turned out not to be the constraint: measured on a real track, sweeping the attack
+ * from 20 ms to 120 ms moves delivered ripple by 4%, so the spectrum is not noisy at frame rate
+ * and there was nothing to latch away. What the latch did produce was movement AT THE BEAT RATE,
+ * which at these tempos sits inside the band a phrase-scale metric measures - so it scored well
+ * on drift while looking exactly as grid-locked as it was.
  */
 /**
- * How deep the latched band cuts into the level, as a fraction either side of unity.
+ * How deep the followed band cuts into the level, as a fraction either side of unity.
  *
- * Swept against `levelprobe` and `flickerprobe` after the spectrum stopped being per-band
- * normalised: 0.42 gave intro drift 1.76, 1.05 gave 2.25, 1.4 gave 2.55 and 1.7 gave 2.81, with
- * mean flicker pinned at 0.48 and zero shimmering effects at every depth. The jitter that used to
- * make this dangerous is removed by the centred median in `spectrum.ts`, so the only real cost is
- * coverage - at 1.7 this bed fills 59% of the room against 100% at 0.42, and a bed has to keep
- * filling one. This is where the gain is still most of the way in and the fill is not yet the
- * binding constraint.
+ * Centred on unity rather than reaching down to it: a relief that only ever darkens is a dimmer,
+ * and it cost this bed a third of its coverage when it was written that way. Higher reads as
+ * more reactive and fills less of the room, and a bed has to keep filling one.
+ *
+ * 1.3 rather than the 1.4 this ran at while latched, because following the spectrum lowers the
+ * mean of the same term: measured over a fixture intro, 1.3 delivers 16.4 bytes against 15.6 at
+ * 1.4 and 14.9 at 1.5, and an intro two bytes lower is one that crosses into being reported dark
+ * while it fades. What the depth buys is contrast, which is not what this pass was for.
  */
-const RELIEF = 1.4;
+const RELIEF = 1.3;
+/**
+ * Release, seconds. Deliberately longer than the attack and slightly longer than a sixteenth at
+ * this repertoire's tempos, so a chord rings out of the room rather than snapping off it.
+ */
+const FALL = 0.16;
 
 export const spectrumBed: EffectDef = {
 	id: 'spectrumBed',
 	name: 'Spectrum Bed',
 	role: 'bed',
-	blurb: 'The room laid out low to high, each part taking its colour from what plays there.',
+	blurb: 'The room laid out low to high, each part lit by what plays there as it plays.',
 	taste: {
 		energy: 2,
 		sections: ['intro', 'groove', 'breakdown', 'build', 'void', 'drop', 'outro'],
@@ -46,17 +56,21 @@ export const spectrumBed: EffectDef = {
 	},
 	params: [INTENSITY, param('spread', 'Octaves across the room', 0.7), param('depth', 'Colour travel', 0.6)],
 	create(g) {
-		// One per pixel would be 1320 latches for a value that only ever moves on the beat, so
-		// the ring is read at a handful of points and interpolated between them.
+		// One per pixel would be 1320 followers for a curve the eye reads at a handful of points,
+		// so the ring is metered at TAPS places and interpolated between them.
 		const TAPS = 12;
-		const taps = Array.from({ length: TAPS }, () => new BeatHold(0.18));
+		const taps = Array.from({ length: TAPS }, () => new Follower(0.02, FALL));
 		const held = new Float32Array(TAPS);
-		const tilt = new BeatHold(0.25);
+		// Slower, because these choose colour across the whole room. A hue that chases every
+		// sixteenth is a room that cannot settle on what it is.
+		const tilt = new Follower(0.12, 0.4);
+		const focus = new Follower(0.12, 0.4);
 
 		return {
 			reset() {
 				for (const t of taps) t.reset();
 				tilt.reset();
+				focus.reset();
 				held.fill(0);
 			},
 			render(out, ctx) {
@@ -65,9 +79,13 @@ export const spectrumBed: EffectDef = {
 				const reach = 0.35 + p.spread * 0.65;
 				for (let k = 0; k < TAPS; k++) {
 					const u = (k / (TAPS - 1)) * reach;
-					held[k] = taps[k].update(bandAt(f, u), f.beat, f.dt, f.beatPeriod);
+					held[k] = taps[k].update(bandAt(f, u), f.dt);
 				}
-				const lean = tilt.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
+				const lean = tilt.update(spectralTilt(f), f.dt);
+				// One sustained note against a full arrangement at the same loudness. A sparse
+				// passage earns the accent; a dense one stays in the base, which is what stops a
+				// drop from arriving in the same colour a breakdown was already sitting in.
+				const sparse = focus.update(spectrumFocus(f), f.dt);
 
 				// Level comes from the cue, not from the music. A bed is a room being lit.
 				const gain = 0.55 + p.intensity * 0.75;
@@ -82,18 +100,26 @@ export const spectrumBed: EffectDef = {
 					const k = Math.min(TAPS - 2, Math.floor(at));
 					const v = held[k] + (held[k + 1] - held[k]) * (at - k);
 
-					// How far up the palette this part of the room sits, and how far the whole field
-					// leans with the mix.
-					const slot = lerp(SLOT.base, SLOT.third, clamp(v * depth + lean * depth * 0.4));
-					// And a shallow SPATIAL relief from the same latched band, so the room has a
-					// shape that answers the arrangement instead of one flat level. The latch is
-					// what makes a band safe on a level at all: the shimmer this effect was
-					// rewritten to remove came from reading the spectrum per FRAME, and a value
-					// that steps on the beat and glides between beats cannot produce it. Bounded
-					// well under unity so the bed still reads as a room being lit.
-					// Centred on unity rather than reaching down to it: a relief that only ever darkens
-					// is a dimmer, and it cost this bed a third of its coverage when it was written that
-					// way. The mixer's highlight compressor takes the tops.
+					// WHICH slice of the spectrum a part of the room shows is what decides its
+					// colour. How loud that slice is stays out of the hue entirely and lands in
+					// the relief below, which is what this comment has always claimed and what the
+					// code did the opposite of: the palette position came off the level alone, so
+					// two walls showing different instruments at the same loudness were the same
+					// colour and the room read as one hue however much the music moved.
+					//
+					// The span matters as much as the mapping. `deep`, `base` and `glow` are one
+					// hue at three lightnesses - only `third` and `accent` are a different colour
+					// at all - so a gradient that stops around glow is a gradient between two
+					// shades of the same thing. `depth` now says how far past that the room
+					// reaches rather than how far it travels within it.
+					const spread = 0.35 + depth * 0.65;
+					let slot = lerp(SLOT.base, SLOT.third, clamp(fold * spread + lean * 0.2));
+					// The third colour the palette declares, spent only where the mix has left
+					// room for it. A loud tap in a sparse passage is a single instrument holding
+					// the track, and that is the one the accent belongs to: reaching for it on
+					// every peak would put the show's answering colour under the whole arrangement.
+					slot = lerp(slot, SLOT.accent, clamp(sparse * 1.3 - 0.25) * clamp(v * 1.4) * depth);
+
 					setSample(out, i, palette, slot + hueShift, gain * (1 + RELIEF * (v - 0.5)));
 				}
 			}

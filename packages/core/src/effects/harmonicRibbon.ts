@@ -3,8 +3,8 @@ import { SLOT } from '../contracts/palette.ts';
 import { addSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
 import { ringU } from '../dsl/space.ts';
-import { spectralTilt, spectrumFocus } from '../dsl/spectrum.ts';
-import { BeatHold } from '../dsl/env.ts';
+import { spectralTilt, spectrumFocus, spectrumPeak } from '../dsl/spectrum.ts';
+import { Follower } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -33,21 +33,23 @@ export const harmonicRibbon: EffectDef = {
 	},
 	params: [INTENSITY, param('travel', 'How far it walks', 0.7), param('width', 'Band width', 0.5)],
 	create(g) {
-		// The passage's own level, latched on the beat. `f.energy` is beat-resolution data that
-		// the player interpolates per frame, so multiplying brightness by it directly slides
-		// the whole room continuously - the same shimmer the spectrum caused, by another route.
-		// Glided over most of a beat so it arrives as a swell rather than a step.
-		const level = new BeatHold(0.45);
-		// A position wants to arrive rather than jump, so it glides most of a beat; a colour is
-		// the opposite and steps. Both still only ever take a new reading on the beat.
-		const centroid = new BeatHold(0.75);
-		const width = new BeatHold(0.3);
+		// How loud the passage is, which is a level and belongs slow.
+		const level = new Follower(0.1, 0.7);
+		// Where the band sits and how wide it is. Slower than a meter because these are a
+		// position and an extent, and a room whose geometry chases every sixteenth reads as a
+		// fault - but followed, not latched, so a phrase that opens up moves the ribbon while it
+		// is opening rather than at the next downbeat.
+		const centroid = new Follower(0.1, 0.35);
+		const width = new Follower(0.09, 0.3);
+		// The one fast read: what is playing right now, which is what the ribbon is a picture of.
+		const voice = new Follower(0.02, 0.13);
 
 		return {
 			reset() {
 				level.reset();
 				centroid.reset();
 				width.reset();
+				voice.reset();
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift, motion } = ctx;
@@ -56,15 +58,16 @@ export const harmonicRibbon: EffectDef = {
 				// rate however slowly the band itself moves.
 				out.fill(0);
 
-				// Latched on the beat rather than followed. The centroid of a mix with a hi-hat in
-				// it moves by a band every frame, and a light that tracks that reads as a fault
-				// rather than as a melody however smoothly it is eased.
-				const at = centroid.update(spectralTilt(f), f.beat, f.dt, f.beatPeriod);
-				const spread = width.update(1 - spectrumFocus(f), f.beat, f.dt, f.beatPeriod);
+				const at = centroid.update(spectralTilt(f), f.dt);
+				const spread = width.update(1 - spectrumFocus(f), f.dt);
+				const heard = level.update(f.energy, f.dt);
+				// Peak minus a slow floor is the articulation rather than the level: a sustained
+				// chord sits at the floor and adds nothing, a struck one rises above it. Added to
+				// the gain rather than multiplied into it, so the ribbon never gates itself out.
+				const played = clamp((voice.update(spectrumPeak(f), f.dt) - heard * 0.55) * 2);
 
-				// Level from the passage alone. It used to be multiplied by the spectrum's own
-				// peak, which is what made the band pulse between beats instead of on them.
-				const gain = (0.25 + p.intensity * 0.7) * clamp(0.15 + level.update(f.energy, f.beat, f.dt, f.beatPeriod) * 0.85);
+				// Level from the passage, with the articulation riding on top.
+				const gain = (0.25 + p.intensity * 0.7) * clamp(0.15 + heard * 0.85) * (1 + played * 0.5);
 				// One voice is a line, a whole arrangement is a wash. The width is the measurement.
 				// Wide enough at its narrowest that the band is a region of the room rather than a
 				// stripe on one wall: as the only texture over a quiet bed, a stripe reads as a fault.
