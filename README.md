@@ -76,7 +76,10 @@ The room is lit before anyone decides whether to spend a model on it. `author-en
 a complete show from the analysis alone in about a millisecond: it covers every bar, keeps
 each effect inside the taste metadata it declares, reserves the biggest look in the catalog
 for the peak section and nowhere else, climbs the intensity through a build, cuts the light in
-every void, and lints clean. It is deterministic - the seed is the analysis hash, so the same
+every void, and lints clean. Every drop slams and the phrases inside a loud passage are
+answered with colour, but the flash is rationed: one strobe **or** one blackout in a whole
+show, spent on the biggest moment that can hold it. Past the second one the room has said the
+only thing a flash says. It is deterministic - the seed is the analysis hash, so the same
 track is the same show every time, and a different track is a different one. Reroll steps that
 seed and composes again, which is how a favourite track stops being one picture forever without
 giving up a bug that reproduces.
@@ -114,6 +117,21 @@ Claude writes two to five more per track, specific to that song. Each is admitte
 passing the same gate the built-ins pass: finite, non-negative, bounded pixels across a
 synthesised groove/build/void/drop journey; bitwise-identical output from two fresh
 instances, which catches a smuggled `Math.random`; and `reset()` restoring a fresh state.
+
+What an effect reads decides whether the room looks like it is listening. `f.spectrum` is a
+real 50 Hz measurement resampled per frame; `f.bands` and `f.energy` are per-beat envelopes and
+cannot move inside a bar however they are smoothed. Most of the catalog used to pass everything
+through a beat latch to kill shimmer, which also threw away every stab, cymbal and word between
+beats - and measured on a real track the shimmer turned out not to be there, while the latch's
+own beat-rate stepping was. Level and articulation come off the spectrum through a `Follower`
+now; the beat envelopes are left to say how loud a passage is, which is what they are good for.
+
+Colour is spent the same way. The palette slots are one ramp - deep, base, glow, white, third,
+accent - and the first three are a single hue at three lightnesses, so a gradient that stops at
+glow is a brightness ramp wearing a palette's clothes. Reaching a second colour means crossing
+past white. Positions in that ramp differ in luminance as well as hue, so a spectral term
+driving the slot is also driving brightness: colour that varies by POSITION in the room is free,
+colour that varies over TIME has to move slowly or it becomes a flicker.
 
 The gate answers whether an effect is legal, which is not the same question as whether it looks
 like anything, so an admitted effect is also measured: how much of the room it lights, how
@@ -268,7 +286,7 @@ wins over the stored one.
 
 ```sh
 npm run dev            # the app
-npm test               # 469 tests
+npm test               # 471 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
@@ -302,3 +320,19 @@ browser only reports where the audio actually is. The room keeps running if the 
 WS2812 is 30 us per LED, so 1320 pixels on one data line caps at 25 Hz. Reaching 60 needs
 roughly one output per strip: a 4- or 8-output ESP32 board, wired ethernet rather than WiFi.
 Pass several comma-separated hosts and the fixture is split across them.
+
+## Known gaps
+
+- **There is no measurement harness.** It was removed deliberately, to be rebuilt rather than
+  extended. `measureEffect` in `core` still characterises one effect at a time and the gate
+  still admits or rejects one; what is gone is anything that sweeps the catalog or scores the
+  analysis against a corpus.
+- **`taste.quiet` has no producer.** Twenty-seven effects declare a number the picker chooses
+  on, and nothing left in the tree can regenerate or falsify it. Changing a quiet-pool effect,
+  the spectrum or the house floor silently invalidates whatever it claims.
+- **Nothing separates the stems.** `vocalGlow` guesses the voice from the mid band and the
+  stereo image because there is nothing better to read. A separation model would give a vocal
+  presence curve, a clean drum stem where snare detection is currently the weak link, and the
+  moment the voice drops out and the beat takes over, which this repertoire does constantly and
+  the analysis cannot see at all. It costs a model download, a second decode pass and an
+  `ANALYSIS_VERSION` bump, so it wants measuring before it is built.

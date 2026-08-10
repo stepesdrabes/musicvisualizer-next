@@ -72,12 +72,28 @@ in `effects/gate.ts`:
 
 Colour goes through `SLOT` so a show's palette reaches the effect without it knowing any
 hues. Multiply speeds by `ctx.motion`; derive time constants from `ctx.f.beatPeriod`, never
-from bpm. `taste` metadata is what the linter enforces restraint with, so fill it in honestly.
+from bpm. `taste` metadata is what the linter enforces restraint with, so fill it in honestly,
+and keep `sections` to the ones the effect is actually for: it is a hard filter, and an effect
+that claims every section will be picked for one it has no business in.
+
+Two traps that have each cost a rewrite:
+
+- **`f.spectrum` and `f.bands` are not interchangeable.** The spectrum is a 50 Hz measurement
+  resampled per frame; the band envelopes are per-beat and cannot move inside a bar. They are
+  also not the same scale - a band is normalised across the track and reaches 1.0 in any loud
+  passage, the spectrum is a fixed window well under it, so swapping one for the other at the
+  same gain changes how much room an effect fills. Read the spectrum through a `Follower` for
+  anything that should answer the music; use the envelopes for how loud a passage is.
+- **The `SLOT` ramp is not a hue wheel.** `deep`, `base` and `glow` are one hue at three
+  lightnesses, so a gradient across them is a brightness ramp; a second colour means crossing
+  past `white` toward `third`. Positions also differ in luminance, so a slot driven by a fast
+  signal is a brightness driven by a fast signal. Vary colour by POSITION freely; vary it over
+  TIME only slowly.
 
 Reach for the DSL before writing the loop by hand: `ringU`, `alphaFor`, `setPixel`,
-`fillSolid`, `stampOnStrip`, `ringsFor`/`scatter`, `fadeToBlack`, `PulseEnv`. Anything added
-under `src/dsl/` also becomes vocabulary for Claude-generated effects, so document it in
-`renderDslReference()` in `packages/author-ai/src/catalog.ts`.
+`fillSolid`, `stampOnStrip`, `ringsFor`/`scatter`, `fadeToBlack`, `Follower`, `PulseEnv`.
+Anything added under `src/dsl/` also becomes vocabulary for Claude-generated effects, so
+document it in `renderDslReference()` in `packages/author-ai/src/catalog.ts`.
 
 ## Contracts
 
