@@ -18,20 +18,32 @@ export interface DeviceIdentity {
 	pixels: number;
 	ddpPort: number;
 	statsPort: number;
-	/** What the build does with a frame: `stub` scores it, `monitor` puts it on one LED. */
+	/**
+	 * What each of the build's outputs does with a frame, `+`-separated: `stub` only scores it,
+	 * `monitor` puts it on one RGB LED, `lamp` on an analog RGBW fixture, `ws2815` on the strips.
+	 */
 	leds: string;
 }
+
+/** Outputs that receive the whole fixture and light none of it. */
+const DARK_OUTPUTS = new Set(['stub', 'monitor']);
 
 /**
  * Whether a frame reaching this board reaches the room.
  *
- * Two builds receive the whole fixture and light none of it, and the difference matters to
+ * Two outputs receive the whole fixture and light none of it, and the difference matters to
  * whoever is reading these numbers: `stub` only counts packets, `monitor` summarises the frame
  * onto a single RGB LED so the path can be judged before there are strips to judge it with.
- * Both leave the walls dark, so both have to say so.
+ * Both leave the room dark, so both have to say so.
+ *
+ * A board can carry several outputs at once, so the question is whether any of them emits
+ * light, not what the first one happens to be. An unrecognised kind counts as lit: this parser
+ * is older than the next firmware by construction, and warning that a lit room is dark is the
+ * worse of the two mistakes.
  */
-export function drivesStrips(identity: DeviceIdentity | null): boolean {
-	return identity !== null && identity.leds !== 'stub' && identity.leds !== 'monitor';
+export function lightsRoom(identity: DeviceIdentity | null): boolean {
+	if (identity === null) return false;
+	return identity.leds.split('+').some((kind) => !DARK_OUTPUTS.has(kind));
 }
 
 /** One second of what actually arrived, reported by the board itself. */

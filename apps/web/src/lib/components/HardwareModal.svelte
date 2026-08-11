@@ -2,8 +2,8 @@
 	import {
 		OFFSET_MAX_MS,
 		OFFSET_MIN_MS,
-		drivesStrips,
 		faultsIn,
+		lightsRoom,
 		type HardwareStatus
 	} from '$lib/hardware.ts';
 	import { uptime } from '$lib/hardware.svelte.ts';
@@ -58,7 +58,7 @@
 	const identity = $derived(status.identity);
 	const telemetry = $derived(status.telemetry);
 	const faults = $derived(telemetry ? faultsIn(telemetry) : []);
-	const dark = $derived(identity !== null && !drivesStrips(identity));
+	const dark = $derived(identity !== null && !lightsRoom(identity));
 	const dirty = $derived(draft.trim() !== status.host);
 
 	function apply() {
@@ -238,8 +238,8 @@
 	{#if dark}
 		<footer>
 			<Icon name="alert" size={13} />
-			This build receives and scores the stream but does not drive the strips, so the room
-			stays dark whatever these numbers say.
+			This build receives and scores the stream but lights nothing, so the room stays dark
+			whatever these numbers say.
 		</footer>
 	{/if}
 </Dialog>

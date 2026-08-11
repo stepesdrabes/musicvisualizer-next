@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
-	drivesStrips,
 	faultsIn,
+	lightsRoom,
 	parseIdentity,
 	parseTelemetry,
 	type DeviceTelemetry
 } from './hardware.ts';
 
 // The exact line firmware/src/hello.rs formats.
-const HELLO = 'room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds stub';
+const HELLO = 'room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds lamp';
+
+const withLeds = (leds: string) => HELLO.replace('leds lamp', `leds ${leds}`);
 
 // The exact line firmware/src/stats.rs formats, and the shorter one FIRMWARE.md documents.
 const STATS =
@@ -29,23 +31,27 @@ describe('parseIdentity', () => {
 			pixels: 1320,
 			ddpPort: 4048,
 			statsPort: 4049,
-			leds: 'stub'
+			leds: 'lamp'
 		});
 	});
 
-	it('reports a real LED output once the firmware drives one', () => {
-		expect(parseIdentity(HELLO.replace('leds stub', 'leds ws2812'), 'h')?.leds).toBe('ws2812');
+	it('reads the output kinds verbatim, including ones it has never heard of', () => {
+		expect(parseIdentity(withLeds('ws2815'), 'h')?.leds).toBe('ws2815');
 	});
 
-	it('counts only a strip output as lighting the room', () => {
-		const kind = (leds: string) =>
-			drivesStrips(parseIdentity(HELLO.replace('leds stub', `leds ${leds}`), 'h'));
-		expect(kind('ws2812')).toBe(true);
+	it('counts anything that emits light as lighting the room', () => {
+		const kind = (leds: string) => lightsRoom(parseIdentity(withLeds(leds), 'h'));
+		expect(kind('ws2815')).toBe(true);
+		expect(kind('lamp')).toBe(true);
 		// Both of these receive the whole fixture and light none of it, so the panel has to
 		// keep saying the room is dark rather than reading `monitor` as an output.
 		expect(kind('stub')).toBe(false);
 		expect(kind('monitor')).toBe(false);
-		expect(drivesStrips(null)).toBe(false);
+		// A build can carry several outputs at once, and one of them being dark says nothing
+		// about the board, so the answer is about the list rather than about its first entry.
+		expect(kind('monitor+lamp')).toBe(true);
+		expect(kind('stub+monitor')).toBe(false);
+		expect(lightsRoom(null)).toBe(false);
 	});
 
 	it('ignores whatever else is on the port', () => {
