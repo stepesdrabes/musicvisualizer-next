@@ -6,7 +6,7 @@ export { assessMetricalLevel, type MetricalAssessment } from './metricalLevel.ts
 export { STEREO_FPS, analyseStereo } from './stereo.ts';
 export { CACHE_DIR, MODEL_DIR, workspaceRoot } from './paths.ts';
 export { readLibrary, type LibraryEntry } from './library.ts';
-export { parseSearchOutput, searchYouTube, type SearchResult } from './search.ts';
+export { radioFor, searchSongs, watchUrl, type Song } from './ytmusic.ts';
 export {
 	analysisPath,
 	contextPath,

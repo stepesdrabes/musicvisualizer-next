@@ -10,8 +10,12 @@ import {
 	nextItem,
 	patchItem,
 	playNext,
+	pruneHistory,
 	removeItem,
+	signatureOf,
+	titleKeyOf,
 	step,
+	videoIdOf,
 	type NewItem,
 	type QueueState
 } from './queueModel.ts';
@@ -215,5 +219,106 @@ describe('what a guest may take back', () => {
 	it('refuses an unnamed guest and an unknown row', () => {
 		expect(canGuestRemove(withGuests(), 'k1', '')).toBe(false);
 		expect(canGuestRemove(withGuests(), 'nope', 'Ada')).toBe(false);
+	});
+});
+
+describe('videoIdOf', () => {
+	it('reads the id whatever host spelled it', () => {
+		expect(videoIdOf('https://music.youtube.com/watch?v=Oo9sekHsm3I')).toBe('Oo9sekHsm3I');
+		expect(videoIdOf('https://www.youtube.com/watch?v=Oo9sekHsm3I')).toBe('Oo9sekHsm3I');
+		expect(videoIdOf('https://youtu.be/Oo9sekHsm3I')).toBe('Oo9sekHsm3I');
+	});
+
+	it('keeps its nerve on a local file, which is a source and not a URL', () => {
+		expect(videoIdOf('/Users/someone/Music/track.flac')).toBeNull();
+		expect(videoIdOf('')).toBeNull();
+	});
+
+	it('rejects anything that is not a video id', () => {
+		expect(videoIdOf('https://www.youtube.com/watch?v=PLnotanid')).toBeNull();
+		expect(videoIdOf('https://example.test/')).toBeNull();
+	});
+});
+
+describe('pruneHistory', () => {
+	it('drops what has played beyond the tail it is told to keep', () => {
+		let state = seed('a', 'b', 'c', 'd', 'e');
+		state = jumpTo(state, 'k4');
+		const pruned = pruneHistory(state, 2);
+		expect(pruned.items.map((i) => i.title)).toEqual(['c', 'd', 'e']);
+		expect(pruned.currentKey).toBe('k4');
+	});
+
+	it('never drops what is playing, nor anything queued behind it', () => {
+		let state = seed('a', 'b', 'c', 'd', 'e');
+		state = jumpTo(state, 'k2');
+		const pruned = pruneHistory(state, 0);
+		expect(pruned.items.map((i) => i.title)).toEqual(['c', 'd', 'e']);
+		expect(currentItem(pruned)?.title).toBe('c');
+	});
+
+	it('returns the same object when there is nothing to drop, so a commit can short-circuit', () => {
+		let state = seed('a', 'b', 'c');
+		state = jumpTo(state, 'k1');
+		expect(pruneHistory(state, 30)).toBe(state);
+		expect(pruneHistory(EMPTY_QUEUE, 0)).toBe(EMPTY_QUEUE);
+	});
+
+	it('does nothing while nothing has played, so a queued-up set is not eaten', () => {
+		const state = { ...seed('a', 'b', 'c'), currentKey: null };
+		expect(pruneHistory(state, 0)).toBe(state);
+	});
+});
+
+describe('signatureOf', () => {
+	it('collapses the same recording listed under different ids', () => {
+		expect(signatureOf('CHRYSTAL', 'The Days')).toBe(signatureOf('chrystal', 'the days!'));
+	});
+
+	it('ignores a bracketed qualifier, which is how one release is listed twice', () => {
+		expect(signatureOf('Queen', 'Bohemian Rhapsody (Remastered 2011)')).toBe(
+			signatureOf('Queen', 'Bohemian Rhapsody')
+		);
+	});
+
+	it('ignores a featured credit appended to the title', () => {
+		expect(signatureOf('MK', 'Dior feat. Chrystal')).toBe(signatureOf('MK', 'Dior'));
+	});
+
+	// The question is whether the room has heard the song, not whether it is the same master,
+	// so a remix counts as already played - including one billed to the remixer as well.
+	it('reads a remix as the song it is a remix of', () => {
+		expect(signatureOf('CHRYSTAL', 'The Days (NOTION Remix)')).toBe(
+			signatureOf('CHRYSTAL', 'The Days')
+		);
+		expect(signatureOf('CHRYSTAL & Mazza_l20', 'The Days (Mazza_l20 Remix)')).toBe(
+			signatureOf('CHRYSTAL', 'The Days')
+		);
+		expect(signatureOf('Nikko x Jynxx', 'The Days')).toBe(signatureOf('Nikko', 'The Days'));
+	});
+
+	it('keeps two acts apart when they record the same title', () => {
+		expect(signatureOf('Queen', 'Bohemian Rhapsody')).not.toBe(
+			signatureOf('Panic! At The Disco', 'Bohemian Rhapsody')
+		);
+	});
+});
+
+describe('titleKeyOf', () => {
+	it('reads every version of one song as that song', () => {
+		expect(titleKeyOf('The Days (NOTION Remix)')).toBe(titleKeyOf('The Days'));
+		expect(titleKeyOf('The Days - NOTION Remix')).toBe(titleKeyOf('The Days'));
+		expect(titleKeyOf('Creep - Live at Wembley')).toBe(titleKeyOf('Creep'));
+	});
+
+	// Rips made before the catalogue path existed are titled "Artist - Title", and cutting at
+	// that dash would key the whole row on the artist's name.
+	it('leaves an upload title that leads with the act alone', () => {
+		expect(titleKeyOf('CHRYSTAL - THE DAYS  (NOTION REMIX)')).toBe('chrystalthedays');
+		expect(titleKeyOf('Daft Punk - One More Time')).toBe('daftpunkonemoretime');
+	});
+
+	it('keeps unrelated songs apart', () => {
+		expect(titleKeyOf('The Days')).not.toBe(titleKeyOf('The Nights'));
 	});
 });

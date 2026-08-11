@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { QueueItem } from '$lib/queueModel.ts';
+	import type { SearchResult } from '$lib/types.ts';
 	import { clock } from '$lib/format.ts';
 	import Icon from '$lib/ui/Icon.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -11,17 +12,24 @@
 		items = [],
 		currentKey = null,
 		playing = false,
+		autopilot = false,
+		suggestions = [],
 		onjump,
 		onremove,
 		onplayNext,
 		onmove,
 		onretry,
 		onclear,
-		onsearch
+		onsearch,
+		onautopilot,
+		onradio,
+		onsuggestion
 	}: {
 		items?: QueueItem[];
 		currentKey?: string | null;
 		playing?: boolean;
+		autopilot?: boolean;
+		suggestions?: SearchResult[];
 		onjump: (key: string) => void;
 		onremove: (key: string) => void;
 		onplayNext: (key: string) => void;
@@ -29,6 +37,9 @@
 		onretry: (key: string) => void;
 		onclear: () => void;
 		onsearch: () => void;
+		onautopilot: (on: boolean) => void;
+		onradio: (item: QueueItem) => void;
+		onsuggestion: (song: SearchResult) => void;
 	} = $props();
 
 	let dragKey = $state<string | null>(null);
@@ -50,8 +61,18 @@
 <aside class="floats">
 	<header>
 		<h2>Queue</h2>
+		<span class="count mono subtle">{items.length > 0 ? items.length : ''}</span>
+		<button
+			class="pilot"
+			class:on={autopilot}
+			title={autopilot
+				? 'The radio is keeping this queue full'
+				: 'Let the radio keep this queue full'}
+			aria-pressed={autopilot}
+			onclick={() => onautopilot(!autopilot)}>
+			<Icon name="radio" size={14} />
+		</button>
 		{#if items.length > 0}
-			<span class="count mono subtle">{items.length}</span>
 			<Button variant="ghost" size="icon-sm" title="Clear everything but the current track" onclick={onclear}>
 				<Icon name="trash" size={14} />
 			</Button>
@@ -110,7 +131,11 @@
 							{:else if item.addedBy}
 								<span class="guest">{item.addedBy}</span>
 							{:else}
-								<span class="muted">{item.uploader}</span>
+								<span class="muted truncate">{item.uploader}</span>
+								{#if item.auto}
+									<!-- Nobody chose this row, and a set list should say so. -->
+									<span class="chip">Radio</span>
+								{/if}
 							{/if}
 						</span>
 					</span>
@@ -141,6 +166,15 @@
 								<Icon name="playNext" size={13} />
 							</Button>
 						{/if}
+						{#if item.trackId}
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								title="Queue more like this"
+								onclick={() => onradio(item)}>
+								<Icon name="radio" size={13} />
+							</Button>
+						{/if}
 						<Button variant="ghost" size="icon-sm" title="Remove" onclick={() => onremove(item.key)}>
 							<Icon name="x" size={13} />
 						</Button>
@@ -162,6 +196,31 @@
 					Find a track
 				</Button>
 			</div>
+		{/if}
+
+		<!-- Inside the scroller, not below it. As a sibling it was a block that appeared a second
+		     after the queue did and took a third of the rail, which resized the list under
+		     whatever the eye was already reading. Here it is simply what follows the set list. -->
+		{#if suggestions.length > 0}
+			<section class="suggested">
+				<p class="divider">More like this</p>
+				{#each suggestions as song (song.id)}
+					<button class="pick" onclick={() => onsuggestion(song)} title="Add to the queue">
+						<span class="art small">
+							{#if song.thumbnail}
+								<img src={song.thumbnail} alt="" loading="lazy" />
+							{:else}
+								<Icon name="music" size={13} />
+							{/if}
+						</span>
+						<span class="text">
+							<span class="title truncate">{song.title}</span>
+							<span class="sub truncate muted">{song.artist}</span>
+						</span>
+						<Icon name="plus" size={15} />
+					</button>
+				{/each}
+			</section>
 		{/if}
 	</div>
 
@@ -195,6 +254,28 @@
 	}
 	.count {
 		margin-left: auto;
+	}
+
+	/*
+	 * The one place the accent is spent in this rail, because the radio running is a state that
+	 * is genuinely live: the queue will grow on its own while it is lit.
+	 */
+	.pilot {
+		display: grid;
+		place-items: center;
+		width: 26px;
+		height: 26px;
+		flex: none;
+		border-radius: var(--radius-sm);
+		color: var(--subtle-foreground);
+	}
+	.pilot:hover {
+		background: var(--muted);
+		color: var(--foreground);
+	}
+	.pilot.on {
+		background: color-mix(in srgb, var(--accent) 18%, transparent);
+		color: var(--accent);
 	}
 
 	.list {
@@ -316,6 +397,15 @@
 		color: var(--muted-foreground);
 		font-weight: 500;
 	}
+	.chip {
+		flex: none;
+		padding: 0 5px;
+		border-radius: 3px;
+		background: var(--muted);
+		color: var(--subtle-foreground);
+		font-size: 10.5px;
+		line-height: 15px;
+	}
 
 	.right {
 		display: flex;
@@ -357,5 +447,36 @@
 	}
 	.empty p {
 		font-size: 13px;
+	}
+
+	.suggested {
+		margin-top: 6px;
+		padding-top: 2px;
+		border-top: 1px solid var(--border);
+	}
+	.pick {
+		display: flex;
+		align-items: center;
+		gap: 9px;
+		width: 100%;
+		padding: 5px 8px;
+		border-radius: var(--radius-md);
+		text-align: left;
+		color: var(--subtle-foreground);
+	}
+	.pick:hover {
+		background: var(--muted);
+		color: var(--foreground);
+	}
+	.art.small {
+		width: 30px;
+		height: 30px;
+	}
+	.pick .title {
+		font-size: 12.5px;
+		font-weight: 400;
+	}
+	.pick .sub {
+		font-size: 11.5px;
 	}
 </style>

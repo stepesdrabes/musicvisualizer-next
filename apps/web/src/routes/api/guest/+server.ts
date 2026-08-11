@@ -1,7 +1,8 @@
 import { error, json } from '@sveltejs/kit';
-import { readLibrary } from '@mv/analysis';
 import { canGuestRemove, type NewItem } from '$lib/queueModel.ts';
 import { queue } from '$lib/server/queueStore.ts';
+import { enrichFromLibrary, fromRequest } from '$lib/server/queueAdd.ts';
+import { autopilot } from '$lib/server/autopilot.ts';
 import { runner } from '$lib/server/ingestRunner.ts';
 import { room } from '$lib/server/room.ts';
 import type { RequestHandler } from './$types';
@@ -47,19 +48,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		if (!item?.source?.trim()) error(400, 'nothing to add');
 
 		// Cached tracks start ready, exactly as they do for the host.
-		const library = await readLibrary();
-		const hit = item.trackId ? library.find((e) => e.id === item.trackId) : undefined;
-		const enriched: NewItem = {
-			...item,
-			title: item.title ?? hit?.title,
-			uploader: item.uploader ?? hit?.uploader,
-			thumbnail: item.thumbnail ?? hit?.thumbnail,
-			duration: item.duration ?? hit?.duration ?? 0,
-			authored: hit?.analysed ? hit.authored : item.authored,
-			addedBy: name
-		};
-
-		const state = await queue.add([enriched]);
+		const state = await queue.add(await enrichFromLibrary([fromRequest(item, name)]));
+		autopilot.handAdded();
 		void runner.pump();
 		return json(state);
 	}

@@ -38,7 +38,7 @@ function ingestInWorker(source: string, opts: IngestOptions): Promise<IngestResu
 			workerData: {
 				source,
 				// Only the serialisable options cross the boundary; progress comes back as messages.
-				opts: { force: opts.force, metricalLevel: opts.metricalLevel }
+				opts: { force: opts.force, metricalLevel: opts.metricalLevel, artwork: opts.artwork }
 			},
 			// Workers inherit the parent's node flags by default, and flags meant for the
 			// server (an inspector port, an eval input mode) break or collide in the child.

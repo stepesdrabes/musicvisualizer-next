@@ -43,6 +43,48 @@ A published tempo that re-hears the detected one at a clean ratio corrects the m
 automatically - the same correction the agent has always been allowed to make from research,
 now made by the engine from the same kind of evidence.
 
+## What gets ripped
+
+Searching all of YouTube returns uploads; searching YouTube Music returns releases. For one
+query the old path offered a lyric-video reupload, a mashup, a "slowed to perfection" edit and
+a visualiser before it offered the record. That is not only ugly - a spoken intro, a crowd, or
+a rate-shifted edit corrupts onset and tempo detection, so a noisy pick produces a wrong grid
+before anything is lit.
+
+So search goes through YouTube Music's own API, unauthenticated and with no key, filtered to
+`MUSIC_VIDEO_TYPE_ATV` - the auto-generated "art track" that is the distributor's own master
+under static cover art. Clean audio stops being a heuristic over titles and becomes a flag in
+the response. Live cuts, karaoke and slowed edits still exist there, so they are pushed below
+the plain recording unless the query asked for one.
+
+Three things fall out of it for free. Artist, title and album arrive as separate fields, so
+identity resolution starts from the catalogue rather than from parsing "CHRYSTAL - THE DAYS
+(NOTION REMIX)" - `resolvedBy` reads `ytmeta` instead of `titleparse`. The artwork is the
+square sleeve rather than a video still, which matters because yt-dlp's still is that sleeve
+pillarboxed into 16:9 on a flat fill covering nearly half the frame, and that fill drags the
+hue the chrome borrows. And every art track has a radio, which is what the queue tops itself
+up from.
+
+Nothing else is on the way in. Spotify cannot supply decodable audio by any route its terms
+allow, and its developer policy separately forbids synchronising recordings with visual media,
+which is a fair description of this program.
+
+## The radio
+
+A track's own radio on YouTube Music is 50 neighbours in one request. It takes after what
+seeded it: seeded from an art track it returns art tracks, seeded from a music video it
+returns music videos - so a seed that is not already a clean release is looked up by name
+first, which is also how a track ripped before any of this existed gets a clean radio.
+
+It is offered four ways: a dial in the queue header that keeps the set list from running out,
+an action on any row, a strip under the queue, and the palette opened with nothing typed. The
+automatic one appends a single track at a time and only when fewer than two unplayed rows are
+left, so the machine prepares one download per track played rather than committing the next
+hour. It is seeded from a blend of the last few tracks rather than from one, which is what
+stops a night drifting into whatever the first song suggested, and it will not offer a song
+the queue has already held - including under another remixer's billing, which is how the same
+record otherwise comes back around twice.
+
 The system prompt is written to Anthropic's Opus 5 guidance (no self-verification
 instructions, no shouted emphasis, the hardest constraint restated last) and the craft in it
 is attributed - Rosenberg on spending strong colour sparingly, Sinclair on putting the darkest
@@ -263,11 +305,13 @@ the record's own colour, which is the one thing about a track the chrome can hon
 Everything else is greyscale, because the LEDs have to be the only saturated thing on screen.
 
 - **Top bar** centres one field. Typing in it opens a command palette that lists the tracks
-  already in the cache first, then searches YouTube. A pasted link collapses to a single row.
-  Enter queues, Cmd-Enter plays now, Alt-Enter plays next.
+  already in the cache first, then searches YouTube Music. Opened empty it offers what the
+  radio would play next. A pasted link collapses to a single row. Enter queues, Cmd-Enter
+  plays now, Alt-Enter plays next.
 - **Queue**, on the left, is the set list: drag to reorder, click to jump, live status while a
   track downloads and analyses, and a mark on the ones Claude has designed rather than the
-  engine.
+  engine. Any row will start a radio off itself, and the dial in the header hands the whole
+  queue to one.
 - **Stage** is the 3D room, with view presets. Nothing else floats over it: the diffuser and
   bloom are fixed at the settings the room is meant to be judged at.
 - **Player bar** is Spotify-shaped: art, title, prev/play/next, and a scrubber. The scrubber is

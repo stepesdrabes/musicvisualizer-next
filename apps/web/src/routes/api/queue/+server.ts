@@ -1,8 +1,9 @@
 import { error, json } from '@sveltejs/kit';
-import { readLibrary } from '@mv/analysis';
 import type { NewItem, QueueState } from '$lib/queueModel.ts';
 import { isLocal } from '$lib/server/access.ts';
 import { queue } from '$lib/server/queueStore.ts';
+import { enrichFromLibrary, fromRequest } from '$lib/server/queueAdd.ts';
+import { autopilot } from '$lib/server/autopilot.ts';
 import { runner } from '$lib/server/ingestRunner.ts';
 import type { RequestHandler } from './$types';
 
@@ -16,25 +17,6 @@ interface Body {
 	keepCurrent?: boolean;
 }
 
-/** A row added from a track already in the cache starts ready, so nothing is fetched for it. */
-async function withCacheState(items: NewItem[]): Promise<NewItem[]> {
-	if (items.length === 0) return items;
-	const library = await readLibrary();
-	const byId = new Map(library.map((e) => [e.id, e]));
-	return items.map((item) => {
-		const hit = item.trackId ? byId.get(item.trackId) : undefined;
-		if (!hit?.analysed || hit.authored === 'none') return item;
-		return {
-			...item,
-			title: item.title ?? hit.title,
-			uploader: item.uploader ?? hit.uploader,
-			thumbnail: item.thumbnail ?? hit.thumbnail,
-			duration: item.duration ?? hit.duration ?? 0,
-			authored: hit.authored
-		};
-	});
-}
-
 export const POST: RequestHandler = async (event) => {
 	// Guests reach the queue through /api/guest, which can only add and take back their own.
 	if (!isLocal(event)) error(403, 'use the guest page to add to this queue');
@@ -44,9 +26,13 @@ export const POST: RequestHandler = async (event) => {
 
 	switch (body.action) {
 		case 'add': {
-			const items = (body.items ?? []).filter((i) => i.source?.trim());
+			const items = (body.items ?? [])
+				.filter((i) => i.source?.trim())
+				.map((i) => fromRequest(i));
 			if (items.length === 0) error(400, 'nothing to add');
-			state = await queue.add(await withCacheState(items));
+			state = await queue.add(await enrichFromLibrary(items));
+			// Somebody is steering, so the radio's ceilings start again.
+			autopilot.handAdded();
 			break;
 		}
 		case 'remove':

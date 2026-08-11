@@ -3,6 +3,7 @@ import { BUILT_IN_EFFECTS, type Show } from '@mv/core';
 import { showPath } from '@mv/analysis';
 import { composeShow, lintShow } from '@mv/author-engine';
 import { currentItem, nextItem, type ItemStatus, type QueueItem } from '$lib/queueModel.ts';
+import { autopilot } from './autopilot.ts';
 import { ingestDetached } from './ingestDetached.ts';
 import { queue } from './queueStore.ts';
 
@@ -38,7 +39,12 @@ const LABELS: Record<string, string> = {
  * left alone because it may be one Claude has already revised.
  */
 async function prepare(item: QueueItem, onStage: (stage: string) => void) {
-	const result = await ingestDetached(item.source, { onProgress: onStage });
+	// The row already carries the sleeve YouTube Music listed it with, which is squarer and
+	// cleaner than the still yt-dlp would find for the same track.
+	const result = await ingestDetached(item.source, {
+		onProgress: onStage,
+		artwork: item.thumbnail || undefined
+	});
 
 	let show: Show | null = null;
 	try {
@@ -82,26 +88,44 @@ async function prepare(item: QueueItem, onStage: (stage: string) => void) {
  * speculative ones.
  */
 class IngestRunner {
-	private running: string | null = null;
+	/**
+	 * Set before the first await, not after it.
+	 *
+	 * Checking a flag and then awaiting before setting it is not a guard at all: two calls in
+	 * the same turn both pass. Two browsers connecting at once is enough to do it, and every
+	 * mutation path calls this.
+	 */
+	private busy = false;
 
 	/** Prepare the current row, then the one after it, and stop. */
 	async pump(): Promise<void> {
-		if (this.running !== null) return;
-		const state = await queue.ready();
-		const target = [currentItem(state), nextItem(state)].find(
-			(i): i is QueueItem => i !== null && i.status === 'pending'
-		);
-		if (!target) return;
-
-		this.running = target.key;
+		if (this.busy) return;
+		this.busy = true;
+		let more = false;
 		try {
-			await this.run(target);
+			const state = await queue.ready();
+			const target = [currentItem(state), nextItem(state)].find(
+				(i): i is QueueItem => i !== null && i.status === 'pending'
+			);
+			if (target) {
+				await this.run(target);
+				more = true;
+			} else {
+				// Nothing left to prepare is exactly when the queue is about to run out, so it is
+				// also when the radio gets its turn. Here rather than on a timer or a queue
+				// subscription: this already runs after every mutation, and nothing fires without
+				// an inbound request, so a flag left on cannot wake the machine at four in the
+				// morning with nobody in the room.
+				more = await autopilot.topUp(Date.now());
+				await queue.prune();
+			}
 		} finally {
-			this.running = null;
+			this.busy = false;
 		}
 		// The queue may have moved on while that was happening, so ask again rather than
-		// assuming the next candidate is the one that was next when this started.
-		void this.pump();
+		// assuming the next candidate is the one that was next when this started. Outside the
+		// finally, or the flag would still be set when the recursion re-enters.
+		if (more) void this.pump();
 	}
 
 	private async run(item: QueueItem): Promise<void> {
@@ -124,12 +148,17 @@ class IngestRunner {
 				duration: result.meta.duration ?? result.analysis.duration,
 				authored
 			});
+			if (item.auto) autopilot.noteSuccess();
 		} catch (e) {
 			// yt-dlp and ffmpeg messages are the useful part; keep them rather than a generic one.
 			queue.patch(item.key, {
 				status: 'error',
 				message: (e as Error).message.split('\n')[0].slice(0, 200)
 			});
+			// A radio pick that will not download is usually the network or a stale yt-dlp
+			// rather than that track, so the count is what stops it queueing all night into
+			// the same failure.
+			if (item.auto) autopilot.noteFailure();
 		}
 	}
 

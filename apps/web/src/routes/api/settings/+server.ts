@@ -24,14 +24,17 @@ export const PUT: RequestHandler = async (event) => {
 		deepseekApiKey?: string;
 		authorBackend?: BackendId;
 		outputOffsetMs?: number;
+		autopilot?: boolean;
 	};
 
 	const patch: {
 		deepseekApiKey?: string;
 		authorBackend?: BackendId;
 		outputOffsetMs?: number;
+		autopilot?: boolean;
 	} = {};
 	if (typeof body.deepseekApiKey === 'string') patch.deepseekApiKey = body.deepseekApiKey.trim();
+	if (typeof body.autopilot === 'boolean') patch.autopilot = body.autopilot;
 	if (body.authorBackend === 'claude' || body.authorBackend === 'deepseek') {
 		patch.authorBackend = body.authorBackend;
 	}

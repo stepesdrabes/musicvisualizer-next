@@ -10,6 +10,7 @@ import {
 	moveItem,
 	patchItem,
 	playNext,
+	pruneHistory,
 	removeItem,
 	step,
 	type NewItem,
@@ -18,6 +19,9 @@ import {
 } from '$lib/queueModel.ts';
 
 const QUEUE_FILE = join(CACHE_DIR, 'queue.json');
+
+/** Rows of already-played history worth keeping, which is enough to step back through a set. */
+const HISTORY_ROWS = 30;
 
 type Listener = (state: QueueState) => void;
 
@@ -129,6 +133,18 @@ class QueueStore {
 	async clear(keepCurrent: boolean): Promise<QueueState> {
 		await this.ready();
 		return this.commit(clearQueue(this.state, keepCurrent));
+	}
+
+	/**
+	 * Forget rows that played a while ago.
+	 *
+	 * The whole array is re-serialised and pushed to every connected phone on every commit,
+	 * several times per track, so a set that runs all night becomes a large payload on a small
+	 * radio. A no-op returns the same object, so the commit short-circuits.
+	 */
+	async prune(): Promise<QueueState> {
+		await this.ready();
+		return this.commit(pruneHistory(this.state, HISTORY_ROWS));
 	}
 
 	/** Used by the ingest runner to report progress against a row. */

@@ -69,7 +69,7 @@
 			source: result.webpageUrl,
 			trackId: result.id,
 			title: result.title,
-			uploader: result.uploader,
+			uploader: result.artist,
 			thumbnail: result.thumbnail,
 			duration: result.duration
 		});
@@ -117,7 +117,7 @@
 					<img src={result.thumbnail} alt="" loading="lazy" />
 					<span class="text">
 						<span class="title truncate">{result.title}</span>
-						<span class="sub truncate">{result.uploader}</span>
+						<span class="sub truncate">{result.artist}</span>
 					</span>
 					{#if adding === result.id}
 						<Spinner size={16} />

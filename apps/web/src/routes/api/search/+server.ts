@@ -1,14 +1,17 @@
 import { error, json } from '@sveltejs/kit';
-import { searchYouTube, type SearchResult } from '@mv/analysis';
+import { searchSongs, watchUrl, type Song } from '@mv/analysis';
 import type { RequestHandler } from './$types';
+
+/** A song plus where to fetch it, which is the shape the browser is handed. */
+type SearchResult = Song & { webpageUrl: string };
 
 /**
  * Search results, cached by query.
  *
- * Every keystroke past the debounce is a yt-dlp process and about a second and a half, and
- * backspacing over a word asks the same question again immediately. Bounded rather than
- * time-expiring: YouTube's ranking does not move fast enough for a stale answer inside one
- * session to matter, and a fixed ceiling cannot leak.
+ * Backspacing over a word asks the same question again immediately, and every keystroke past
+ * the debounce is a round trip. Bounded rather than time-expiring: YouTube Music's ranking
+ * does not move fast enough for a stale answer inside one session to matter, and a fixed
+ * ceiling cannot leak.
  */
 const CACHE = new Map<string, SearchResult[]>();
 const CACHE_MAX = 60;
@@ -31,7 +34,8 @@ export const GET: RequestHandler = async ({ url, request }) => {
 	if (hit) return json({ results: hit, cached: true });
 
 	try {
-		const results = await searchYouTube(query, limit, request.signal);
+		const songs = await searchSongs(query, limit, request.signal);
+		const results = songs.map((song) => ({ ...song, webpageUrl: watchUrl(song.id) }));
 		// An aborted search resolves empty; caching that would poison the query it was for.
 		if (!request.signal.aborted && results.length > 0) remember(key, results);
 		return json({ results });

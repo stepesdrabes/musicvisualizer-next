@@ -23,6 +23,15 @@ interface SettingsFile {
 	 * and it is dialled by eye against the real room. Positive runs the room early.
 	 */
 	outputOffsetMs?: number;
+	/**
+	 * Whether the radio keeps the queue from running out.
+	 *
+	 * Here rather than on the queue, which is broadcast to every phone in the room and rebuilt
+	 * field by field when it is loaded, so a flag on it would quietly vanish on a restart. This
+	 * is a preference of the machine running the night, and it sits behind the same loopback
+	 * boundary as the hardware.
+	 */
+	autopilot?: boolean;
 }
 
 export interface PublicSettings {
@@ -30,6 +39,7 @@ export interface PublicSettings {
 	hasDeepseekKey: boolean;
 	authorBackend: BackendId;
 	outputOffsetMs: number;
+	autopilot: boolean;
 }
 
 class Settings {
@@ -50,8 +60,14 @@ class Settings {
 		return {
 			hasDeepseekKey: typeof file.deepseekApiKey === 'string' && file.deepseekApiKey.length > 0,
 			authorBackend: file.authorBackend ?? 'claude',
-			outputOffsetMs: file.outputOffsetMs ?? 0
+			outputOffsetMs: file.outputOffsetMs ?? 0,
+			autopilot: file.autopilot ?? false
 		};
+	}
+
+	/** Read on the hot path, where the caller only wants the one answer. */
+	async autopilotOn(): Promise<boolean> {
+		return (await this.load()).autopilot ?? false;
 	}
 
 	async update(patch: Partial<SettingsFile>): Promise<PublicSettings> {

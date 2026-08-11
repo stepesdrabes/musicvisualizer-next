@@ -29,11 +29,14 @@ export interface LibraryEntry extends TrackMeta {
 	updatedAt: number;
 }
 
-/** Mirrors @mv/analysis SearchResult. */
+/** Mirrors @mv/analysis Song, plus the watch URL the search route attaches. */
 export interface SearchResult {
 	id: string;
+	/** The track alone. YouTube Music keeps the artist out of it, unlike an upload title. */
 	title: string;
-	uploader: string;
+	artist: string;
+	album: string | null;
+	/** Seconds. */
 	duration: number;
 	thumbnail: string;
 	webpageUrl: string;
@@ -64,6 +67,8 @@ export interface Settings {
 	authorBackend: AuthorBackend;
 	/** How far ahead of the audio the strips run, milliseconds. Positive is early. */
 	outputOffsetMs: number;
+	/** Whether the radio keeps the queue from running out. */
+	autopilot: boolean;
 }
 
 /** One line in the authoring activity feed. */

@@ -11,6 +11,7 @@
 		AuthorEvent,
 		LibraryEntry,
 		LoadState,
+		SearchResult,
 		Settings,
 		Step,
 		TrackMeta
@@ -56,9 +57,11 @@
 	let settings = $state<Settings>({
 		hasDeepseekKey: false,
 		authorBackend: 'claude',
-		outputOffsetMs: 0
+		outputOffsetMs: 0,
+		autopilot: false
 	});
 
+	let suggestions = $state<SearchResult[]>([]);
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
 	let hardwareOpen = $state(false);
@@ -161,6 +164,61 @@
 		void patchSettings({ deepseekApiKey: key });
 	}
 
+	/**
+	 * What YouTube Music would play after what is already queued.
+	 *
+	 * Refreshed whenever the set list changes, because the point of the blend is that it drifts
+	 * with the night rather than orbiting whatever seeded it first.
+	 */
+	async function refreshSuggestions() {
+		try {
+			const res = await fetch('/api/radio?limit=4');
+			suggestions = res.ok ? ((await res.json()) as { results: SearchResult[] }).results : [];
+		} catch {
+			suggestions = [];
+		}
+	}
+
+	function toggleAutopilot(on: boolean) {
+		settings = { ...settings, autopilot: on };
+		void patchSettings({ autopilot: on });
+		note(on ? 'the radio will keep the queue full' : 'radio off');
+	}
+
+	/** Queue a run of what follows one track, which is what "more like this" asks for. */
+	async function startRadio(seedId: string, label: string) {
+		note(`finding tracks like ${label}`);
+		const res = await fetch(`/api/radio?seed=${encodeURIComponent(seedId)}&limit=12`);
+		if (!res.ok) {
+			note(`radio: ${await res.text()}`);
+			return;
+		}
+		const { results } = (await res.json()) as { results: SearchResult[] };
+		if (results.length === 0) {
+			note('nothing new to add');
+			return;
+		}
+		await queue.add(results.map(toNewItem));
+		note(`queued ${results.length} like ${label}`);
+	}
+
+	async function addSuggestion(song: SearchResult) {
+		await queue.add([toNewItem(song)]);
+		note(`queued ${song.title}`);
+		void refreshSuggestions();
+	}
+
+	function toNewItem(song: SearchResult) {
+		return {
+			source: song.webpageUrl,
+			trackId: song.id,
+			title: song.title,
+			uploader: song.artist,
+			thumbnail: song.thumbnail,
+			duration: song.duration
+		};
+	}
+
 	/** Dragging: the running stream takes it on its next sync, half a second at the worst. */
 	function moveOffset(ms: number) {
 		wireOffsetMs = ms;
@@ -189,6 +247,18 @@
 			queue.dispose();
 			hardware.dispose();
 		};
+	});
+
+	// Seeded from the whole set list, so what is offered drifts with the night.
+	//
+	// Through a `$derived` rather than read straight from the effect: the queue object is
+	// replaced wholesale on every stream message, which is about eight times per track while
+	// one is being prepared, and an effect reading it re-runs on all of them. The derived
+	// string only notifies when it actually differs, so this is one request per real change.
+	const setList = $derived(queue.items.map((i) => i.trackId).join());
+	$effect(() => {
+		void setList;
+		void refreshSuggestions();
 	});
 
 	$effect(() => {
@@ -228,9 +298,25 @@
 	 * audio that is already decoded.
 	 */
 	let loadedTrackId = $state<string | null>(null);
+	/** The row a skip has already been spent on, so a dead track is stepped over once. */
+	let skippedKey = $state<string | null>(null);
 	$effect(() => {
 		const item = current;
 		if (!viz) return;
+
+		// A track that will not load is the end of the night if nothing steps over it: only
+		// `onEnded` advances the queue, and a row that never plays never ends. Once per row, so
+		// a queue of failures walks to the end and stops there rather than looping.
+		//
+		// Only once something has played, though. On a fresh start the selection is where the
+		// last session left it, and stepping off it before anyone has pressed anything would
+		// move the queue under the user for a track they can see has failed and may want to
+		// retry.
+		if (loadedTrackId !== null && item && item.status === 'error' && item.key !== skippedKey) {
+			skippedKey = item.key;
+			void queue.next();
+			return;
+		}
 
 		// An emptied queue leaves the room running. Stopping the music because somebody cleared
 		// a list would be the one thing a room full of people would not forgive, and the loaded
@@ -333,12 +419,12 @@
 
 	async function pick(candidate: Candidate, how: 'queue' | 'now' | 'next') {
 		const wasEmpty = queue.items.length === 0;
-		await queue.add([
+		const after = await queue.add([
 			{
 				source: candidate.source,
 				trackId: candidate.origin === 'link' ? null : candidate.id,
 				title: candidate.origin === 'link' ? candidate.source : candidate.title,
-				uploader: candidate.uploader,
+				uploader: candidate.artist,
 				thumbnail: candidate.thumbnail,
 				duration: candidate.duration,
 				authored: candidate.authored
@@ -348,9 +434,9 @@
 		void refreshLibrary();
 
 		if (how === 'queue' || wasEmpty) return;
-		// The row that was just appended is the last one, and the server has told us about it
-		// by the time the POST resolves.
-		const added = queue.items[queue.items.length - 1];
+		// From the reply rather than the live queue, which anyone else may have appended to in
+		// between - and does, once the radio is topping it up.
+		const added = after?.items[after.items.length - 1];
 		if (!added) return;
 		if (how === 'now') await queue.jump(added.key);
 		else await queue.playNext(added.key);
@@ -619,7 +705,12 @@
 				onmove={(k, to) => void queue.move(k, to)}
 				onretry={(k) => void queue.retry(k)}
 				onclear={() => void queue.clear(true)}
-				onsearch={() => openSearch('')} />
+				onsearch={() => openSearch('')}
+				autopilot={settings.autopilot}
+				{suggestions}
+				onautopilot={toggleAutopilot}
+				onradio={(item) => void startRadio(item.trackId ?? '', item.title)}
+				onsuggestion={(song) => void addSuggestion(song)} />
 		{/if}
 
 		<Stage {viz} {readout} {load} {steps} hasShow={!!show} queued={queue.items.length} />
@@ -672,7 +763,12 @@
 	{/if}
 </div>
 
-<SearchModal bind:open={searchOpen} bind:query={searchSeed} {library} onpick={pick} />
+<SearchModal
+	bind:open={searchOpen}
+	bind:query={searchSeed}
+	{library}
+	{suggestions}
+	onpick={pick} />
 
 <RoomModal />
 

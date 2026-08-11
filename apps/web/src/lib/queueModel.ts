@@ -38,6 +38,8 @@ export interface QueueItem {
 	authored: Authored;
 	/** Reserved for guests adding from their own device. Absent means the host added it. */
 	addedBy?: string;
+	/** Set only by the radio topping the queue up, so a row nobody chose can say so. */
+	auto?: true;
 	addedAt: number;
 }
 
@@ -60,6 +62,78 @@ export interface NewItem {
 	duration?: number;
 	authored?: Authored;
 	addedBy?: string;
+	auto?: true;
+}
+
+const WATCH_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * The video a source points at, whatever host it names.
+ *
+ * `music.youtube.com/watch?v=`, `www.youtube.com/watch?v=` and `youtu.be/` are three spellings
+ * of one track, so comparing sources as strings would let the radio queue a song the room has
+ * already heard.
+ */
+export function videoIdOf(source: string): string | null {
+	try {
+		const url = new URL(source);
+		const v = url.searchParams.get('v');
+		if (v && WATCH_ID.test(v)) return v;
+		if (url.hostname.endsWith('youtu.be')) {
+			const seg = url.pathname.slice(1);
+			if (WATCH_ID.test(seg)) return seg;
+		}
+	} catch {
+		// A local path, which is a perfectly good source and simply is not a URL.
+	}
+	return null;
+}
+
+/**
+ * What makes two rows the same song.
+ *
+ * One song exists under many ids: the art track, the remaster, the extended mix, the release
+ * that names its featured artist in the title. This is what stops the radio offering something
+ * the room has already heard, so it deliberately reads a remix as the song it is a remix of -
+ * the question being answered is "have we played this", not "is this the same master".
+ *
+ * Duration is not part of it. Two listings of one recording routinely differ by a second or
+ * two, and any bucketing of that has an edge for them to fall either side of.
+ */
+/** Everything that is not a letter or a digit, so punctuation and case cannot split a match. */
+function condense(s: string): string {
+	return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** A dash clause that names a version rather than the act, which an upload title leads with. */
+const DASHED_VERSION =
+	/\s[-–]\s[^-–]*\b(?:remix|mix|edit|version|live|remaster(?:ed)?|acoustic|instrumental|slowed|sped)\b.*$/i;
+
+/**
+ * The song a title names, with any version it names stripped off.
+ *
+ * "The Days", "The Days (NOTION Remix)" and "The Days - NOTION Remix" are one song, and a
+ * radio seeded from any of them offers the other two first, because they are its nearest
+ * neighbours. Matching on this alone is deliberately blunt: two unrelated songs sharing a
+ * title costs one skipped suggestion, where a missed match costs the room the same song twice.
+ */
+export function titleKeyOf(title: string): string {
+	// Brackets come off first. A rip titled "CHRYSTAL - THE DAYS (NOTION REMIX)" otherwise
+	// reads as a title with a dashed version clause and loses everything after the act's name.
+	const unbracketed = title.replace(/[([{][^)\]}]*[)\]}]/g, ' ');
+	return condense(unbracketed.replace(DASHED_VERSION, '').replace(/\bfeat\.?\b.*$/i, ' '));
+}
+
+/**
+ * What makes two rows the same recording by the same act.
+ *
+ * The lead credit only: a remix is billed "Original & Remixer" while the track it remixes is
+ * billed "Original", so keeping the whole credit lets one song back into a set under a
+ * collaborator's name.
+ */
+export function signatureOf(artist: string, title: string): string {
+	const lead = artist.split(/\s*[&,]\s*|\s+x\s+/i)[0];
+	return `${condense(lead)}:${titleKeyOf(title)}`;
 }
 
 export function indexOfKey(state: QueueState, key: string | null): number {
@@ -92,6 +166,7 @@ function makeItem(input: NewItem, key: string, now: number): QueueItem {
 		message: '',
 		authored: input.authored ?? 'none',
 		addedBy: input.addedBy,
+		auto: input.auto,
 		addedAt: now
 	};
 }
@@ -112,6 +187,7 @@ export function addItems(
 	const added = inputs.map((input, i) => makeItem(input, keyFor(i), now));
 	const items = [...state.items, ...added];
 	return {
+		...state,
 		items,
 		currentKey: state.currentKey ?? added[0].key,
 		revision: state.revision + 1
@@ -130,16 +206,34 @@ export function removeItem(state: QueueState, key: string): QueueState {
 	const items = state.items.filter((i) => i.key !== key);
 	let currentKey = state.currentKey;
 	if (state.currentKey === key) currentKey = items[at]?.key ?? items[at - 1]?.key ?? null;
-	return { items, currentKey, revision: state.revision + 1 };
+	return { ...state, items, currentKey, revision: state.revision + 1 };
 }
 
 export function clearQueue(state: QueueState, keepCurrent: boolean): QueueState {
 	const current = keepCurrent ? currentItem(state) : null;
 	return {
+		...state,
 		items: current ? [current] : [],
 		currentKey: current?.key ?? null,
 		revision: state.revision + 1
 	};
+}
+
+/**
+ * Drop rows that have already played, keeping a recent tail.
+ *
+ * Not about disk: the audio stays in the cache either way. Every commit re-serialises the
+ * whole array and pushes it to every connected phone, several times per track, so a queue
+ * left running all night becomes a large payload on a small radio. Returns the same object
+ * when nothing is dropped, so the store's identity check can still short-circuit.
+ */
+export function pruneHistory(state: QueueState, keep: number): QueueState {
+	const at = indexOfKey(state, state.currentKey);
+	// Nothing has played yet, so nothing is history.
+	if (at === -1) return state;
+	const drop = at - Math.max(0, keep);
+	if (drop <= 0) return state;
+	return { ...state, items: state.items.slice(drop), revision: state.revision + 1 };
 }
 
 /** Move a row to an absolute index, clamped. Reordering never changes what is playing. */
@@ -203,19 +297,4 @@ export function canGuestRemove(state: QueueState, key: string, guest: string): b
 	if (!guest) return false;
 	const item = state.items.find((i) => i.key === key);
 	return item !== undefined && item.addedBy === guest && state.currentKey !== key;
-}
-
-/** Whether two snapshots of an item differ in anything a queue row draws. */
-export function sameItem(a: QueueItem, b: QueueItem): boolean {
-	return (
-		a.key === b.key &&
-		a.trackId === b.trackId &&
-		a.title === b.title &&
-		a.uploader === b.uploader &&
-		a.thumbnail === b.thumbnail &&
-		a.duration === b.duration &&
-		a.status === b.status &&
-		a.message === b.message &&
-		a.authored === b.authored
-	);
 }

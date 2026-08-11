@@ -201,6 +201,14 @@ export interface IngestOptions {
 	 * disagreed with.
 	 */
 	metricalLevel?: number;
+	/**
+	 * Cover art, when the caller knows it better than the rip does.
+	 *
+	 * yt-dlp reports a video still, and for an art track that is the square sleeve pillarboxed
+	 * into 16:9 on a flat fill - nearly half the image is a colour the record does not contain,
+	 * which both muddies the blurred backdrop and drags `artHue` toward the fill.
+	 */
+	artwork?: string;
 	onProgress?: (stage: string) => void;
 }
 
@@ -225,7 +233,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			id,
 			title,
 			uploader: probed.uploader,
-			thumbnail: probed.thumbnail,
+			thumbnail: opts.artwork || probed.thumbnail,
 			webpageUrl: probed.webpageUrl,
 			source,
 			duration: probed.duration
@@ -253,11 +261,13 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		meta = { id, title, uploader: 'Local file', thumbnail: '', webpageUrl: '', source };
 	}
 
-	// Read from the previous meta rather than re-fetched: the image has not changed and the
-	// network is the slowest thing in this function.
+	// Read from the previous meta rather than re-fetched: the network is the slowest thing in
+	// this function. A different image is a different hue, though, so a track re-ingested with
+	// better art than it was first stored with has to measure again.
 	const previous = await readMeta(id);
+	const sameArt = previous?.thumbnail === meta.thumbnail;
 	meta.artHue =
-		previous?.artHue !== undefined
+		sameArt && previous?.artHue !== undefined
 			? previous.artHue
 			: ((await artworkHue(meta.thumbnail)).hue ?? null);
 	meta.duration ??= previous?.duration;

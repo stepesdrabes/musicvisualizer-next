@@ -47,8 +47,16 @@ export class QueueClient {
 		});
 	}
 
-	add(items: NewItem[]): Promise<Response> {
-		return this.post({ action: 'add', items });
+	/**
+	 * Returns the state the server built for this call, whose last rows are the ones just
+	 * added. Reading them off the live queue instead would be a guess: it is fed by the stream,
+	 * and anyone else - a phone in the room, the radio topping the queue up - may have appended
+	 * between the POST and its reply.
+	 */
+	async add(items: NewItem[]): Promise<QueueState | null> {
+		const res = await this.post({ action: 'add', items });
+		if (!res.ok) return null;
+		return (await res.json()) as QueueState;
 	}
 
 	remove(key: string): Promise<Response> {

@@ -2,11 +2,13 @@ import type { Authored, LibraryEntry, SearchResult } from '$lib/types.ts';
 
 export interface Candidate {
 	/** Where it came from, which decides the badge and whether picking it costs a download. */
-	origin: 'library' | 'youtube' | 'link';
+	origin: 'library' | 'song' | 'radio' | 'link';
 	id: string;
 	source: string;
 	title: string;
-	uploader: string;
+	artist: string;
+	/** Only worth drawing when it is not just the title again, which a single's is. */
+	album: string | null;
 	thumbnail: string;
 	duration: number;
 	authored: Authored;
@@ -40,7 +42,8 @@ export function asDirectLink(query: string): Candidate | null {
 		id: id || q,
 		source: q,
 		title: q,
-		uploader: '',
+		artist: '',
+		album: null,
 		thumbnail: id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : '',
 		duration: 0,
 		authored: 'none'
@@ -53,20 +56,29 @@ export function libraryToCandidate(entry: LibraryEntry): Candidate {
 		id: entry.id,
 		source: entry.webpageUrl || entry.source,
 		title: entry.title,
-		uploader: entry.uploader,
+		// Tracks ingested from YouTube Music carry the act here; older ones carry the channel
+		// that uploaded them, which is the best the rip ever knew.
+		artist: entry.uploader,
+		album: null,
 		thumbnail: entry.thumbnail,
 		duration: entry.duration ?? 0,
 		authored: entry.authored
 	};
 }
 
+/** The same row, offered because of what is queued rather than because it was searched for. */
+export function suggestionToCandidate(result: SearchResult): Candidate {
+	return { ...resultToCandidate(result), origin: 'radio' };
+}
+
 export function resultToCandidate(result: SearchResult): Candidate {
 	return {
-		origin: 'youtube',
+		origin: 'song',
 		id: result.id,
 		source: result.webpageUrl,
 		title: result.title,
-		uploader: result.uploader,
+		artist: result.artist,
+		album: result.album,
 		thumbnail: result.thumbnail,
 		duration: result.duration,
 		authored: 'none'

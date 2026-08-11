@@ -63,7 +63,7 @@
 
 	<button class="search" aria-label="Search" onclick={() => onsearch('')} {onkeydown}>
 		<Icon name="search" size={15} />
-		<span>Search YouTube, or paste a link</span>
+		<span>Search for a song, or paste a link</span>
 		<kbd>⌘K</kbd>
 	</button>
 

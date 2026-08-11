@@ -5,6 +5,7 @@
 		filterLibrary,
 		libraryToCandidate,
 		resultToCandidate,
+		suggestionToCandidate,
 		type Candidate
 	} from '$lib/search.svelte.ts';
 	import { clock } from '$lib/format.ts';
@@ -17,11 +18,13 @@
 		open = $bindable(false),
 		query = $bindable(''),
 		library = [],
+		suggestions = [],
 		onpick
 	}: {
 		open?: boolean;
 		query?: string;
 		library?: LibraryEntry[];
+		suggestions?: SearchResult[];
 		onpick: (candidate: Candidate, how: 'queue' | 'now' | 'next') => void;
 	} = $props();
 
@@ -34,15 +37,26 @@
 
 	const link = $derived(asDirectLink(query));
 	const libraryHits = $derived(link ? [] : filterLibrary(library, query));
+	/** Nothing has been typed yet, so the palette is somewhere to browse rather than to search. */
+	const idle = $derived(!link && query.trim().length < 2);
 	const candidates = $derived<Candidate[]>([
 		...(link ? [link] : []),
 		...libraryHits.map(libraryToCandidate),
-		...results.map(resultToCandidate)
+		...results.map(resultToCandidate),
+		...(idle ? suggestions.map(suggestionToCandidate) : [])
 	]);
 
-	// The first YouTube row, so the group heading can be drawn in the flat list.
-	const firstYoutube = $derived(candidates.findIndex((c) => c.origin === 'youtube'));
+	// The first row of each group, so the heading can be drawn in the flat list.
+	const firstSong = $derived(candidates.findIndex((c) => c.origin === 'song'));
 	const firstLibrary = $derived(candidates.findIndex((c) => c.origin === 'library'));
+	const firstRadio = $derived(candidates.findIndex((c) => c.origin === 'radio'));
+
+	function subtitleFor(c: Candidate): string {
+		if (c.origin === 'link') return c.source;
+		// A single's album is its own title, and printing both says the same thing twice.
+		if (c.album && c.album !== c.title) return `${c.artist} · ${c.album}`;
+		return c.artist;
+	}
 
 	$effect(() => {
 		if (open) input?.focus();
@@ -132,7 +146,7 @@
 			bind:this={input}
 			bind:value={query}
 			type="text"
-			placeholder="Search YouTube, or paste a link"
+			placeholder="Search for a song, or paste a link"
 			autocomplete="off"
 			spellcheck="false"
 			{onkeydown} />
@@ -148,8 +162,11 @@
 			{#if i === firstLibrary && firstLibrary !== -1}
 				<p class="group">In your library</p>
 			{/if}
-			{#if i === firstYoutube && firstYoutube !== -1}
-				<p class="group">YouTube</p>
+			{#if i === firstSong && firstSong !== -1}
+				<p class="group">Songs</p>
+			{/if}
+			{#if i === firstRadio && firstRadio !== -1}
+				<p class="group">More like what is queued</p>
 			{/if}
 
 			<button
@@ -169,9 +186,7 @@
 					<span class="title truncate">
 						{candidate.origin === 'link' ? 'Load this link' : candidate.title}
 					</span>
-					<span class="sub truncate muted">
-						{candidate.origin === 'link' ? candidate.source : candidate.uploader}
-					</span>
+					<span class="sub truncate muted">{subtitleFor(candidate)}</span>
 				</span>
 
 				{#if candidate.authored === 'claude'}
@@ -190,7 +205,7 @@
 
 		{#if candidates.length === 0 && !searching}
 			<p class="notice muted">
-				{query.trim().length < 2 ? 'Type to search YouTube.' : 'Nothing found.'}
+				{idle ? 'Type to search.' : 'Nothing found.'}
 			</p>
 		{/if}
 	</div>

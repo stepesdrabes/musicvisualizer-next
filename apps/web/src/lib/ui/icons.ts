@@ -20,6 +20,7 @@ import PanelRight from 'lucide-svelte/icons/panel-right';
 import Pause from 'lucide-svelte/icons/pause';
 import Play from 'lucide-svelte/icons/play';
 import Plus from 'lucide-svelte/icons/plus';
+import QrCode from 'lucide-svelte/icons/qr-code';
 import Radio from 'lucide-svelte/icons/radio';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 import Search from 'lucide-svelte/icons/search';
@@ -51,6 +52,7 @@ export const GLYPHS = {
 	play: Play,
 	playNext: ListPlus,
 	plus: Plus,
+	qr: QrCode,
 	radio: Radio,
 	retry: RotateCcw,
 	search: Search,
