@@ -22,8 +22,12 @@
 		queued?: number;
 	} = $props();
 
-	/** The renderer's own ceiling, so this cannot drift from the shader it feeds. */
-	const MAX_BLOOM = 5;
+	/**
+	 * Down from 5. At full bloom every lit pixel wore a halo wider than the strip, which
+	 * reads as a music visualiser rather than as a room; at this level a bright cue still
+	 * blooms and a dim one is honestly dim, which is what judging a show in here needs.
+	 */
+	const MAX_BLOOM = 3.2;
 
 	let renderer: RoomRenderer | null = $state(null);
 	let view = $state<CameraView>('orbit');

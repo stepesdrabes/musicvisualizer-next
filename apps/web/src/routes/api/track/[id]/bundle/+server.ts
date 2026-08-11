@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { readFile } from 'node:fs/promises';
-import { analysisPath, isValidId, readMeta, showPath } from '@mv/analysis';
+import { analysisPath, isValidId, readContext, readMeta, showPath } from '@mv/analysis';
 import type { Show, TrackAnalysis } from '@mv/core';
 import type { RequestHandler } from './$types';
 
@@ -30,5 +30,10 @@ export const GET: RequestHandler = async ({ params }) => {
 		// No show for this track yet.
 	}
 
-	return json({ analysis, show, meta: await readMeta(params.id) });
+	return json({
+		analysis,
+		show,
+		meta: await readMeta(params.id),
+		context: await readContext(params.id)
+	});
 };

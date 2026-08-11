@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
@@ -44,6 +44,7 @@
 	});
 
 	let analysis = $state<TrackAnalysis | null>(null);
+	let context = $state<TrackContext | null>(null);
 	let show = $state<Show | null>(null);
 	let meta = $state<TrackMeta | null>(null);
 	let trackId = $state<string | null>(null);
@@ -247,6 +248,7 @@
 		steps = [];
 		show = null;
 		analysis = null;
+		context = null;
 		viz.clearShow();
 		setPhase('analysing', 'Loading');
 
@@ -262,12 +264,14 @@
 				analysis: TrackAnalysis;
 				show: Show | null;
 				meta: TrackMeta | null;
+				context: TrackContext | null;
 			};
 
 			await viz.loadAudio(await audioRes.arrayBuffer());
 			trackId = id;
 			analysis = bundle.analysis;
 			meta = bundle.meta;
+			context = bundle.context;
 
 			if (bundle.show) {
 				show = bundle.show;
@@ -623,6 +627,7 @@
 		{#if rightOpen}
 			<Inspector
 				{analysis}
+				{context}
 				{show}
 				{readout}
 				{log}

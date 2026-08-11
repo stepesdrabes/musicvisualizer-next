@@ -1,9 +1,10 @@
 import { error, json } from '@sveltejs/kit';
 import { readFile, writeFile } from 'node:fs/promises';
 import { BUILT_IN_EFFECTS } from '@mv/core';
-import { ingest, showPath } from '@mv/analysis';
+import { showPath } from '@mv/analysis';
 import { composeShow, lintShow } from '@mv/author-engine';
 import type { Show } from '@mv/core';
+import { ingestDetached } from '$lib/server/ingestDetached.ts';
 import type { RequestHandler } from './$types';
 
 /**
@@ -25,7 +26,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const result = await ingest(source.trim(), { metricalLevel });
+		const result = await ingestDetached(source.trim(), { metricalLevel });
 
 		// A corrected grid is a different show: every cue is addressed by bar and the bars have
 		// moved, so keeping the old one would leave the whole night pointing at the wrong music.
@@ -40,10 +41,14 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 
 		if (!show) {
-			show = composeShow(result.analysis, { artHue: result.meta.artHue });
+			show = composeShow(result.analysis, {
+				artHue: result.meta.artHue,
+				context: result.context
+			});
 			const verdict = lintShow(show, {
 				analysis: result.analysis,
-				effects: new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]))
+				effects: new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e])),
+				context: result.context
 			});
 			// A show the linter rejects would be rejected on load too; better to say so here.
 			if (!verdict.ok) show = null;

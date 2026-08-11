@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { readFile, writeFile } from 'node:fs/promises';
 import { BUILT_IN_EFFECTS, type Show, type TrackAnalysis } from '@mv/core';
-import { analysisPath, isValidId, readMeta, showPath } from '@mv/analysis';
+import { analysisPath, isValidId, readContext, readMeta, showPath } from '@mv/analysis';
 import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
 import { isLocal } from '$lib/server/access.ts';
 import type { RequestHandler } from './$types';
@@ -70,13 +70,15 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const artHue = (await readMeta(id))?.artHue;
+	const context = await readContext(id);
 	const show = composeShow(analysis, {
 		artHue,
+		context,
 		seed: current?.seed ? nextSeed(current.seed) : undefined
 	});
 
 	const effects = new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
-	const verdict = lintShow(show, { analysis, effects });
+	const verdict = lintShow(show, { analysis, effects, context });
 	if (!verdict.ok) error(500, `the composed show does not lint clean:\n${formatFindings(verdict)}`);
 
 	await writeFile(showPath(id), JSON.stringify(show, null, '\t'));

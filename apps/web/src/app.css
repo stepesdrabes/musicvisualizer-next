@@ -40,10 +40,12 @@
 
 	--sec-intro: #5b6b93;
 	--sec-groove: #35a37a;
+	--sec-verse: #3d9a8b;
 	--sec-breakdown: #7d5aa0;
 	--sec-build: #cf8a2a;
 	--sec-void: #3f3f47;
 	--sec-drop: #d9435c;
+	--sec-chorus: #d96a43;
 	--sec-outro: #4a5b70;
 
 	--mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;

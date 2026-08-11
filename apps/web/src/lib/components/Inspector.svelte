@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import type { AuthorBackend, Settings, Step } from '$lib/types.ts';
 	import { titleCase } from '$lib/format.ts';
@@ -15,6 +15,7 @@
 
 	let {
 		analysis,
+		context = null,
 		show,
 		readout,
 		log,
@@ -32,6 +33,7 @@
 		rerolling = false
 	}: {
 		analysis: TrackAnalysis | null;
+		context?: TrackContext | null;
 		show: Show | null;
 		readout: Readout;
 		log: string[];
@@ -172,6 +174,23 @@
 			{#if analysis}
 				<Section title="Track">
 					<dl>
+						{#if context?.artist && context?.title}
+							<dt>Resolved</dt>
+							<dd>
+								{context.artist} <span class="sep">·</span> {context.title}
+							</dd>
+						{/if}
+						{#if context?.genreFamily}
+							<dt>Lit as</dt>
+							<dd>
+								{context.genreFamily}
+								{#if context.lyrics}
+									<span class="sep">·</span> {context.lyrics.length} synced lines
+								{:else if context.instrumental}
+									<span class="sep">·</span> instrumental
+								{/if}
+							</dd>
+						{/if}
 						<dt>Tempo</dt>
 						<dd>
 							<span class="mono">{analysis.tempo.bpm}</span> bpm

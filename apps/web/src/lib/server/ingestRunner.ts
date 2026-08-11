@@ -1,8 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { BUILT_IN_EFFECTS, type Show } from '@mv/core';
-import { ingest, showPath } from '@mv/analysis';
+import { showPath } from '@mv/analysis';
 import { composeShow, lintShow } from '@mv/author-engine';
 import { currentItem, nextItem, type ItemStatus, type QueueItem } from '$lib/queueModel.ts';
+import { ingestDetached } from './ingestDetached.ts';
 import { queue } from './queueStore.ts';
 
 /**
@@ -37,7 +38,7 @@ const LABELS: Record<string, string> = {
  * left alone because it may be one Claude has already revised.
  */
 async function prepare(item: QueueItem, onStage: (stage: string) => void) {
-	const result = await ingest(item.source, { onProgress: onStage });
+	const result = await ingestDetached(item.source, { onProgress: onStage });
 
 	let show: Show | null = null;
 	try {
@@ -49,10 +50,14 @@ async function prepare(item: QueueItem, onStage: (stage: string) => void) {
 
 	if (!show) {
 		onStage('composing');
-		const composed = composeShow(result.analysis, { artHue: result.meta.artHue });
+		const composed = composeShow(result.analysis, {
+			artHue: result.meta.artHue,
+			context: result.context
+		});
 		const verdict = lintShow(composed, {
 			analysis: result.analysis,
-			effects: new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]))
+			effects: new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e])),
+			context: result.context
 		});
 		// A show the linter rejects would be rejected on load too; better to say so here.
 		if (verdict.ok) {

@@ -8,7 +8,7 @@ import {
 	type Show,
 	type TrackAnalysis
 } from '@mv/core';
-import { analysisPath, findAudioFile, isValidId, readMeta, showPath } from '@mv/analysis';
+import { analysisPath, findAudioFile, isValidId, readContext, readMeta, showPath } from '@mv/analysis';
 import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
 import { reviseShow, type AuthorEvent, type BackendId } from '@mv/author-ai';
 import { isLocal } from '$lib/server/access.ts';
@@ -42,6 +42,7 @@ export const GET: RequestHandler = async (event) => {
 
 	const audioPath = (await findAudioFile(id)) ?? undefined;
 	const artHue = (await readMeta(id))?.artHue;
+	const context = await readContext(id);
 	const geometry = buildGeometry(DEFAULT_ROOM);
 
 	// The engine's show is the starting point. Handing the agent a draft that already covers
@@ -50,9 +51,12 @@ export const GET: RequestHandler = async (event) => {
 	let draft: Show;
 	try {
 		const existing = JSON.parse(await readFile(showPath(id), 'utf8')) as Show;
-		draft = existing.analysisHash === analysis.hash ? existing : composeShow(analysis, { artHue });
+		draft =
+			existing.analysisHash === analysis.hash
+				? existing
+				: composeShow(analysis, { artHue, context });
 	} catch {
-		draft = composeShow(analysis, { artHue });
+		draft = composeShow(analysis, { artHue, context });
 	}
 	const encoder = new TextEncoder();
 
@@ -82,6 +86,7 @@ export const GET: RequestHandler = async (event) => {
 				const result = await reviseShow(grid, geometry, draft, {
 					provider: chosen.provider,
 					audioPath,
+					context,
 					onAnalysis: (next) => (grid = next),
 					onEvent: (e) => send('event', e)
 				});
@@ -99,7 +104,7 @@ export const GET: RequestHandler = async (event) => {
 					else rejected.push(`${gen.id} rejected: ${compiled.failures.join('; ')}`);
 				}
 
-				const verdict = lintShow(result.show, { analysis: grid, effects });
+				const verdict = lintShow(result.show, { analysis: grid, effects, context });
 				if (!verdict.ok) {
 					send('failed', `the authored show does not lint clean:\n${formatFindings(verdict)}`);
 					controller.close();
