@@ -1,14 +1,17 @@
 # Firmware
 
-A Raspberry Pi Pico W that receives the DDP stream from `packages/transport-ddp` and reports
-what actually arrived. Source is in `firmware/`.
+A Raspberry Pi Pico W that receives the DDP stream from `packages/transport-ddp`, lights what
+it has, and reports what actually arrived. Source is in `firmware/`.
 
-This is the measurement build, not the product. It joins WiFi, listens on port 4048,
-reassembles frames, and once a second says how many packets and frames it got, how far apart
-they were, and what went missing. **It does not drive the strips.** What it does instead is
-summarise each frame onto one RGB LED (`src/leds.rs`), which is enough to watch a show arrive
-before there are any strips to watch it on, and cheap enough not to confound the numbers the
-way the 30 us per LED of the strips would.
+**It does not drive the strips yet.** It joins WiFi, listens on port 4048, reassembles frames,
+and once a second says how many packets and frames it got, how far apart they were, and what
+went missing. Then it reduces each frame to one colour and one brightness (`src/summary.rs`) and
+lights a salvaged analog RGBW lamp with it (`src/lamp.rs`), which costs a couple of hundred
+microseconds against the 30 us per LED the strips will want.
+
+The lamp is a one-pixel fixture: every LED on its strip shows the same thing, so it carries
+colour, level and timing and nothing a show says by moving light across a room. That is the
+ceiling on what this build can tell you, and it is why the strips are still on the list.
 
 ## What it measured
 
@@ -93,50 +96,11 @@ room-node on 192.168.1.57, DDP :4048, stats -> :4049
 Put that address into the board panel in the app, top right. A DHCP reservation is worth
 setting up, since the hostname offered is `room-node` and nothing else advertises it.
 
-## The monitor LED
+## What the lamp shows
 
-Two common-cathode RGB LEDs, which are the whole 1320-pixel fixture reduced to a point. They
-are the answer to a real gap in this build: `fps 60.0 seqgap 0` says the bytes arrived, and says
-nothing about whether they are a show.
-
-```
-                             resistor
-  LED 1   GP18  physical 24  --[ 330 ]--  R
-          GP19  physical 25  --[ 100 ]--  G
-          GP20  physical 26  --[ 100 ]--  B
-          GND   physical 23  -----------  -
-
-  LED 2   GP26  physical 31  --[ 330 ]--  R
-          GP27  physical 32  --[ 100 ]--  G
-          GP28  physical 34  --[ 100 ]--  B
-          GND   physical 38  -----------  -
-```
-
-Each LED takes one PWM slice for red and green on channels A and B, plus channel A of a second
-slice for blue. Nothing there is contended: cyw43 holds PIO0 SM0, DMA_CH0 and GPIO 23, 24, 25
-and 29, and wants no PWM at all. **Both LEDs always show the same colour**, and a second LED
-that is not fitted costs nothing but two idle slices, so one is a valid setup too.
-
-Two rather than one because of what limits this thing. Brightness is total flux; glare is flux
-per unit of solid angle. Driving one LED harder raises both, and past a few milliamps the second
-one wins: the die stops reading as a colour and starts reading as white, taking the top of the
-range with it. A second emitter at the same current is twice the light and no more glare. Spread
-them apart, or sit them behind one diffuser, and it is a straight gain. `MAX_DUTY` is the lever
-that trades the two against each other; this is the one that does not.
-
-The resistors are unequal because the supply is: red drops 1.3 V across its own where green and
-blue have barely 0.2 V to give, so at equal resistance the red swamps them. If green or blue read
-weak, drop to 68 ohm before touching `TRIM` in `leds.rs`; if red dominates, `TRIM` is the cheaper
-fix, and it applies to both LEDs. **Never wire an LED without resistors** - at 3.3 V the red
-junction has nothing limiting it but the pad.
-
-**On every boot it plays red, green, blue, half a second each**, before the radio comes up. Which
-leg of an RGB LED is which is not something the firmware can discover, and a swapped pair looks
-exactly like the show being wrong - the right light, at the wrong time, in the wrong colour. If
-the order that lights is not red, green, blue, the wiring is the fault and nothing further up is
-worth reading.
-
-What it shows once frames arrive:
+Two numbers, computed once per frame in `summary.rs`. That reduction sits apart from the fixture
+lighting it, because what a frame looked like is one question and how a particular fixture says
+so is another:
 
 - **Colour** is the frame's mean, per channel, divided by whichever channel is largest. Dark
   pixels contribute nothing to a sum, so that is already weighted toward the lit part of the
@@ -150,12 +114,12 @@ scale, holds a house floor under every cue and compresses its own highlights, so
 the wire is already the level the room is meant to sit at. A second gain here can only measure
 the show against itself, and normalising against the loudest frame of the last half minute
 leaves every other frame below it by construction - a room that reads bright on screen and dim
-on the LED. That is the invariant worth keeping: the host owns exposure, the same way it owns
+on the wall. That is the invariant worth keeping: the host owns exposure, the same way it owns
 gamma.
 
 A percentile rather than a mean because **a room is not as bright as its average**. Half the
 fixture lit at full reads as a bright room; averaging over the dark half calls it half lit,
-which is the one error a single LED standing in for 1320 cannot afford. Measured through the
+which is the one error a single emitter standing in for 1320 cannot afford. Measured through the
 same mixer that feeds the wire, per section:
 
 | section | perceived brightness |
@@ -166,25 +130,100 @@ same mixer that feeds the wire, per section:
 | outro / breakdown / intro | 0.28 to 0.34 |
 | void | 0.00 |
 
-Median 0.70 across a whole track, dark 2% of the time. The arrangement is legible on one LED,
-which is what it is for.
-
-One constant scales all of that: `MAX_DUTY` in `leds.rs`, the duty a full-scale room gets. The
-room and this LED are not the same instrument. A wall of 1320 diffused pixels seen from across a
-room is a wash; a 5 mm die seen from a desk is a point source, and past a few milliamps it stops
-reading as a colour and starts reading as glare - white, whatever it is emitting, because the
-cones under that small an angle saturate. That takes the top of the range away and flattens
-everything below it into one bright smear. Raise it if the LED is dim, lower it if bright
-sections stop being distinguishable. **A diffuser over the dome buys more than any value here
-does**, because it is the angular size causing the glare: a water-clear LED shows three separate
-dies that bloom together into white, where a frosted one mixes them.
+Median 0.70 across a whole track, dark 2% of the time. The arrangement is legible on one
+emitter, which is what this is for.
 
 None of this is DSP the board invented. It is arithmetic on the bytes the strips would have
 got, so a wrong colour or a pulse on the offbeat is a wrong colour or a pulse on the offbeat.
 
-A single LED cannot show light moving across a room, so everything a show says at constant flux
-is lost on it. That is the ceiling on what this can tell you, and it is why the strips are still
-the next thing on the list.
+**A frame lighting less than a tenth of the room reads as a level of exactly zero.** The 90th
+percentile needs 132 of 1320 pixels lit before it can report anything at all, so an effect
+lighting a narrow band or a sparse scatter falls off that cliff rather than reading as a dim
+room, and one hovering near a tenth of the room crosses it repeatedly. It is the reason a sparse
+effect can look darker on the lamp than it does on screen, and a source of blinking that is in
+the reduction rather than in the show. The fix, if it matters, is a higher percentile, and it
+costs the measured table above.
+
+## The lamp
+
+An RGB lamp taken apart for its strip and its driver board, which is a generic `UL NR:E330731`
+analog RGBW controller: 12 V common anode, four low-side MOSFETs, an unmarked SOIC-8 doing the
+PWM, and a 38 kHz receiver for the remote it came with.
+
+The board is kept and the brain is not. Its eight legs are snipped, the body lifted off, and the
+Pico drives the four gate stubs directly. That works because `U2` is a `7533-1`, a 3.3 V
+regulator, so the original chip had been driving those gates at 3.3 V for the lamp's whole life
+and a Pico pin is an exact replacement. **No level shifter is needed here**, unlike the WS2815
+line below. Which stub is which channel is found by touching 3.3 V through a 1k resistor to each
+of the eight and watching what lights; the four that do nothing are Vdd, ground, the IR input
+and a spare.
+
+```
+  GP6  physical  9  ->  R gate stub      the four pads the SOIC-8 used to drive
+  GP7  physical 10  ->  G gate stub
+  GP8  physical 11  ->  B gate stub
+  GP9  physical 12  ->  W gate stub
+  GND  physical 13  ->  GND-             the only wire that is not a gate
+
+  12 V supply       ->  10V+ and GND-    despite the silkscreen; the board passes
+  strip             ->  the 5-pin header  its input straight through to the strip
+```
+
+Ground is the only thing the two share. The Pico runs off USB, the board keeps its own supply,
+and the strip stays on the five-pin header it came on. **The strip's current never touches that
+ground jumper**: it runs from the supply through the strip, out through a MOSFET into the
+board's ground plane and back, so the jumper only ever carries the microamps it takes to charge
+four gates. Make it a solid connection anyway, because it is the Pico's entire voltage reference
+and gates float if it lifts while both ends are powered.
+
+A 12 V to 5 V buck into VSYS is the one-cable version, once the serial console stops being
+worth a USB lead. **Do not tap `U2` for it** - it is a linear dropping 8.7 V, and the Pico W
+near its 100 mA rating is 0.87 W in a SOT-89.
+
+PWM slices 3 and 4, which nothing else wants: cyw43 holds PIO0 SM0, DMA_CH0 and GPIO 23, 24, 25
+and 29, and wants no PWM at all. **On every boot it plays red, green, blue, then R+G+B, then W**,
+half a second each, before the radio comes up. The first three answer a question the firmware
+cannot - which gate is which channel - and the fix for a wrong order is moving a wire rather than
+editing a constant. The last two are the trim measurement below, adjacent so the eye can compare
+them, at raw duty with no trim applied so a badly wrong trim cannot hide a wiring fault.
+
+Two things about the gates. RP2040 pads reset to input with the pull-down enabled, so the lamp
+is dark through BOOTSEL and a reflash - but that is the Pico's doing and not the lamp's, so
+**check for a pull-down from each gate to ground and fit 10k where there is none**, or the day a
+wire falls off is the day the lamp decides for itself. And each gate carries an RC slew limiter;
+if low duty cycles read non-linear or the lamp will not go fully dark, that is the suspect, and
+the PWM frequency comes down rather than `TRIM`.
+
+**White is added, not subtracted.** The textbook RGBW conversion moves the achromatic part of a
+colour out of RGB and into W. It is more efficient, and it is only correct when the white
+emitter shares a white point with the RGB mix. A warm phosphor against a mix near 6000 K does
+not, so subtracting would tint every mid-saturation colour toward the lamp's own white. Adding
+cannot: a saturated frame has no achromatic part to add, so hue survives untouched and only the
+washed out frames reach for the extra emitters.
+
+**White still has to be trimmed hard**, because adding it fairly is not the same as adding it at
+equal duty. This strip carries two phosphor emitters to every RGB package and each is brighter
+than a single die, so the white channel outruns the other three several times over. At unity it
+swamps every desaturated colour and the lamp reads as a warm bulb rather than as the room.
+`TRIM[3]` in `lamp.rs` ships at 64 of 256, a quarter, which is a starting point rather than a
+measurement.
+
+The measurement is the last two selftest steps: full R+G+B, then full W, the white the colour
+dies make against the white the phosphor emitters make, both at raw duty. Set `TRIM[3]` near the
+ratio between them and **err low**. Too little white costs a washed out frame some punch; too
+much destroys the hue of every pastel in the show, and that is the failure that is hard to see
+as a cause because it looks like the palette being wrong rather than the fixture being wrong.
+
+That channel is also where the current limit lives. Additive white lights all four channels at
+once, which is the most this strip can ever draw. **Measure the current on a full white frame
+against what the supply is rated for**, and if it is over, pull white down rather than the other
+three: white only carries how washed out a frame is, where the other three carry its colour.
+
+`MAX_DUTY` in `lamp.rs` is full scale, because nothing about this fixture argues for less. A
+small emitter at desk distance has to be held well under its maximum, since past a few
+milliamps it stops reading as a colour and starts reading as glare; a diffused strip seen across
+a room is a wash, and its ceiling is its own maximum. Pull it down if the strip is uncomfortable
+out of the housing it came from.
 
 ## Answering "are you there"
 
@@ -194,7 +233,7 @@ So the board also answers a query, on the DDP port, at any time:
 
 ```
 -> ?room-node
-<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds monitor
+<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds lamp
 ```
 
 The reply goes back to the asker's own source port, so nothing has to be listening on 4049 for
@@ -202,9 +241,11 @@ this to work. A leading `?` is `0x3f`, and DDP version 1 puts `0b01` in the top 
 first byte, so `hello.rs` and `ddp.rs` can never both claim a datagram; the query is checked
 first and never counts against `bad`.
 
-`leds` is read from `leds.rs` rather than written in `hello.rs`, so it changes with the output
-and not with a string somebody remembered to update. `stub` and `monitor` both leave the walls
-dark, and the app warns on both; only `ws2815` will mean the room is lit.
+`leds` lists one kind per output, `+`-separated, each read from its own module rather than
+written in `hello.rs`, so it changes with the outputs and not with a string somebody remembered
+to update. `stub` and `monitor` leave the room dark and the app warns on both; `lamp` and
+eventually `ws2815` mean it is lit. The host asks whether **any** kind in that list emits rather
+than looking at the first, so a build that adds a second output cannot go quietly dark.
 
 ## Reading the stats line
 
@@ -223,7 +264,7 @@ up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  
 | `gap` | shortest and longest PUSH to PUSH interval. The max is the jitter that matters |
 | `late` | frames arriving more than 20 / 50 / 100 ms after the one before |
 | `asm` | worst first-packet to PUSH span, so how long a frame took to arrive in pieces |
-| `led` | worst frame summarised onto the monitor LED. Every other field here measures the network; this is the only part of the 16.7 ms the board spends itself, so it is what says whether they still do |
+| `led` | worst frame summarised and pushed to every output. Every other field here measures the network; this is the only part of the 16.7 ms the board spends itself, so it is what says whether they still do |
 | `seqgap` | DDP sequence steps that were not +1 |
 | `bad` | datagrams rejected by the parser |
 | `oob` | writes past the end of the buffer, meaning the host drives more pixels than this build holds |
@@ -263,12 +304,14 @@ to show `PowerSave` beating `None` before repeat runs showed it was drift.
 ## How it is put together
 
 ```
-main.rs    bringup, then one loop selecting between a packet and the 1 Hz report
-ddp.rs     header parser, no Embassy imports
-frame.rs   the framebuffer, PUSH latch and tear detection
-stats.rs   interval counters and the one line they format into
-leds.rs    the frame reduced to one RGB LED, on PWM
-config.rs  compile-time knobs
+main.rs     bringup, then one loop selecting between a packet and the 1 Hz report
+ddp.rs      header parser, no Embassy imports
+frame.rs    the framebuffer, PUSH latch and tear detection
+stats.rs    interval counters and the one line they format into
+summary.rs  the frame reduced to one colour and one brightness
+lamp.rs     that summary on an analog RGBW strip, on PWM
+hello.rs    the discovery answer
+config.rs   compile-time knobs
 ```
 
 The receive loop is `recv_from -> parse -> apply -> on PUSH, present and score`. Everything runs
@@ -283,12 +326,12 @@ The host owns gamma. `quantize()` in `packages/core/src/output.ts` encodes at 2.
 the wire, so these bytes reach the strips untouched.
 
 Resource split, fixed by cyw43 taking the first of everything: it holds **PIO0 SM0, DMA_CH0** and
-GPIO 23, 24, 25 and 29. That leaves PIO1 entirely free for LED output, and the monitor LED takes
-only PWM slices 1 and 2, which nothing else here wants. The onboard LED is on the CYW43 chip
+GPIO 23, 24, 25 and 29, and wants no PWM at all. That leaves PIO1 entirely free for the strips,
+and of the eight PWM slices the lamp holds only 3 and 4. The onboard LED is on the CYW43 chip
 rather than a GPIO, so it still cannot indicate anything before WiFi is up: solid means the join
 has not landed, blinking means it has.
 
-Current cost: **343 KiB of 2 MB flash** (235 KiB of that is the three cyw43 blobs) and **37 KiB
+Current cost: **344 KiB of 2 MB flash** (235 KiB of that is the three cyw43 blobs) and **38 KiB
 of 264 KiB RAM**.
 
 ## What is left

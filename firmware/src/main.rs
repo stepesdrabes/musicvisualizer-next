@@ -5,8 +5,9 @@ mod config;
 mod ddp;
 mod frame;
 mod hello;
-mod leds;
+mod lamp;
 mod stats;
+mod summary;
 
 use cyw43::{JoinOptions, PowerManagementMode, aligned_bytes};
 use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
@@ -26,7 +27,7 @@ use static_cell::StaticCell;
 
 use crate::config::{DDP_PORT, HOSTNAME, STATS_PORT, WIFI_PASSWORD, WIFI_SSID};
 use crate::frame::Frame;
-use crate::leds::LedOutput;
+use crate::lamp::Lamp;
 use crate::stats::Stats;
 
 // A panic reboots and reprints the banner, which is what tells it apart from a WiFi drop. cyw43
@@ -76,19 +77,8 @@ async fn main(spawner: Spawner) {
 
 	// Before the radio, so the wiring check is the first thing the board does and a join that
 	// never lands cannot hide it.
-	let mut leds = LedOutput::new(
-		p.PWM_SLICE1,
-		p.PIN_18,
-		p.PIN_19,
-		p.PWM_SLICE2,
-		p.PIN_20,
-		p.PWM_SLICE5,
-		p.PIN_26,
-		p.PIN_27,
-		p.PWM_SLICE6,
-		p.PIN_28,
-	);
-	leds.selftest().await;
+	let mut lamp = Lamp::new(p.PWM_SLICE3, p.PIN_6, p.PIN_7, p.PWM_SLICE4, p.PIN_8, p.PIN_9);
+	lamp.selftest().await;
 
 	let fw = aligned_bytes!("../cyw43-firmware/43439A0.bin");
 	let clm = aligned_bytes!("../cyw43-firmware/43439A0_clm.bin");
@@ -209,7 +199,7 @@ async fn main(spawner: Spawner) {
 
 				if p.push {
 					let presented = Instant::now();
-					leds.present(frame.pixels()).await;
+					lamp.present(&summary::of(frame.pixels()));
 					let led = (Instant::now() - presented).as_micros() as u32;
 					if !frame.close() {
 						stats.torn += 1;
@@ -228,7 +218,7 @@ async fn main(spawner: Spawner) {
 			Either::Second(_) => {
 				let now = Instant::now();
 				if stats.frames == 0 {
-					leds.blank();
+					lamp.blank();
 				}
 				let line = stats.drain(
 					(now - boot).as_secs(),
