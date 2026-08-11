@@ -1,4 +1,4 @@
-import { SPECTRUM_BANDS, encodeBase64, type SectionKind, type SpectrumTrack } from '@mv/core';
+import { SPECTRUM_BANDS, encodeBase64, sectionBase, type SectionKind, type SpectrumTrack } from '@mv/core';
 import type { Spectrogram } from './dsp/spectrogram.ts';
 import { centredMedian, quantile } from './dsp/stats.ts';
 
@@ -104,7 +104,12 @@ export function spectrumTrack(
 	const kinds: SectionKind[] = [];
 	for (let f = 0; f < frames; f++) kinds.push(sectionAt((f + 0.5) / SPECTRUM_FPS));
 	const loud: number[] = [];
-	for (let f = 0; f < frames; f++) if (kinds[f] === 'drop' || kinds[f] === 'groove') loud.push(f);
+	// By section BASE, or a verse/chorus track has no 'loud' frames at all and the window
+	// silently falls back to the whole-track pooling meant for ambient edge cases.
+	for (let f = 0; f < frames; f++) {
+		const base = sectionBase(kinds[f]);
+		if (base === 'drop' || base === 'groove') loud.push(f);
+	}
 
 	const column = new Float32Array(frames);
 	const smoothed = new Float32Array(frames);

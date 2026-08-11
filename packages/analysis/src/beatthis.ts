@@ -84,7 +84,9 @@ export async function ensureModels(onProgress?: (msg: string) => void): Promise<
 		}
 
 		onProgress?.(`fetching ${file.name} (${(file.bytes / 1e6).toFixed(1)} MB)`);
-		const res = await fetch(`${MODEL_HOST}/${file.name}`);
+		// Bounded for the same reason the genre model's fetch is: a hung connection inside
+		// the ingest queue wedges every track behind it.
+		const res = await fetch(`${MODEL_HOST}/${file.name}`, { signal: AbortSignal.timeout(300_000) });
 		if (!res.ok) throw new Error(`${file.name}: ${res.status} ${res.statusText}`);
 		const buf = Buffer.from(await res.arrayBuffer());
 

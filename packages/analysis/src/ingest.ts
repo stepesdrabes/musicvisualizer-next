@@ -3,11 +3,14 @@ import { existsSync } from 'node:fs';
 import { basename, extname, join, resolve } from 'node:path';
 import { CACHE_DIR } from './paths.ts';
 import { createHash } from 'node:crypto';
-import type { TrackAnalysis } from '@mv/core';
-import { ANALYSIS_VERSION } from '@mv/core';
+import type { TrackAnalysis, TrackContext } from '@mv/core';
+import { ANALYSIS_VERSION, CONTEXT_VERSION } from '@mv/core';
 import { analyzeTrack } from './analyze.ts';
 import { artworkHue } from './artwork.ts';
-import { decodeAudio, downloadAudio, probe } from './decode.ts';
+import { decodeAudio, downloadAudio, probe, type ProbeResult } from './decode.ts';
+import { enrichTrack } from './enrich.ts';
+import { mapGenres } from './genreMap.ts';
+import { medianPeriod } from './metricalLevel.ts';
 
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const LOCAL_ID = /^file-[a-f0-9]{12}$/;
@@ -33,6 +36,19 @@ export function showPath(id: string): string {
 function metaPath(id: string): string {
 	assertId(id);
 	return join(CACHE_DIR, `${id}.meta.json`);
+}
+
+export function contextPath(id: string): string {
+	assertId(id);
+	return join(CACHE_DIR, `${id}.context.json`);
+}
+
+export async function readContext(id: string): Promise<TrackContext | null> {
+	try {
+		return JSON.parse(await readFile(contextPath(id), 'utf8')) as TrackContext;
+	} catch {
+		return null;
+	}
 }
 
 /** Presentation metadata, kept out of TrackAnalysis, which is analysis only. */
@@ -69,7 +85,12 @@ export async function findAudioFile(id: string): Promise<string | null> {
 	assertId(id);
 	if (!existsSync(CACHE_DIR)) return null;
 	const files = await readdir(CACHE_DIR);
-	const hit = files.find((f) => f.startsWith(`${id}.`) && !f.includes('.json'));
+	// A positive list, after two denylist failures: a mid-session build cached raw
+	// .instrumental.pcm beside the audio and served 16 MB of samples to the browser, and an
+	// interrupted yt-dlp leaves .part/.ytdl files that would poison the track forever.
+	// Only a container yt-dlp actually produces counts as the audio.
+	const AUDIO = /\.(m4a|webm|opus|mp3|ogg|oga|aac|wav|flac|mp4|mka)$/i;
+	const hit = files.find((f) => f.startsWith(`${id}.`) && AUDIO.test(f));
 	return hit ? join(CACHE_DIR, hit) : null;
 }
 
@@ -78,7 +99,97 @@ export interface IngestResult {
 	audioPath: string;
 	analysis: TrackAnalysis;
 	meta: TrackMeta;
+	/** What the free metadata says the track is. Never null, possibly empty. */
+	context: TrackContext;
 	fromCache: boolean;
+}
+
+/**
+ * Let the audio outvote the record shop.
+ *
+ * Store genres describe the artist; the classifier heard this track. The Weeknd is filed
+ * under R&B while Blinding Lights is synthwave, and the room should light the record that
+ * is playing. The middle of the track is classified rather than the start, because a
+ * four-minute intro classifies as the ambient it genuinely is and the track is not that.
+ *
+ * Returns an updated context, or the same object when the audio had nothing confident to
+ * add. Failures are swallowed: genre is an improvement, never a dependency.
+ */
+export async function refineGenreFromAudio(
+	context: TrackContext,
+	mono22k: Float32Array,
+	sampleRate: number
+): Promise<TrackContext | null> {
+	try {
+		const { GenreClassifier, ensureGenreModel, genreModelPresent } = await import('./genreModel.ts');
+		if (!genreModelPresent()) await ensureGenreModel();
+		const model = await GenreClassifier.create();
+		try {
+			const window = Math.min(mono22k.length, 180 * sampleRate);
+			const start = Math.max(0, Math.floor((mono22k.length - window) / 2));
+			const result = await model.run(mono22k.subarray(start, start + window));
+			// The "Electronic" parent is dropped before voting: it spans techno through ambient,
+			// so as a keyword it only ever drowns the style beside it. The other parents (Hip
+			// Hop, Rock, Folk) genuinely narrow the family and stay. Activations weight the
+			// votes, so the style the model is sure of decides.
+			const top = result.top.slice(0, 5);
+			const vote = mapGenres(
+				top.map((t) => t.label.replace(/^Electronic---/, '').replace('---', ' ')),
+				top.map((t) => t.score)
+			);
+			const confident = (result.top[0]?.score ?? 0) >= 0.15 && vote.family !== null;
+			if (!confident || vote.family === context.genreFamily) return context;
+			return {
+				...context,
+				genreFamily: vote.family,
+				genreConfidence: Math.round(vote.confidence * 100) / 100,
+				genres: [
+					...context.genres,
+					...result.top.slice(0, 3).map((t) => t.label.replace('---', ' '))
+				],
+				sources: [...context.sources, 'effnet']
+			};
+		} finally {
+			await model.close();
+		}
+	} catch {
+		// Null says the model never spoke, which is different from having nothing to add:
+		// only an actual run earns the cache marker that stops future attempts.
+		return null;
+	}
+}
+
+/**
+ * Whether the published tempo re-hears the detected one at another metrical level.
+ *
+ * Returns the factor to re-read the beats at, or null when the two already agree or
+ * disagree by a ratio no metrical error produces - a published figure that is simply
+ * wrong must not drag a good grid with it. Mirrors the correction the AI author has
+ * always been allowed to make from research; this is the engine path getting the same
+ * privilege from the same kind of evidence.
+ *
+ * Genre-gated, because catalogue tempi carry each genre's own notation convention:
+ * hip-hop and RnB are routinely published at the hat count, double the felt pulse the
+ * room should move at, so a "correction" there un-fixes a grid that was already right.
+ * The slow families are barred from doubling for the same reason in the other direction.
+ */
+export function publishedLevel(
+	beats: readonly number[],
+	publishedBpm: number,
+	genreFamily?: string | null
+): number | null {
+	if (genreFamily === 'hiphop' || genreFamily === 'rnb') return null;
+	const period = medianPeriod(beats);
+	if (!(period > 1e-6) || !(publishedBpm >= 50) || publishedBpm > 220) return null;
+	const detected = 60 / period;
+	for (const r of [1, 2, 0.5, 1.5, 2 / 3, 3, 1 / 3]) {
+		if (Math.abs(detected * r - publishedBpm) / publishedBpm < 0.035) {
+			if (r === 1) return null;
+			if (r > 1 && (genreFamily === 'ballad' || genreFamily === 'ambient')) return null;
+			return r;
+		}
+	}
+	return null;
 }
 
 export interface IngestOptions {
@@ -102,10 +213,11 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	let title: string;
 	let audioPath: string | null;
 	let meta: TrackMeta;
+	let probed: ProbeResult | null = null;
 
 	if (/^https?:\/\//.test(source)) {
 		log('resolving');
-		const probed = await probe(source);
+		probed = await probe(source);
 		id = probed.id;
 		title = probed.title;
 		assertId(id);
@@ -151,6 +263,29 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	meta.duration ??= previous?.duration;
 	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 
+	// Enrichment runs once per track and its result is cached like everything else. A context
+	// whose lookups all failed is retried on the next ingest, so one offline evening does not
+	// leave a track contextless forever. 'effnet' does not count as a lookup here: it is the
+	// local model's marker, gets stamped even on an offline run, and counting it once made a
+	// failed enrichment permanent - no published tempo, no lyrics, ever, for that track.
+	let context = await readContext(id);
+	const enriched = (c: TrackContext) => c.sources.some((s) => s !== 'effnet');
+	if (!context || context.version !== CONTEXT_VERSION || !enriched(context)) {
+		log('looking the track up');
+		context = await enrichTrack({
+			title: meta.title,
+			uploader: meta.uploader,
+			duration: meta.duration ?? 0,
+			webpageUrl: meta.webpageUrl || undefined,
+			ytArtist: probed?.artist,
+			ytTrack: probed?.track,
+			channel: probed?.channel,
+			tags: probed?.tags,
+			onProgress: log
+		});
+		await writeFile(contextPath(id), JSON.stringify(context, null, '\t'));
+	}
+
 	const relevel = opts.metricalLevel !== undefined && Math.abs(opts.metricalLevel - 1) > 1e-6;
 	if (!opts.force && !relevel) {
 		try {
@@ -165,7 +300,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 					meta.duration = cached.duration;
 					await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 				}
-				return { id, audioPath, analysis: cached, meta, fromCache: true };
+				return { id, audioPath, analysis: cached, meta, context, fromCache: true };
 			}
 		} catch {
 			// No cache, or unreadable. Fall through and analyse.
@@ -174,6 +309,17 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 
 	log('decoding');
 	const decoded = await decodeAudio(audioPath);
+
+	// The audio's own genre vote, once the audio exists to ask. The cache remembers whether
+	// the model has spoken - and only whether it actually spoke: a failed model run returns
+	// null and earns no marker, so the next ingest asks again.
+	if (!context.sources.includes('effnet')) {
+		const refined = await refineGenreFromAudio(context, decoded.mono, decoded.sampleRate);
+		if (refined !== null) {
+			context = refined === context ? { ...context, sources: [...context.sources, 'effnet'] } : refined;
+			await writeFile(contextPath(id), JSON.stringify(context, null, '\t'));
+		}
+	}
 
 	// The model finds the beats; everything after it is unchanged. If the weights are missing
 	// or the graph fails, the in-repo tracker runs instead: a worse grid is a worse show, a
@@ -192,6 +338,18 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		log(`beat model unavailable, falling back: ${e instanceof Error ? e.message : String(e)}`);
 	}
 
+	// A published tempo that re-hears the tracked one at a clean ratio settles the octave
+	// automatically, which until now only happened when the AI author researched the track.
+	// An explicit request still wins: it is a listener's correction, which outranks a catalogue.
+	let metricalLevel = opts.metricalLevel;
+	if (metricalLevel === undefined && tracked && context.publishedBpm) {
+		const level = publishedLevel(tracked.beats, context.publishedBpm, context.genreFamily);
+		if (level !== null) {
+			log(`re-reading the grid at ${level}x toward a published ${context.publishedBpm} bpm`);
+			metricalLevel = level;
+		}
+	}
+
 	log('analysing');
 	const analysis = analyzeTrack({
 		mono: decoded.mono,
@@ -204,7 +362,8 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		title,
 		beats: tracked?.beats,
 		downbeats: tracked?.downbeats,
-		metricalLevel: opts.metricalLevel
+		metricalLevel,
+		context
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));
@@ -212,5 +371,5 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		meta.duration = analysis.duration;
 		await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 	}
-	return { id, audioPath, analysis, meta, fromCache: false };
+	return { id, audioPath, analysis, meta, context, fromCache: false };
 }

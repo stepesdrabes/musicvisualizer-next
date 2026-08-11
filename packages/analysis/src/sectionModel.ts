@@ -30,9 +30,18 @@ if (WEIGHTS[0].length !== SECTION_FEATURE_COUNT) {
 	);
 }
 
-/** True when this section reads as a drop rather than a groove. */
-export function readsAsDrop(x: readonly number[]): boolean {
+/**
+ * The model's margin toward drop: positive reads as a drop, and the magnitude is how
+ * confidently. Exposed so repeats of the same material can be decided once, on their
+ * pooled evidence, instead of each landing on its own side of zero.
+ */
+export function dropMargin(x: readonly number[]): number {
 	let z = BIAS[1] - BIAS[0];
 	for (let d = 0; d < SECTION_FEATURE_COUNT; d++) z += (WEIGHTS[1][d] - WEIGHTS[0][d]) * x[d];
-	return z > 0;
+	return z;
+}
+
+/** True when this section reads as a drop rather than a groove. */
+export function readsAsDrop(x: readonly number[]): boolean {
+	return dropMargin(x) > 0;
 }

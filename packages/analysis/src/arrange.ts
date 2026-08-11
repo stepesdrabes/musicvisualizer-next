@@ -13,7 +13,7 @@ import type { SegmentGroup } from './structure.ts';
 import type { Spectrogram } from './dsp/spectrogram.ts';
 import { clamp01, mean, median, normalise, quantile } from './dsp/stats.ts';
 import { sectionFeatures } from './sectionFeatures.ts';
-import { readsAsDrop } from './sectionModel.ts';
+import { dropMargin } from './sectionModel.ts';
 
 export interface Segment {
 	startBar: number;
@@ -254,7 +254,9 @@ export function arrange(
 	shortTerm: Float32Array,
 	shortTermFps: number,
 	kicksPerBar: Int32Array,
-	snaresPerBar: Int32Array
+	snaresPerBar: Int32Array,
+	/** Boundaries placed on measured arrivals, which the phrase snap must not drag off them. */
+	pinned: ReadonlySet<number> = new Set()
 ): Arrangement {
 	const count = bars.count;
 
@@ -320,9 +322,16 @@ export function arrange(
 		segments,
 		barCount: count
 	});
+
+	// The model's margin per undecided segment, then pooled per repeat group before anything
+	// is labelled. Two passages of the same material must not land on opposite sides of zero:
+	// that is how the passage the user calls "the first drop" came out groove while its
+	// reprise came out drop. Pooling decides the group once, on length-weighted evidence -
+	// unlike the deleted repeat-propagation pass, no single member's label is copied anywhere.
+	const margin = new Map<number, number>();
+	const undecided: number[] = [];
 	for (let i = 0; i < segments.length; i++) {
 		const e = segEnergy[i];
-
 		if (audible && kit[i].kit < BREAKDOWN_KIT && e < loudLevel) {
 			// The kit stopped. Not a level test at all, which is the point: a filtered breakdown
 			// sits at the same loudness as the groove around it and the energy quantile that used
@@ -334,6 +343,25 @@ export function arrange(
 			segments[i].kind = 'breakdown';
 			continue;
 		}
+		margin.set(i, dropMargin(features[i]));
+		undecided.push(i);
+	}
+
+	const groupMargin = new Map<number, { acc: number; weight: number }>();
+	for (const i of undecided) {
+		const g = segments[i].group;
+		if (g < 0) continue;
+		const len = segments[i].endBar - segments[i].startBar;
+		const cell = groupMargin.get(g) ?? { acc: 0, weight: 0 };
+		cell.acc += (margin.get(i) ?? 0) * len;
+		cell.weight += len;
+		groupMargin.set(g, cell);
+	}
+
+	for (const i of undecided) {
+		const g = segments[i].group;
+		const pooled = g >= 0 ? groupMargin.get(g) : undefined;
+		const z = pooled && pooled.weight > 0 ? pooled.acc / pooled.weight : (margin.get(i) ?? 0);
 
 		// A loud passage is a drop only when something set it up, and only once the track has had
 		// room to establish what it is dropping from. Nothing drops in its first two phrases; a
@@ -341,7 +369,38 @@ export function arrange(
 		// gates stay in front of the model because they are taste rather than accuracy: a ballad
 		// has no drop however loud its last chorus is, and a corpus of pop cannot teach that.
 		const settled = segments[i].startBar >= 2 * PHRASE_BARS;
-		segments[i].kind = readsAsDrop(features[i]) && hasDrops && settled ? 'drop' : 'groove';
+		segments[i].kind = z > 0 && hasDrops && settled ? 'drop' : 'groove';
+	}
+
+	// The peak of a track that has drops is one of them, unless the model is emphatic that
+	// it is not. The pooled margin sits within noise of zero on exactly the biggest garage
+	// and festival grooves, so a one-bar boundary shift was flipping the loudest passage of
+	// the night between drop and groove from one analysis to the next. A coin toss must not
+	// decide the section the whole show is built around.
+	if (hasDrops) {
+		let peak = -1;
+		for (const i of undecided) {
+			if (segments[i].kind !== 'groove') continue;
+			if (segments[i].startBar < 2 * PHRASE_BARS) continue;
+			if (peak < 0 || segEnergy[i] > segEnergy[peak]) peak = i;
+		}
+		const loudest = Math.max(...segEnergy);
+		if (peak >= 0 && segEnergy[peak] >= loudest - 1e-9) {
+			const g = segments[peak].group;
+			const pooled = g >= 0 ? groupMargin.get(g) : undefined;
+			const z = pooled && pooled.weight > 0 ? pooled.acc / pooled.weight : (margin.get(peak) ?? 0);
+			if (z > -0.6) {
+				for (const i of undecided) {
+					if (
+						segments[i].group === g &&
+						segments[i].kind === 'groove' &&
+						segments[i].startBar >= 2 * PHRASE_BARS
+					) {
+						segments[i].kind = 'drop';
+					}
+				}
+			}
+		}
 	}
 
 	// --- repeats ---------------------------------------------------------------------------
@@ -375,11 +434,17 @@ export function arrange(
 	for (const s of segments) {
 		let silent = true;
 		for (let b = s.startBar; b < s.endBar && silent; b++) silent = bars.rms[b] < silenceFloor;
-		// Carved rather than played, so it belongs to no group and can never be a repeat target.
-		if (silent) {
-			s.kind = 'void';
-			s.group = -1;
+		if (!silent) continue;
+		// Silence at the top of a track is a pickup or a breath before the song, and cutting
+		// a room that has not lit yet reads as the app failing to start. The void instruction
+		// is for darkness inside an established show.
+		if (s.startBar < 16) {
+			s.kind = 'intro';
+			continue;
 		}
+		// Carved rather than played, so it belongs to no group and can never be a repeat target.
+		s.kind = 'void';
+		s.group = -1;
 	}
 
 	// --- builds --------------------------------------------------------------------------
@@ -433,15 +498,21 @@ export function arrange(
 
 	// --- phrase grid ---------------------------------------------------------------------
 	const anchor = fitAnchor(segments.map((s) => s.startBar), count);
-	snapToPhrases(segments, count, anchor);
+	snapToPhrases(segments, count, anchor, pinned);
 
 	// --- the void ------------------------------------------------------------------------
 	// Carved out of the bar before a drop rather than detected on its own, because that is
 	// the only place it means anything: a held breath somewhere else is just a quiet bar.
+	// Two vetoes beyond the level tests: nothing before bar 16, because a room that has
+	// barely lit has no light worth cutting; and never longer than a breath in SECONDS -
+	// two bars at 80 bpm is six seconds of black, which reads as a fault at any tempo the
+	// bar count alone cannot see.
 	const floorMedian = median(bars.floor);
 	const voidCeiling = median(bars.rms) * VOID_RATIO;
+	const MAX_VOID_SECONDS = 2.6;
 	for (let i = 1; i < segments.length; i++) {
 		if (segments[i].kind !== 'drop') continue;
+		if (segments[i].startBar < 16) continue;
 		const prev = segments[i - 1];
 		if (prev.kind === 'void' || prev.endBar - prev.startBar < 3) continue;
 		let voidBars = 0;
@@ -449,7 +520,8 @@ export function arrange(
 			voidBars < MAX_VOID_BARS &&
 			prev.endBar - voidBars - 1 > prev.startBar &&
 			bars.floor[prev.endBar - voidBars - 1] < floorMedian * 0.3 &&
-			bars.rms[prev.endBar - voidBars - 1] < voidCeiling
+			bars.rms[prev.endBar - voidBars - 1] < voidCeiling &&
+			bars.time[prev.endBar] - bars.time[prev.endBar - voidBars - 1] <= MAX_VOID_SECONDS
 		) {
 			voidBars++;
 		}
@@ -566,12 +638,21 @@ const MAX_SNAP_BARS = 1;
  * shorter than two bars, because the linter rejects an off-phrase cue outright and the
  * sections are what the cues are written against.
  */
-function snapToPhrases(segments: Segment[], barCount: number, anchor: number): void {
+function snapToPhrases(
+	segments: Segment[],
+	barCount: number,
+	anchor: number,
+	pinned: ReadonlySet<number>
+): void {
 	for (let i = 1; i < segments.length; i++) {
 		// A void's edges are where the sound stopped and started, which is a measurement rather
 		// than a rounding: moving one by a bar either lights a silent bar or blacks out a played
 		// one, and both are visible in the room.
 		if (segments[i].kind === 'void' || segments[i - 1].kind === 'void') continue;
+		// A pinned boundary sits on a measured arrival - the bar the kit came back, the bar the
+		// sub slammed - and dragging it onto a majority-fitted grid is exactly how a drop came
+		// to land a bar late on a track whose phrase phase moves mid-song.
+		if (pinned.has(segments[i].startBar)) continue;
 		const from = segments[i].startBar;
 		const target = Math.max(1, Math.min(barCount - 1, nearestPhraseBar(from, anchor)));
 		if (Math.abs(target - from) > MAX_SNAP_BARS) continue;

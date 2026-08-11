@@ -295,6 +295,205 @@ export function segmentBars(sim: Float32Array, bars: BarFeatures): number[] {
 }
 
 /**
+ * How decisively a neighbour has to beat the chosen boundary before the boundary moves.
+ *
+ * The DP optimises segment cohesion, which is the right objective everywhere except at a
+ * hard arrival: the drop bar and the bar after it are nearly identical rows, so cohesion
+ * barely changes when the boundary slides one bar off the hit - and one bar late is
+ * exactly how the reported failures present. Arrival evidence is a different signal from
+ * cohesion, so it gets a second pass rather than a term inside the DP, where a level-step
+ * bonus was already tried once and measurably hurt.
+ */
+const REFINE_MARGIN = 1.45;
+/** Below this, a bar's arrival is noise and has no business moving a boundary. */
+const REFINE_FLOOR = 0.6;
+/** How far a boundary may be pulled onto an arrival. One bar is the observed failure class. */
+const REFINE_REACH = 1;
+
+/**
+ * How hard bar `b` arrives: a level step up, the kit returning, the voice arriving, the bar
+ * before collapsing, and the pattern changing, in comparable units. Zero for a bar that
+ * continues its passage.
+ */
+function arrivalStrength(
+	bars: BarFeatures,
+	db: Float32Array,
+	tol: number,
+	kicksPerBar: Int32Array | null,
+	b: number
+): number {
+	if (b <= 0 || b >= bars.count) return 0;
+	const step = Math.max(0, db[b] - db[b - 1]) / tol;
+
+	let kit = 0;
+	if (kicksPerBar) {
+		const now = kicksPerBar[b] ?? 0;
+		const before = kicksPerBar[b - 1] ?? 0;
+		if (now > 0 && before === 0) kit = 1;
+		else kit = Math.max(0, now - before) / 8;
+	}
+
+	// The held-breath bar: its quietest beat collapses while the arrival bar slams. Measured
+	// against the bar's own mean so a track-wide quiet passage does not read as a dip.
+	const dipRef = Math.max(bars.rms[b], 1e-6);
+	const dip = Math.max(0, 1 - bars.floor[b - 1] / dipRef);
+
+	let novelty = 0;
+	{
+		const dim = bars.patternDim;
+		let dot = 0;
+		for (let k = 0; k < dim; k++) {
+			dot += bars.pattern[(b - 1) * dim + k] * bars.pattern[b * dim + k];
+		}
+		novelty = Math.max(0, 1 - dot);
+	}
+
+	return step + kit + 0.8 * dip + 1.5 * novelty;
+}
+
+export interface BoundaryMove {
+	from: number;
+	to: number;
+	/** The winning arrival score, so a caller can pin only the decisive moves. */
+	score: number;
+}
+
+/**
+ * The structure stage's tunable constants, in one object so the bench can sweep them
+ * against annotated ground truth. The defaults are what shipped after that sweep.
+ */
+export interface StructureTuning {
+	/** Arrival score below which a boundary does not move at all. */
+	refineFloor: number;
+	/** Arrival score below which a refined move may not become a phase pin. */
+	pinScore: number;
+	/** 0 disables re-phasing entirely. Bars a boundary may be dragged onto the pinned phase. */
+	rephaseReach: number;
+	/** Fewest pins whose phase agreement is trusted. */
+	rephaseMinPins: number;
+	/** Share of pins that must share the winning phase. */
+	rephaseAgreement: number;
+}
+
+/**
+ * Swept against 60 annotated Harmonix tracks and 60 annotated Raveform EDM tracks, five
+ * variants. This one - move a boundary only onto a DECISIVE arrival, pin what moved, and
+ * re-phase one bar at most behind three near-unanimous pins - was best or tied-best on
+ * every metric on both corpora. The first shipped version (floor 0.6, reach 2, 70%
+ * agreement) was the worst on every boundary metric, which is what the room's owner heard
+ * as "every section start is wrong": weak arrivals, vocal jumps among them, were dragging
+ * good boundaries off by up to two bars track-wide.
+ */
+export const DEFAULT_TUNING: StructureTuning = {
+	refineFloor: 2,
+	pinScore: 2,
+	rephaseReach: 1,
+	rephaseMinPins: 3,
+	rephaseAgreement: 0.8
+};
+
+/** Per-bar arrival strengths, for the bench to look at. Not part of the pipeline. */
+export function debugArrivals(bars: BarFeatures, kicksPerBar: Int32Array | null): Float32Array {
+	const db = barLevels(bars);
+	const tol = LEVEL_TOL * levelSpread(db);
+	const out = new Float32Array(bars.count);
+	for (let b = 1; b < bars.count; b++) {
+		out[b] = arrivalStrength(bars, db, tol, kicksPerBar, b);
+	}
+	return out;
+}
+
+/**
+ * Pull each boundary onto the arrival next door when the evidence there clearly beats it.
+ *
+ * Refinement, not re-segmentation: a boundary may move at most `REFINE_REACH` bars, may not
+ * shorten a neighbour below `MIN_SEGMENT_BARS`, and stays put on a soft transition, where
+ * arrival strength is mush on both sides and the DP's cohesion answer is the better one.
+ */
+export function refineBoundaries(
+	bounds: number[],
+	bars: BarFeatures,
+	kicksPerBar: Int32Array | null,
+	moves?: BoundaryMove[],
+	floor = REFINE_FLOOR
+): number[] {
+	const db = barLevels(bars);
+	const tol = LEVEL_TOL * levelSpread(db);
+	const out = [...bounds];
+
+	for (let i = 1; i + 1 < out.length; i++) {
+		const here = out[i];
+		let best = here;
+		let bestScore = arrivalStrength(bars, db, tol, kicksPerBar, here) * REFINE_MARGIN;
+		for (let c = here - REFINE_REACH; c <= here + REFINE_REACH; c++) {
+			if (c === here) continue;
+			if (c - out[i - 1] < MIN_SEGMENT_BARS || out[i + 1] - c < MIN_SEGMENT_BARS) continue;
+			const score = arrivalStrength(bars, db, tol, kicksPerBar, c);
+			if (score > bestScore && score > floor) {
+				bestScore = score;
+				best = c;
+			}
+		}
+		if (best !== here) {
+			moves?.push({ from: here, to: best, score: bestScore });
+			out[i] = best;
+		}
+	}
+	return out;
+}
+
+/**
+ * Re-read the boundaries that had only mush to stand on onto the phrase phase the pinned
+ * arrivals prove.
+ *
+ * A pinned boundary sits on a measured hit - the kick wall, the sub slam, the voice - and
+ * a track's arrivals overwhelmingly share one bar-phase mod 4. The boundaries between
+ * gentle passages have no such evidence, land within a bar of the truth, and one bar early
+ * is exactly how a show telegraphs its own next move. Nothing moves unless at least two
+ * pins agree on a phase, and nothing moves further than the ambiguity being corrected.
+ */
+export function rephaseToPins(
+	bounds: number[],
+	pinned: Set<number>,
+	barCount: number,
+	tuning: StructureTuning = DEFAULT_TUNING
+): number[] {
+	if (tuning.rephaseReach <= 0) return bounds;
+	const pins = bounds.filter((b) => pinned.has(b) && b > 0 && b < barCount);
+	if (pins.length < tuning.rephaseMinPins) return bounds;
+
+	const votes = new Int32Array(4);
+	for (const p of pins) votes[p % 4]++;
+	let phase = 0;
+	for (let k = 1; k < 4; k++) if (votes[k] > votes[phase]) phase = k;
+	// A split vote is a track whose phase genuinely moves; re-phasing it would invent order.
+	if (votes[phase] < pins.length * tuning.rephaseAgreement) return bounds;
+
+	const out = [...bounds];
+	for (let i = 1; i + 1 < out.length; i++) {
+		const here = out[i];
+		if (pinned.has(here) || here % 4 === phase) continue;
+		let target = here;
+		let bestDist = tuning.rephaseReach + 1;
+		for (let c = here - tuning.rephaseReach; c <= here + tuning.rephaseReach; c++) {
+			if (c % 4 !== phase && ((c % 4) + 4) % 4 !== phase) continue;
+			if (c - out[i - 1] < MIN_SEGMENT_BARS || out[i + 1] - c < MIN_SEGMENT_BARS) continue;
+			const dist = Math.abs(c - here);
+			if (dist < bestDist) {
+				bestDist = dist;
+				target = c;
+			}
+		}
+		if (target !== here) {
+			out[i] = target;
+			// Re-phased onto the proven grid, so the later phrase snap must not drag it off.
+			pinned.add(target);
+		}
+	}
+	return out;
+}
+
+/**
  * How close two segments must come to their own internal cohesion to count as the same
  * material. Below 1 because a repeat is never identical: a second chorus has a different
  * vocal take and usually an extra layer.

@@ -94,6 +94,11 @@ export interface ProbeResult {
 	duration: number;
 	thumbnail: string;
 	webpageUrl: string;
+	/** From YouTube's music card or a Topic upload; authoritative when present. */
+	artist?: string;
+	track?: string;
+	channel?: string;
+	tags?: string[];
 }
 
 export async function probe(url: string): Promise<ProbeResult> {
@@ -111,7 +116,11 @@ export async function probe(url: string): Promise<ProbeResult> {
 		uploader: String(j.uploader ?? ''),
 		duration: Number(j.duration ?? 0),
 		thumbnail: String(j.thumbnail ?? ''),
-		webpageUrl: String(j.webpage_url ?? '')
+		webpageUrl: String(j.webpage_url ?? ''),
+		artist: j.artist ? String(j.artist) : undefined,
+		track: j.track ? String(j.track) : undefined,
+		channel: j.channel ? String(j.channel) : undefined,
+		tags: Array.isArray(j.tags) ? j.tags.map(String).slice(0, 30) : undefined
 	};
 }
 

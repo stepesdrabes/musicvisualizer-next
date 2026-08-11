@@ -6,7 +6,8 @@ import {
 	type Moment,
 	type OnsetStream,
 	type SectionSpan,
-	type TrackAnalysis
+	type TrackAnalysis,
+	type TrackContext
 } from '@mv/core';
 import { arrange, bandLevels, levelEnvelopes } from './arrange.ts';
 import { spectrumTrack } from './spectrum.ts';
@@ -20,7 +21,25 @@ import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
 import { barGroups, quantiseOnsets } from './quantise.ts';
 import { analyseStereo } from './stereo.ts';
-import { barSynchronous, groupSegments, segmentBars, similarityMatrix } from './structure.ts';
+import {
+	DEFAULT_TUNING,
+	barSynchronous,
+	groupSegments,
+	refineBoundaries,
+	rephaseToPins,
+	segmentBars,
+	similarityMatrix,
+	type BoundaryMove,
+	type StructureTuning
+} from './structure.ts';
+import {
+	chorusSpansFromLyrics,
+	demoteVersesFromLyrics,
+	fourOnFloor,
+	promoteChorusesFromLyrics,
+	speaksClub,
+	toSongVocabulary
+} from './vocabulary.ts';
 
 export interface AnalyzeInput {
 	mono: Float32Array;
@@ -51,6 +70,22 @@ export interface AnalyzeInput {
 	 */
 	beats?: readonly number[];
 	downbeats?: readonly number[];
+	/**
+	 * What the track is, from free metadata: genre family for the section vocabulary, synced
+	 * lyrics for chorus location. Optional, and an empty context changes nothing.
+	 */
+	context?: TrackContext;
+	/**
+	 * False disables the compound-meter octave guard. Set internally when the guard has
+	 * already fired, so a re-read cannot recurse.
+	 */
+	octaveGuard?: boolean;
+	/**
+	 * Structure-stage dials, for the bench to sweep against annotated corpora. Shipping code
+	 * never passes this; the defaults ARE the tuned values, and they are tuned there rather
+	 * than argued about here.
+	 */
+	tuning?: StructureTuning;
 }
 
 const TARGET_LUFS = -14;
@@ -101,19 +136,46 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// A tracker that emits downbeats has already answered the question `detectMeter` asks, and
 	// answers it far better: 0.722 downbeat F against 0.498 on the same 100 annotated tracks.
 	const meter =
-		input.downbeats && input.downbeats.length > 2
+		(input.downbeats && input.downbeats.length > 2
 			? meterFromDownbeats(grid.beats, input.downbeats)
-			: detectMeter(beatFeatures);
+			: null) ?? detectMeter(beatFeatures);
+
+	// Three beats to a bar above 130 bpm is not a fast waltz, it is compound time heard at
+	// the subdivision: a 6/8 ballad notated at the eighth reads as ~150 in 3, and every
+	// beat-derived time constant then runs at eighth-note nervousness. Re-read at the dotted
+	// quarter - the pulse a listener actually taps - once, and only when nobody upstream
+	// (a listener's correction, a published-tempo re-level) has already chosen a level.
+	// Catalogues cannot settle this one: Deezer publishes the same fast level.
+	if (
+		(input.octaveGuard ?? true) &&
+		input.metricalLevel === undefined &&
+		meter.beatsPerBar === 3 &&
+		grid.bpm >= 130
+	) {
+		return analyzeTrack({ ...input, metricalLevel: 1 / 3, octaveGuard: false });
+	}
 	const bars = barSynchronous(beatFeatures, meter.beatsPerBar, meter.phase);
 
-	// Structure before drums, because the drum correction wants to know which bars repeat which
-	// and nothing in the segmentation looks at percussion.
+	// Detection before structure, because a boundary is refined onto the bar the kit returns
+	// at. Only the QUANTISE step needs to know which bars repeat which, and it still runs
+	// after the segmentation it depends on.
+	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod, odf: features.odf });
+	const rawKicks = countPerBar(detected.kick.times, bars.time, bars.count);
+
+	const tuning = input.tuning ?? DEFAULT_TUNING;
 	const sim = similarityMatrix(bars);
-	const bounds = segmentBars(sim, bars);
+	const moves: BoundaryMove[] = [];
+	const rough = refineBoundaries(segmentBars(sim, bars), bars, rawKicks, moves, tuning.refineFloor);
+	// Only the decisive arrivals earn pin status; a marginal move may correct its own
+	// boundary without getting a vote over everyone else's.
+	const pinned = new Set(moves.filter((m) => m.score >= tuning.pinScore).map((m) => m.to));
+	// The pinned arrivals know the track's phrase phase; boundaries that had only mush to
+	// stand on are re-read onto it. This is what was arriving a bar early at the top of a
+	// track whose own drop later proved where the phrases actually sit.
+	const bounds = rephaseToPins(rough, pinned, bars.count, tuning);
 	const groups = groupSegments(sim, bars.count, bounds);
 	const barGroup = barGroups(bounds, groups.group, bars.count);
 
-	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod, odf: features.odf });
 	const quantise = (stream: DrumStream) =>
 		quantiseOnsets(stream, {
 			beats: grid.beats,
@@ -140,13 +202,74 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		loudness.shortTerm,
 		loudness.shortTermFps,
 		kicks,
-		snares
+		snares,
+		pinned
 	);
+
+	// The vocabulary is chosen per track, after labelling: the structural machinery only
+	// knows energy classes, and whether a loud repeated passage is a drop or a chorus is a
+	// fact about the genre, not about the waveform. Song-family tracks re-read drop/groove
+	// as chorus/verse, and synced lyrics then settle which loud section is THE chorus.
+	const club = speaksClub(
+		input.context?.genreFamily ?? null,
+		fourOnFloor(kicks, plan.energy, meter.beatsPerBar)
+	);
+	if (!club) {
+		toSongVocabulary(plan.segments);
+		const lyrics = input.context?.lyrics;
+		if (lyrics && lyrics.length > 0) {
+			const spans = chorusSpansFromLyrics(lyrics, duration);
+			const segEnergy = plan.segments.map((s) => {
+				let acc = 0;
+				for (let b = s.startBar; b < Math.min(s.endBar, bars.count); b++) acc += plan.energy[b];
+				return acc / Math.max(1, Math.min(s.endBar, bars.count) - s.startBar);
+			});
+			const barTime = (bar: number) => bars.time[Math.max(0, Math.min(bars.count, bar))];
+			promoteChorusesFromLyrics(plan.segments, segEnergy, barTime, spans);
+			demoteVersesFromLyrics(plan.segments, barTime, spans);
+		}
+	}
 
 	// One array decides where every bar is. `bars[].t` is written from it below rather than
 	// computed alongside it, because two independent copies of the same timing is exactly how
 	// the grid and the bar table came to disagree by eight beats on a track that speeds up.
 	const barTimes = Array.from(bars.time.subarray(0, bars.count + 1), round3);
+
+	// Synced lyrics become timing data: a per-bar coverage column and a 'vocal_in' event at
+	// each entrance. Pure arithmetic over what ingest already cached - an offline track just
+	// carries zeros - and the one thing the room most visibly answers in a song is when the
+	// voice arrives, which until this column nothing downstream could see.
+	const vocal = new Float64Array(bars.count);
+	const vocalIn = new Set<number>();
+	const lyricLines = input.context?.instrumental ? null : (input.context?.lyrics ?? null);
+	if (lyricLines && lyricLines.length > 0) {
+		const barAt = (t: number) => {
+			let b = 0;
+			while (b < bars.count - 1 && bars.time[b + 1] <= t) b++;
+			return b;
+		};
+		for (let i = 0; i < lyricLines.length; i++) {
+			const start = lyricLines[i].t;
+			// A line carries only its start; it lasts until the next one, capped at a sung
+			// phrase's worth so an instrumental gap stays a gap.
+			const end = Math.min(lyricLines[i + 1]?.t ?? start + 4, start + 4, duration);
+			for (let b = barAt(start); b < bars.count && bars.time[b] < end; b++) {
+				const len = bars.time[b + 1] - bars.time[b];
+				if (len <= 0) continue;
+				const overlap = Math.min(end, bars.time[b + 1]) - Math.max(start, bars.time[b]);
+				if (overlap > 0) vocal[b] += overlap / len;
+			}
+		}
+		let silentBars = 2;
+		for (let b = 0; b < bars.count; b++) {
+			if (vocal[b] >= 0.05) {
+				if (silentBars >= 2) vocalIn.add(b);
+				silentBars = 0;
+			} else {
+				silentBars++;
+			}
+		}
+	}
 
 	const barRows: BarRow[] = [];
 	for (let b = 0; b < bars.count; b++) {
@@ -163,7 +286,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			kicks: kicks[b],
 			snares: snares[b],
 			hats: hats[b],
-			events: plan.events[b]
+			vocal: Math.round(Math.min(1, vocal[b]) * 100) / 100,
+			events: vocalIn.has(b) ? [...plan.events[b], 'vocal_in'] : plan.events[b]
 		});
 	}
 
@@ -354,8 +478,14 @@ function gridFromBeats(beats: readonly number[], odf: Float32Array, fps: number)
 	};
 }
 
-/** Beats per bar and phase from a downbeat list, by the commonest spacing along the beats. */
-function meterFromDownbeats(beats: Float64Array, downbeats: readonly number[]): Meter {
+/**
+ * Beats per bar and phase from a downbeat list, by the commonest spacing along the beats.
+ *
+ * Null when the spacing is degenerate - after a metrical re-read the model's downbeats can
+ * land on every new beat, which says nothing about bars - so the caller falls back to the
+ * evidence-based meter, which is what places a compound track's bars on its actual ones.
+ */
+function meterFromDownbeats(beats: Float64Array, downbeats: readonly number[]): Meter | null {
 	const indexOf = (t: number): number => {
 		let lo = 0;
 		let hi = beats.length - 1;
@@ -381,6 +511,13 @@ function meterFromDownbeats(beats: Float64Array, downbeats: readonly number[]): 
 			beatsPerBar = g;
 		}
 	}
+	if (best === 0) return null;
+	// A downbeat every 8 or 6 beats is a 4- or 3-beat bar heard at double length, which is
+	// what a metrical-level correction produces: doubling the beats doubles the model's
+	// downbeat spacing, and an 8-beat bar is not a meter this repertoire has. Folding keeps
+	// the phase valid because a downbeat 8 beats apart is still on the 4-beat grid.
+	if (beatsPerBar === 8 || beatsPerBar === 12) beatsPerBar = 4;
+	else if (beatsPerBar === 6) beatsPerBar = 3;
 
 	// The phase the most downbeats already agree with, which is the only thing a residue class
 	// can mean once the spacing is fixed.
@@ -452,6 +589,8 @@ function describe(ev: string, row: BarRow): string {
 			return 'bass withdraws';
 		case 'filter_sweep':
 			return `brightness opening, air ${row.air}`;
+		case 'vocal_in':
+			return 'the voice comes in';
 		default:
 			return '';
 	}

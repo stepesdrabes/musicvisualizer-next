@@ -57,10 +57,19 @@ function meanAt(odf: Float32Array, fps: number, times: readonly number[]): numbe
 	return acc / times.length;
 }
 
+/**
+ * Median over 8-beat spans rather than single intervals, where the track is long enough.
+ *
+ * Model beats are picked on a 20 ms frame grid, so single intervals quantise: a 140 bpm
+ * track's 0.4286 s period reads as 0.44 and the track reports 136.4, close enough to block
+ * a published-tempo ratio check and wrong enough to matter anywhere bpm is compared. Eight
+ * beats of span carry an eighth of the quantisation error.
+ */
 export function medianPeriod(beats: readonly number[]): number {
 	if (beats.length < 2) return 0;
+	const span = beats.length >= 18 ? 8 : 1;
 	const d: number[] = [];
-	for (let i = 1; i < beats.length; i++) d.push(beats[i] - beats[i - 1]);
+	for (let i = span; i < beats.length; i++) d.push((beats[i] - beats[i - span]) / span);
 	d.sort((a, b) => a - b);
 	return d[d.length >> 1];
 }
