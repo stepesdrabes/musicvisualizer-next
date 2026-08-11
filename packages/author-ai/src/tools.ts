@@ -7,9 +7,10 @@ import type {
 	Geometry,
 	LayerRole,
 	Show,
-	TrackAnalysis
+	TrackAnalysis,
+	TrackContext
 } from '@mv/core';
-import { BUILT_IN_EFFECTS, barTimeAt, compileGenerated, measureEffect } from '@mv/core';
+import { BUILT_IN_EFFECTS, barAtTime, barTimeAt, compileGenerated, measureEffect } from '@mv/core';
 import { analyzeTrack, decodeAudio } from '@mv/analysis';
 import { renderArrangementChart, renderBarTable, renderCatalog } from './catalog.ts';
 import { formatFindings, formatReading, lintShow, measureShow } from '@mv/author-engine';
@@ -20,6 +21,8 @@ export interface AuthorSession {
 	analysis: TrackAnalysis;
 	geometry: Geometry;
 	audioPath?: string;
+	/** What the track is, from ingest enrichment. Decides the linter's flash allowance. */
+	context?: TrackContext | null;
 	/** The engine's show, when the agent is revising one rather than starting from nothing. */
 	draft?: Show;
 	generated: Map<string, GeneratedEffect>;
@@ -43,12 +46,14 @@ export function createSession(
 	analysis: TrackAnalysis,
 	geometry: Geometry,
 	audioPath?: string,
-	draft?: Show
+	draft?: Show,
+	context?: TrackContext | null
 ): AuthorSession {
 	return {
 		analysis,
 		geometry,
 		audioPath,
+		context,
 		draft,
 		generated: new Map(),
 		compiled: new Map(),
@@ -129,6 +134,25 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			const last = session.analysis.bars.length - 1;
 			if (fromBar > last) return text(`No such bar. The track has bars 0-${last}.`);
 			return text(renderBarTable(session.analysis, fromBar, Math.min(toBar, last)));
+		},
+		{ annotations: { readOnlyHint: true } }
+	);
+
+	const getLyrics = tool(
+		'get_lyrics',
+		'The synced lyrics mapped onto the bar grid, one line per lyric: "bar 17.2  <text>". This is how to place the first vocal entry, the verse starts and the hook without guessing.',
+		{},
+		async () => {
+			const lines = session.context?.lyrics;
+			if (!lines || lines.length === 0) {
+				return text('No synced lyrics were found for this track.');
+			}
+			const { tempo } = session.analysis;
+			return text(
+				lines
+					.map((l) => `bar ${barAtTime(tempo, l.t).toFixed(1).padStart(6)}  ${l.text}`)
+					.join('\n')
+			);
 		},
 		{ annotations: { readOnlyHint: true } }
 	);
@@ -342,7 +366,8 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			}
 			const result = lintShow(candidate, {
 				analysis: session.analysis,
-				effects: effectMap(session)
+				effects: effectMap(session),
+				context: session.context
 			});
 			session.log.push(
 				`lint_show: ${result.errors.length} errors, ${result.warnings.length} warnings`
@@ -389,7 +414,8 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			if (!candidate) return text(`Not accepted: ${error}`);
 			const result = lintShow(candidate, {
 				analysis: session.analysis,
-				effects: effectMap(session)
+				effects: effectMap(session),
+				context: session.context
 			});
 			if (!result.ok) {
 				return text(
@@ -460,10 +486,11 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 		alwaysLoad: true,
 		tools:
 			phase === 'research'
-				? [getBars, getOnsets, getDraft, audioFile, audioStats, reanalyse, listEffects]
+				? [getBars, getOnsets, getLyrics, getDraft, audioFile, audioStats, reanalyse, listEffects]
 				: [
 						getBars,
 						getOnsets,
+						getLyrics,
 						getDraft,
 						audioFile,
 						audioStats,

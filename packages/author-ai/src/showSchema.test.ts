@@ -55,8 +55,13 @@ describe('coerceShow', () => {
 	});
 
 	it('rejects an unknown section name', () => {
-		const bad = { ...valid, cues: [{ ...valid.cues[0], section: 'chorus' }] };
+		const bad = { ...valid, cues: [{ ...valid.cues[0], section: 'refrain' }] };
 		expect(coerceShow(bad).show).toBeNull();
+	});
+
+	it('accepts the song vocabulary', () => {
+		const song = { ...valid, cues: [{ ...valid.cues[0], section: 'chorus' }] };
+		expect(coerceShow(song).show).not.toBeNull();
 	});
 
 	it('rejects an empty cue list', () => {

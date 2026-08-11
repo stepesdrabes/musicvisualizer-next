@@ -30,10 +30,12 @@ const explicitPalette = z.object({
 export const SECTION_ENUM = z.enum([
 	'intro',
 	'groove',
+	'verse',
 	'breakdown',
 	'build',
 	'void',
 	'drop',
+	'chorus',
 	'outro'
 ]);
 

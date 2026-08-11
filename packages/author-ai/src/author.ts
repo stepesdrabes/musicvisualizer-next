@@ -1,6 +1,6 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { CLAUDE, environmentFor, type AuthorProvider, type EffortLevel } from './provider.ts';
-import type { Geometry, Show, TrackAnalysis } from '@mv/core';
+import type { Geometry, Show, TrackAnalysis, TrackContext } from '@mv/core';
 import {
 	buildBriefPrompt,
 	buildRepairPrompt,
@@ -8,6 +8,7 @@ import {
 	buildShowPrompt,
 	buildSystemPrompt
 } from './prompt.ts';
+import { allowedFlashes } from '@mv/author-engine';
 import { buildTools, createSession, type AuthorSession } from './tools.ts';
 import {
 	describeToolCall,
@@ -28,6 +29,8 @@ export interface AuthorOptions {
 	showEffort?: EffortLevel;
 	/** Absolute path to the decoded audio, so the agent can probe it itself. */
 	audioPath?: string;
+	/** Ingest enrichment: identity, genre family, lyrics. Feeds the prompt and the linter. */
+	context?: TrackContext | null;
 	/** Called after `reanalyse`, so the caller can persist the corrected grid. */
 	onAnalysis?: (analysis: TrackAnalysis, reason: string) => void;
 	onEvent?: OnAuthorEvent;
@@ -128,7 +131,13 @@ export async function authorShow(
 	opts: AuthorOptions = {}
 ): Promise<AuthorResult> {
 	const emit: OnAuthorEvent = opts.onEvent ?? (() => {});
-	const session: AuthorSession = createSession(analysis, geometry, opts.audioPath, opts.draft);
+	const session: AuthorSession = createSession(
+		analysis,
+		geometry,
+		opts.audioPath,
+		opts.draft,
+		opts.context
+	);
 	session.onAnalysis = (next, reason) => {
 		opts.onAnalysis?.(next, reason);
 		emit({ type: 'analysis', analysis: next, reason });
@@ -146,7 +155,7 @@ export async function authorShow(
 
 	const brief = await run(
 		query({
-			prompt: buildBriefPrompt(session.analysis, opts.audioPath),
+			prompt: buildBriefPrompt(session.analysis, opts.audioPath, opts.context),
 			options: {
 				model,
 				systemPrompt,
@@ -179,11 +188,15 @@ export async function authorShow(
 		label: opts.draft ? 'Revising the cue list' : 'Building the cue list'
 	});
 
+	// From the grid the build pass actually addresses: a reanalyse in the research pass may
+	// have changed what the track earns.
+	const flashAllowance = allowedFlashes(session.analysis, opts.context ?? null);
+
 	await run(
 		query({
 			prompt: opts.draft
-				? buildRevisePrompt(session.analysis, brief)
-				: buildShowPrompt(session.analysis, brief),
+				? buildRevisePrompt(session.analysis, brief, flashAllowance)
+				: buildShowPrompt(session.analysis, brief, flashAllowance),
 			options: {
 				model,
 				systemPrompt,

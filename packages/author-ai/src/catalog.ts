@@ -168,7 +168,7 @@ export function renderArrangementChart(analysis: TrackAnalysis, width = 60): str
 
 export function renderBarTable(analysis: TrackAnalysis, from = 0, to = Infinity): string {
 	const rows = analysis.bars.filter((b) => b.bar >= from && b.bar <= to);
-	const lines = ['bar\tt\tsection\tenergy\tsub\tlow\tmid\tair\tkicks\tsnares\thats\tevents'];
+	const lines = ['bar\tt\tsection\tenergy\tsub\tlow\tmid\tair\tvoc\tkicks\tsnares\thats\tevents'];
 	for (const b of rows) {
 		lines.push(
 			[
@@ -180,6 +180,7 @@ export function renderBarTable(analysis: TrackAnalysis, from = 0, to = Infinity)
 				b.low,
 				b.mid,
 				b.air,
+				Math.round((b.vocal ?? 0) * 100),
 				b.kicks,
 				b.snares,
 				b.hats,

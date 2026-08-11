@@ -1,4 +1,4 @@
-import type { TrackAnalysis } from '@mv/core';
+import type { TrackAnalysis, TrackContext } from '@mv/core';
 import {
 	renderArrangementChart,
 	renderBarTable,
@@ -44,7 +44,9 @@ Colour
 
 Safety, non-negotiable
 - Perceived strobe at or below 3 Hz, and the raw rate never in the 10-25 Hz band.
-- No strobe over 2 bars. One strobe or one blackout in a show, never both, never twice.
+- No strobe over 2 bars. Strobes and blackouts share one per-track allowance, set by genre
+  and how hard the track goes; the task prompt gives this track's number and the linter
+  enforces it.
 - A blinder is a downbeat at the biggest moment, rarely otherwise. Nothing big in bars 0-15.
 - Blackouts are explicit and bounded.`;
 
@@ -90,7 +92,9 @@ research may override: if a credible published figure disagrees by a suspicious 
 3:2, 4:3), call reanalyse with it.
 
 Section labels are the detector's opinion; the bar numbers and energies are its measurement.
-A 32-bar drop is usually a chorus and a verse run together. Each cue carries its own section
+The vocabulary is chosen per track: club tracks read drop/groove, song tracks read
+chorus/verse. A chorus is an anthem to bloom in the song's signature colour; a drop is an
+impact to slam - do not give one the other's treatment. Each cue carries its own section
 field, so relabel where the bar table disagrees.
 
 Shell access is for the audio file and this project. If a lightdesk tool fails or looks like
@@ -204,11 +208,31 @@ middle. 1320 pixels at 60 per metre. The same data drives the 3D preview and the
 	].join('\n\n---\n\n');
 }
 
+/** What ingest already learned, so the agent researches on top of it instead of from zero. */
+function renderContext(context?: TrackContext | null): string {
+	if (!context || context.sources.length === 0) return '';
+	const lines: string[] = [];
+	if (context.artist && context.title) lines.push(`resolved: ${context.artist} - ${context.title}`);
+	if (context.genreFamily) {
+		lines.push(`genre family: ${context.genreFamily} (${context.genres.join(', ') || 'mapped'})`);
+	}
+	if (context.publishedBpm) lines.push(`published tempo: ${context.publishedBpm} bpm`);
+	if (context.lyrics) lines.push(`synced lyrics: ${context.lyrics.length} lines (get_lyrics maps each to its bar)`);
+	if (context.instrumental) lines.push('lyrics source marks the track instrumental');
+	if (lines.length === 0) return '';
+	return `\nAlready looked up at ingest (verify anything that matters, then go deeper):\n${lines.map((l) => `- ${l}`).join('\n')}\n`;
+}
+
 /** Pass 1: settle the design before touching cue-level detail. */
-export function buildBriefPrompt(analysis: TrackAnalysis, audioPath?: string): string {
+export function buildBriefPrompt(
+	analysis: TrackAnalysis,
+	audioPath?: string,
+	context?: TrackContext | null
+): string {
 	return `# Track
 
 ${audioPath ? `audio file: ${audioPath}\n` : ''}${renderHeader(analysis)}
+${renderContext(context)}
 
 ${renderArrangementChart(analysis)}
 
@@ -237,8 +261,18 @@ Look the track up, then write a SHORT plan. Under 150 words total, as terse line
 Do not write paragraphs. The effects are where your effort goes, not the description of them.`;
 }
 
+/** The per-track flash allowance, stated where the flat one-flash rule used to be. */
+function flashRule(allowance: number): string {
+	if (allowance === 0) {
+		return `This track's flash allowance is zero: no strobe and no blackout anywhere, as a hit or as
+a layer. The family forbids the gesture and the linter rejects it.`;
+	}
+	return `This track's flash allowance is ${allowance}, strobes and blackouts counted together. Spend
+up to ${allowance}, each on a moment that deserves it; the linter rejects ${allowance + 1}.`;
+}
+
 /** Pass 2: execute the plan. */
-export function buildShowPrompt(analysis: TrackAnalysis, brief: string): string {
+export function buildShowPrompt(analysis: TrackAnalysis, brief: string, flashAllowance = 1): string {
 	return `Your plan for "${analysis.title}":
 
 ${brief}
@@ -247,6 +281,8 @@ ${brief}
 
 Build it. Write the effects and get each through test_effect, then the cue list against the
 bar table, then lint, preview and submit.
+
+${flashRule(flashAllowance)}
 
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
 Keep notes short.`;
@@ -261,16 +297,17 @@ Keep notes short.`;
  * brief asks for and leave the rest - a rewrite from scratch would mostly reproduce the draft
  * with fresh opportunities to get the bookkeeping wrong.
  */
-export function buildRevisePrompt(analysis: TrackAnalysis, brief: string): string {
+export function buildRevisePrompt(analysis: TrackAnalysis, brief: string, flashAllowance = 1): string {
 	return `Your plan for "${analysis.title}":
 
 ${brief}
 
 ---
 
-A complete show already exists. It was generated from the analysis alone, with no idea what
-this song is: it covers every bar, respects every effect's taste metadata, holds the biggest
-look for the peak, and lints clean. Call get_draft to read it.
+A complete show already exists. The engine wrote it from the analysis and the genre profile
+ingest resolved - it knows what family the track is, never what the song is about: it covers
+every bar, respects every effect's taste metadata, holds the biggest look for the peak, and
+lints clean. Call get_draft to read it.
 
 Revise it into your plan. Change what carries meaning and leave what merely works:
 
@@ -285,9 +322,9 @@ the slam on each drop's downbeat, a colour flood answering alternate phrases, a 
 the analyser heard. Drop one only where your plan puts something else at that bar, and if you
 come back with a handful where the draft had many, you have quietly taken the hands off the show.
 
-The exception is the flash. One strobe OR one blackout in the whole show, never both and never
-twice; the linter rejects a second. Move it if the draft spent it somewhere your reading of the
-track disagrees with, but spend it once, on the moment you named in the brief.
+The exception is the flash. ${flashRule(flashAllowance)} The draft's flashes are legally
+placed; move one where your reading of the track disagrees, and do not trim them to one out
+of caution - punctuation the genre earned and the draft spent is part of the show.
 
 analysisHash is ${analysis.hash}. Bars run 0-${analysis.bars.length - 1}, starting at bar 0.
 Lint, preview, and submit when it says what your brief says. Keep notes short.`;
