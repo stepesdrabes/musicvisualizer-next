@@ -195,6 +195,29 @@ execFileSync('npm', ['run', 'build', '-w', '@mv/web'], { cwd: root, stdio: 'inhe
 const build = join(root, 'apps/web/build');
 if (!existsSync(build)) throw new Error('the web build produced no apps/web/build');
 
+// The ingest worker, bundled to one file beside the server. In dev it runs straight from
+// the source tree; the app has no source tree, and without this file every ingest would
+// fall back to the main thread and freeze the server for minutes per track. It lands in
+// server/ so createRequire resolves onnxruntime-node from the node_modules shipped there.
+console.log('building the ingest worker');
+{
+	const { rolldown } = await import('rolldown');
+	const worker = await rolldown({
+		input: join(root, 'packages/analysis/src/ingestWorker.ts'),
+		platform: 'node',
+		external: ['onnxruntime-node']
+	});
+	await worker.write({
+		file: join(build, 'ingest-worker.mjs'),
+		format: 'esm',
+		inlineDynamicImports: true
+	});
+	await worker.close();
+	if (!existsSync(join(build, 'ingest-worker.mjs'))) {
+		throw new Error('rolldown produced no ingest-worker.mjs');
+	}
+}
+
 mkdirSync(binaries, { recursive: true });
 const node = officialNode(triple);
 cpSync(node, join(binaries, `node-${triple}`), { dereference: true });
@@ -215,6 +238,26 @@ console.log(`node_modules ${all.size} packages (${direct.size} needed directly)`
 // back to the in-repo tracker and simply produces a worse grid.
 if (!existsSync(join(runtime, 'onnxruntime-node'))) {
 	throw new Error('onnxruntime-node did not make it into the bundle; beat tracking would fall back');
+}
+
+// The agent SDK spawns its CLI from a per-platform optionalDependency, and the dependency
+// walk above skips optionalDependencies on purpose: the other platforms' builds are not
+// installed here. This is the one of them the target platform cannot author without - the
+// SDK throws "Native CLI binary not found" on the first Design press - so it is copied by
+// name and its absence fails the build instead of the user's evening.
+{
+	const platform = triple.includes('apple-darwin')
+		? 'darwin'
+		: triple.includes('windows')
+			? 'win32'
+			: 'linux';
+	const arch = triple.startsWith('aarch64') ? 'arm64' : 'x64';
+	const cli = `@anthropic-ai/claude-agent-sdk-${platform}-${arch}`;
+	if (!existsSync(join(modules, cli))) {
+		throw new Error(`${cli} is not installed; the app would have no CLI for the agent SDK to spawn`);
+	}
+	cpSync(join(modules, cli), join(runtime, cli), { recursive: true, dereference: true });
+	console.log(`author CLI  ${mb(sizeOf(join(runtime, cli)))}  ${cli}`);
 }
 
 const saved = pruneOnnx(triple);

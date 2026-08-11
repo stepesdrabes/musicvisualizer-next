@@ -49,7 +49,7 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 		.join("cache");
 	std::fs::create_dir_all(&cache).map_err(|e| format!("cannot create {cache:?}: {e}"))?;
 
-	let sidecar = app
+	let mut sidecar = app
 		.shell()
 		.sidecar("node")
 		.map_err(|e| format!("no bundled node: {e}"))?
@@ -60,6 +60,13 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 		.env("MV_CACHE_DIR", cache)
 		.env("MV_MODEL_DIR", models)
 		.env("NODE_ENV", "production");
+
+	// The bundled ingest worker, so analysis runs off the server's main thread in the app
+	// exactly as it does in dev. Optional on purpose: an older bundle without the file
+	// still starts, it just ingests in-process the way it always did.
+	if let Ok(worker) = resource(app, "server/ingest-worker.mjs") {
+		sidecar = sidecar.env("MV_INGEST_WORKER", worker);
+	}
 
 	let (mut rx, child) = sidecar.spawn().map_err(|e| format!("cannot start server: {e}"))?;
 	app.manage(Sidecar(Mutex::new(Some(child))));

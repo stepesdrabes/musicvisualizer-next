@@ -9,6 +9,7 @@
 		"bundle": "node scripts/bundle.js"
 	},
 	"devDependencies": {
-		"@tauri-apps/cli": "^2.11.4"
+		"@tauri-apps/cli": "^2.11.4",
+		"rolldown": "^1.2.3"
 	}
 }
