@@ -1,5 +1,6 @@
 export { composeShow, type EngineOptions } from './plan.ts';
 export { choosePalette } from './palette.ts';
+export { allowedFlashes, profileFor, type GenreProfile } from './genre.ts';
 export { EffectPicker, type PickRequest } from './select.ts';
 export {
 	formatFindings,

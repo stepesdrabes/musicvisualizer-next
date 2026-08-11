@@ -1,5 +1,6 @@
 import type { ShowPalette, TrackAnalysis } from '@mv/core';
 import { Rng, rampHueFor } from '@mv/core';
+import type { GenreProfile } from './genre.ts';
 
 /**
  * The palette library, base first. Every base and accent are 140-180 degrees apart, which is
@@ -56,26 +57,35 @@ const PALETTES: PaletteChoice[] = [
  * The choice is then weighted-random rather than nearest, so the seed genuinely decides among
  * everything plausible. Nearest-heat is what made ten palettes behave like three.
  */
-export function choosePalette(analysis: TrackAnalysis, rng: Rng, artHue?: number | null): ShowPalette {
+export function choosePalette(
+	analysis: TrackAnalysis,
+	rng: Rng,
+	artHue?: number | null,
+	profile?: GenreProfile
+): ShowPalette {
 	const bpm = analysis.tempo.bpm;
 
 	// Tempo carries most of it. 90 is a room at rest and 175 is one that is not, and unlike
 	// every energy figure in the analysis it means the same thing from one track to the next.
 	let heat = Math.max(0, Math.min(1, (bpm - 90) / 85));
 
-	// Mode is the one colour convention an audience reads without being taught.
+	// Mode is the one colour convention an audience reads without being taught - and it works
+	// through saturation and lightness far more than through hue, so the mode nudge is small
+	// next to the genre's own bias.
 	if (analysis.key.confidence > 0.55) heat += analysis.key.mode === 'major' ? 0.14 : -0.1;
 	// A squashed master has no dynamics for the lighting to follow, so colour does more work.
 	if (analysis.peakToLoudness < 9) heat += 0.08;
 	// A wide loudness range means the arrangement is already doing the shouting.
 	if (analysis.loudnessRange > 8) heat -= 0.08;
+	heat += profile?.heatBias ?? 0;
 	heat = Math.max(0, Math.min(1, heat));
 
-	// Every palette stays in the running; heat only bends the odds. A quarter of an octave of
-	// slack either side is wide enough that two tracks at the same tempo rarely match.
+	// Every palette stays in the running; heat only bends the odds. The width is the genre's:
+	// a narrow family has a colour of its own, a wide one lets the seed roam.
+	const width = profile?.heatWidth ?? 0.26;
 	let total = 0;
 	const weights = PALETTES.map((p) => {
-		const w = Math.exp(-0.5 * ((p.heat - heat) / 0.26) ** 2);
+		const w = Math.exp(-0.5 * ((p.heat - heat) / width) ** 2);
 		total += w;
 		return w;
 	});
@@ -106,14 +116,20 @@ export function choosePalette(analysis: TrackAnalysis, rng: Rng, artHue?: number
 		: analysis.key.confidence > 0.5
 			? (analysis.key.tonic / 12) * 30 - 15
 			: 0;
+
+	// The genre's saturation discipline: pop may pastel, techno may not, and a monochrome
+	// family folds the third hue back onto the base so nothing mid-show can introduce a
+	// second colour - the accent survives for the single inversion event.
+	const sat = Math.max(0.3, Math.min(1, (choice.sat ?? 0.94) * (profile?.satScale ?? 1)));
+	const base = wrapHue(choice.base + shift);
 	return {
 		// The curated name describes a hue the palette no longer sits on once it has been turned
 		// onto the cover, and that name is what the brief tells a reader the room looks like.
-		name: fromArt ? `${hueName(wrapHue(choice.base + shift))} from the cover` : choice.name,
-		base: wrapHue(choice.base + shift),
+		name: fromArt ? `${hueName(base)} from the cover` : choice.name,
+		base,
 		accent: wrapHue(choice.accent + shift),
-		third: wrapHue(choice.third + shift),
-		sat: choice.sat,
+		third: profile?.monochrome ? base : wrapHue(choice.third + shift),
+		sat,
 		shade: choice.shade
 	};
 }

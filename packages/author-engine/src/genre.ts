@@ -1,0 +1,138 @@
+import type { GenreFamily, TrackAnalysis, TrackContext } from '@mv/core';
+
+/**
+ * How each genre family is lit. Distilled from how working designers actually light these
+ * rooms, compressed to the dials this engine owns. The rows encode the disagreements that
+ * are genuinely genre - flash budget, blackout grammar, palette discipline, how a peak is
+ * marked - and none of the universals, which stay hard-coded where they always were:
+ * contrast is earned in the valleys, cues land on structure, the biggest card goes to the
+ * biggest moment.
+ */
+export interface GenreProfile {
+	/** Added to the tempo-derived palette heat before a palette is drawn. */
+	heatBias: number;
+	/** Width of the palette lottery around that heat. Narrow means the family has a colour. */
+	heatWidth: number;
+	/** Multiplies palette saturation. Above 1 forbids pastels; below 1 invites them. */
+	satScale: number;
+	/**
+	 * One hue and white. The third slot collapses onto the base so nothing mid-show can
+	 * introduce a second colour; the accent survives for the single inversion event.
+	 */
+	monochrome: boolean;
+	/**
+	 * Flashes (strobes + blackouts) a show may spend at full track energy. Scaled down by
+	 * the track's own measured intensity, floored at zero. Zero means the family forbids
+	 * the gesture outright and the room never flashes, whatever the track does.
+	 */
+	flashBudget: number;
+	/** What marks the arrival of the biggest section. */
+	peak: 'slam' | 'bloom' | 'swell';
+	/** Whether a breakdown may sit near-black, or must stay a lit room playing quietly. */
+	darkBreakdowns: boolean;
+	/** Multiplies every cue's motion. The clock of the genre. */
+	motionScale: number;
+	/** Every Nth groove/verse cue carries the drum layer; 0 leaves it out entirely. */
+	transientEvery: number;
+	/** Phrase multiples between colour bumps in loud sections; 0 disables punctuation. */
+	bumpEvery: number;
+	/**
+	 * Effects that ARE this family's look, preferred by the picker wherever they are legal.
+	 * A weight, never a filter: an id that does not exist in the catalog simply never wins.
+	 * Non-master roles only - the peak master is chosen by seed alone, deliberately, so a
+	 * master listed here would be dead weight pretending to matter. genre.test.ts holds the
+	 * rows to both halves of that: every id must resolve, and never to a master.
+	 */
+	signatures: readonly string[];
+}
+
+const PROFILES: Record<GenreFamily, GenreProfile> = {
+	// One saturated hue or white, strobe as the lead instrument, unceremonious darkness.
+	techno: { heatBias: -0.05, heatWidth: 0.3, satScale: 1.05, monochrome: true, flashBudget: 5, peak: 'slam', darkBreakdowns: true, motionScale: 1.05, transientEvery: 2, bumpEvery: 1, signatures: [] },
+	// Warmer and rounder: wash blooms rather than assaults, gentle punctuation.
+	house: { heatBias: 0, heatWidth: 0.24, satScale: 0.95, monochrome: false, flashBudget: 2, peak: 'bloom', darkBreakdowns: false, motionScale: 1, transientEvery: 2, bumpEvery: 2, signatures: [] },
+	// Big-room: saturated, loud, the drop is the product.
+	edm: { heatBias: 0.06, heatWidth: 0.3, satScale: 1, monochrome: false, flashBudget: 3, peak: 'slam', darkBreakdowns: true, motionScale: 1.05, transientEvery: 2, bumpEvery: 1, signatures: [] },
+	// Long builds, euphoric blooms, the longest quiet valleys of any dance genre.
+	trance: { heatBias: -0.12, heatWidth: 0.2, satScale: 1, monochrome: false, flashBudget: 2, peak: 'bloom', darkBreakdowns: true, motionScale: 0.9, transientEvery: 3, bumpEvery: 2, signatures: [] },
+	// Bimodal: dark simmer between drops, everything at once on them.
+	bass: { heatBias: -0.1, heatWidth: 0.26, satScale: 1.05, monochrome: false, flashBudget: 4, peak: 'slam', darkBreakdowns: true, motionScale: 1.1, transientEvery: 1, bumpEvery: 1, signatures: ['rollerChase'] },
+	// Bright, clean, chorus-driven; pastels are legal here and nowhere else.
+	pop: { heatBias: 0.1, heatWidth: 0.34, satScale: 0.88, monochrome: false, flashBudget: 1, peak: 'bloom', darkBreakdowns: false, motionScale: 1, transientEvery: 2, bumpEvery: 2, signatures: ['confetti'] },
+	// High contrast, warm, blinder-shaped hits on the last chorus.
+	rock: { heatBias: 0.18, heatWidth: 0.24, satScale: 1, monochrome: false, flashBudget: 1, peak: 'slam', darkBreakdowns: false, motionScale: 1.1, transientEvery: 1, bumpEvery: 2, signatures: ['stageBlinders', 'headbang'] },
+	// Aggressive, snap cues, the strobe saved for the heaviest passage.
+	metal: { heatBias: 0.22, heatWidth: 0.3, satScale: 1.05, monochrome: false, flashBudget: 3, peak: 'slam', darkBreakdowns: true, motionScale: 1.2, transientEvery: 1, bumpEvery: 1, signatures: ['moshSlam', 'stageBlinders'] },
+	// Rock with the subtlety removed: loud, fast, undramatic.
+	punk: { heatBias: 0.2, heatWidth: 0.2, satScale: 1.05, monochrome: false, flashBudget: 2, peak: 'slam', darkBreakdowns: false, motionScale: 1.3, transientEvery: 1, bumpEvery: 1, signatures: ['moshSlam', 'stageBlinders'] },
+	// Held moody looks, sparse hard accents, the stop-time cut as the signature.
+	hiphop: { heatBias: 0.12, heatWidth: 0.22, satScale: 0.95, monochrome: false, flashBudget: 2, peak: 'slam', darkBreakdowns: false, motionScale: 0.8, transientEvery: 2, bumpEvery: 2, signatures: ['halftimeBounce'] },
+	// Rich, low, smooth; swells, never hits; no flash has any business here.
+	rnb: { heatBias: 0.1, heatWidth: 0.2, satScale: 0.95, monochrome: false, flashBudget: 0, peak: 'swell', darkBreakdowns: false, motionScale: 0.65, transientEvery: 3, bumpEvery: 3, signatures: [] },
+	// Warm, near-still, the one sanctioned darkness is the final fade.
+	ballad: { heatBias: 0.2, heatWidth: 0.18, satScale: 0.8, monochrome: false, flashBudget: 0, peak: 'swell', darkBreakdowns: false, motionScale: 0.5, transientEvery: 0, bumpEvery: 0, signatures: ['breathe'] },
+	// Light as weather: slow drift, no beat-locked activity at all.
+	ambient: { heatBias: -0.15, heatWidth: 0.3, satScale: 0.9, monochrome: false, flashBudget: 0, peak: 'swell', darkBreakdowns: true, motionScale: 0.35, transientEvery: 0, bumpEvery: 0, signatures: [] },
+	// Colour is the story: hot, saturated, continuously moving, never frozen.
+	latin: { heatBias: 0.15, heatWidth: 0.3, satScale: 1.05, monochrome: false, flashBudget: 2, peak: 'slam', darkBreakdowns: false, motionScale: 1.1, transientEvery: 1, bumpEvery: 1, signatures: [] },
+	// One long pocket: warm gold base, continuous groove, strobe only as quotation.
+	disco: { heatBias: 0.16, heatWidth: 0.22, satScale: 0.92, monochrome: false, flashBudget: 1, peak: 'bloom', darkBreakdowns: false, motionScale: 1, transientEvery: 1, bumpEvery: 2, signatures: ['mirrorBall', 'discoBall'] }
+};
+
+/** The engine's old behaviour, for a track nothing could identify. */
+const DEFAULT_PROFILE: GenreProfile = {
+	heatBias: 0,
+	heatWidth: 0.26,
+	satScale: 1,
+	monochrome: false,
+	flashBudget: 1,
+	peak: 'slam',
+	darkBreakdowns: false,
+	motionScale: 1,
+	transientEvery: 2,
+	bumpEvery: 2,
+	signatures: []
+};
+
+export function profileFor(context: TrackContext | null | undefined): GenreProfile {
+	const family = context?.genreFamily;
+	return family ? PROFILES[family] : DEFAULT_PROFILE;
+}
+
+/**
+ * How many flashes this track has earned: the genre's budget scaled by how hard the track
+ * actually goes. Energy is normalised within a track, so the scale reads kick density and
+ * crest instead - a relentless track keeps the family budget, a mellow one loses most of it.
+ *
+ * One place, imported by the planner that spends the budget and the linter that enforces
+ * it, because two implementations of the same allowance is how they come to disagree.
+ */
+export function allowedFlashes(
+	analysis: TrackAnalysis,
+	context: TrackContext | null | undefined
+): number {
+	const profile = profileFor(context);
+	if (profile.flashBudget === 0) return 0;
+
+	let kicks = 0;
+	let loudBars = 0;
+	for (const row of analysis.bars) {
+		if (row.energy < 60) continue;
+		kicks += row.kicks;
+		loudBars++;
+	}
+	const density =
+		loudBars > 0 ? kicks / loudBars / Math.max(1, analysis.tempo.beatsPerBar) : 0;
+	// A slow song is a ballad whatever its family says: Iris files under rock, and a strobe
+	// into its chorus reads as a rig fault. The felt tempo is trustworthy here because the
+	// compound-meter guard has already put slow songs at their real pulse. The half-time
+	// families are exempt - a 75 bpm grid is trap's and dubstep's natural reading, and
+	// their flashes belong to them. Kick density cannot arbitrate this: an acoustic strum
+	// lands in the kick band and Iris out-counts Enter Sandman.
+	const halftime = context?.genreFamily === 'hiphop' || context?.genreFamily === 'bass';
+	if (analysis.tempo.bpm < 90 && !halftime) return 0;
+	// Density 1 is four-on-the-floor; half that already reads as driving in a song. The
+	// scale bottoms at 0.35 rather than zero: a genre that flashes keeps at least the one.
+	const scale = Math.max(0.35, Math.min(1, density / 0.9));
+	return Math.max(1, Math.round(profile.flashBudget * scale));
+}

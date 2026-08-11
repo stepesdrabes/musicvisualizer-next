@@ -30,6 +30,12 @@ export interface CueReading {
 	 * actually poses - is any wall being left out - and a flat wash scores 1.
 	 */
 	spread: number;
+	/**
+	 * Mean (max-min)/max over lit pixels: how much colour the room actually receives, 0 grey
+	 * to 1 fully saturated. The Hunt effect makes dim cues read greyer than their bytes say,
+	 * so a QUIET section delivering low chroma is the "flat" complaint in numbers.
+	 */
+	chroma: number;
 	/** Movement across a phrase, with frame-rate shimmer already removed. */
 	drift: number;
 	/** Movement at frame scale: the room shimmering rather than moving. */
@@ -57,6 +63,16 @@ export interface ShowReading {
 	 * nobody meant to lose.
 	 */
 	darkBars: number[];
+	/**
+	 * Frames where the room's overall colour jumped further than a designed show moves,
+	 * outside the bars where a cue or hit licenses the jump.
+	 *
+	 * The caps come from the one generative system whose output human judges could not tell
+	 * from a designer's, which needed exactly this constraint to get there: smoothness inside
+	 * sections, jumps only at events. A high count is the "assembled, not designed" tell.
+	 */
+	hueJumps: number;
+	levelJumps: number;
 }
 
 /** Where a pixel stops reading as off in a dark room. */
@@ -73,13 +89,14 @@ const FAST_TAU = 0.08;
 const SLOW_TAU = 0.5;
 
 /** Which kinds the contrast ratio is taken between: the loudest against the three quiet ones. */
-const LOUD: ReadonlySet<SectionKind> = new Set<SectionKind>(['drop']);
+const LOUD: ReadonlySet<SectionKind> = new Set<SectionKind>(['drop', 'chorus']);
 const QUIET: ReadonlySet<SectionKind> = new Set<SectionKind>(['breakdown', 'intro', 'outro']);
 
 interface Accumulator {
 	level: number;
 	lit: number;
 	spread: number;
+	chroma: number;
 	drift: number;
 	ripple: number;
 	n: number;
@@ -128,6 +145,7 @@ export function measureShow(
 		level: 0,
 		lit: 0,
 		spread: 0,
+		chroma: 0,
 		drift: 0,
 		ripple: 0,
 		n: 0
@@ -149,21 +167,47 @@ export function measureShow(
 	const aSlow = 1 - Math.exp(-dt / SLOW_TAU);
 	let first = true;
 
+	// Per-frame jump caps on the room's overall look, from the generative system whose output
+	// judges could not tell from a designer's: at its 10 Hz, 100 degrees of hue and 20% of
+	// intensity per step, converted to this frame rate. Jumps are licensed at cue changes and
+	// while punctuation is live, exactly as that system licensed them at musical events.
+	const HUE_CAP = (100 / (0.1 * fps)) * 1.0;
+	const LEVEL_CAP = (0.2 / (0.1 * fps)) * 255;
+	let hueJumps = 0;
+	let levelJumps = 0;
+	let prevHue = Number.NaN;
+	let prevMean = Number.NaN;
+	let prevCue = -1;
+	let licensedUntil = -1;
+
 	for (let t = 0; t < analysis.duration; t += dt) {
 		const f = player.update(t, dt);
 		mixer.render(f);
 
 		let sum = 0;
 		let lit = 0;
+		let chroma = 0;
 		let drift = 0;
 		let ripple = 0;
+		let sumR = 0;
+		let sumG = 0;
+		let sumB = 0;
 
 		for (let k = 0; k < pixels; k++) {
 			const i = k * 3;
-			const v = Math.max(mixer.bytes[i], mixer.bytes[i + 1], mixer.bytes[i + 2]);
+			const r = mixer.bytes[i];
+			const g = mixer.bytes[i + 1];
+			const b = mixer.bytes[i + 2];
+			const v = Math.max(r, g, b);
 			level[k] = v;
 			sum += v;
-			if (v >= VISIBLE) lit++;
+			sumR += r;
+			sumG += g;
+			sumB += b;
+			if (v >= VISIBLE) {
+				lit++;
+				chroma += (v - Math.min(r, g, b)) / v;
+			}
 			if (first) {
 				fast[k] = v;
 				slow[k] = v;
@@ -175,6 +219,27 @@ export function measureShow(
 			ripple += Math.abs(v - fast[k]);
 		}
 		first = false;
+
+		{
+			const barNow = Math.min(Math.max(f.barIndex, 0), lastBar);
+			const cueNow = cueAt[barNow];
+			if (cueNow !== prevCue) {
+				prevCue = cueNow;
+				licensedUntil = t + f.beatPeriod;
+			}
+			for (const w of windows) {
+				if (t >= w.from && t < w.to + 0.5) licensedUntil = Math.max(licensedUntil, w.to + 0.5);
+			}
+			const mean = sum / pixels;
+			const hue = meanHue(sumR, sumG, sumB);
+			if (t > licensedUntil && !Number.isNaN(prevHue) && mean > VISIBLE && prevMean > VISIBLE) {
+				const dHue = circularDelta(hue, prevHue);
+				if (dHue > HUE_CAP) hueJumps++;
+				if (Math.abs(mean - prevMean) > LEVEL_CAP) levelJumps++;
+			}
+			prevHue = hue;
+			prevMean = mean;
+		}
 
 		let dimmest = Infinity;
 		let brightest = 0;
@@ -192,6 +257,7 @@ export function measureShow(
 			cell.level += sum / pixels;
 			cell.lit += lit / pixels;
 			cell.spread += brightest > 0 ? dimmest / brightest : 1;
+			cell.chroma += lit > 0 ? chroma / lit : 0;
 			cell.drift += drift / pixels;
 			cell.ripple += ripple / pixels;
 			cell.n++;
@@ -222,6 +288,7 @@ export function measureShow(
 			level: cell.level / n,
 			lit: cell.lit / n,
 			spread: cell.spread / n,
+			chroma: cell.chroma / n,
 			drift: cell.drift / n,
 			ripple: cell.ripple / n
 		};
@@ -239,8 +306,35 @@ export function measureShow(
 		cues: readings,
 		contrast: ratio(readings, LOUD, QUIET),
 		hits: windows.map((w, i) => ({ bar: w.bar, kind: w.kind, fired: fired.has(i) })),
-		darkBars
+		darkBars,
+		hueJumps,
+		levelJumps
 	};
+}
+
+/**
+ * Hue of an accumulated colour, degrees, or NaN when it is too grey to carry one.
+ *
+ * The chroma floor is load-bearing: a room split between two hues averages toward grey,
+ * where the hue of the mean flips wildly while nobody in the room sees any colour change
+ * at all. Below a tenth of the accumulated level the reading abstains rather than jitters.
+ */
+function meanHue(r: number, g: number, b: number): number {
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const c = max - min;
+	if (max < 1e-6 || c < max * 0.25) return Number.NaN;
+	let h: number;
+	if (max === r) h = ((g - b) / c) % 6;
+	else if (max === g) h = (b - r) / c + 2;
+	else h = (r - g) / c + 4;
+	return ((h * 60) % 360 + 360) % 360;
+}
+
+function circularDelta(a: number, b: number): number {
+	if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+	const d = Math.abs(a - b) % 360;
+	return Math.min(d, 360 - d);
 }
 
 /** Weighted by how long each cue holds the room, or a one-bar drop counts as much as a chorus. */
@@ -313,7 +407,7 @@ export function formatReading(reading: ShowReading): string {
 	const lines: string[] = [
 		`Rendered at ${reading.fps} fps through the same mixer that feeds the wire.`,
 		'',
-		'bars       section     level   lit  spread  drift  ripple'
+		'bars       section     level   lit  spread  chroma  drift  ripple'
 	];
 
 	for (const c of reading.cues) {
@@ -322,7 +416,9 @@ export function formatReading(reading: ShowReading): string {
 				.toFixed(1)
 				.padStart(6)} ${`${Math.round(100 * c.lit)}%`.padStart(5)} ${c.spread
 				.toFixed(2)
-				.padStart(7)} ${c.drift.toFixed(2).padStart(6)} ${c.ripple.toFixed(2).padStart(7)}`
+				.padStart(7)} ${c.chroma.toFixed(2).padStart(7)} ${c.drift
+				.toFixed(2)
+				.padStart(6)} ${c.ripple.toFixed(2).padStart(7)}`
 		);
 	}
 
@@ -342,6 +438,12 @@ export function formatReading(reading: ShowReading): string {
 	}
 	if (reading.darkBars.length > 0) {
 		lines.push(`dark outside a void, bars: ${summariseRuns(reading.darkBars)}`);
+	}
+	if (reading.hueJumps > 0 || reading.levelJumps > 0) {
+		lines.push(
+			`the room's overall look jumps outside any cue or hit: ${reading.hueJumps} hue jump(s), ` +
+				`${reading.levelJumps} level jump(s) - smoothness inside sections is what separates designed from assembled`
+		);
 	}
 
 	lines.push('');

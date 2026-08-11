@@ -1,5 +1,5 @@
 import type { EffectDef, LayerRole, SectionKind } from '@mv/core';
-import { Rng } from '@mv/core';
+import { Rng, sectionBase } from '@mv/core';
 
 export interface PickRequest {
 	role: LayerRole;
@@ -24,6 +24,14 @@ export interface PickRequest {
 	 * as having a structure rather than a sequence.
 	 */
 	group?: number;
+	/**
+	 * The genre's signature effects, favoured wherever they are legal. A weight comparable
+	 * to the quiet preference, so a signature wins the coin tosses without ever emptying a
+	 * pool or overriding an energy mismatch of more than a band.
+	 */
+	prefer?: readonly string[];
+	/** Ignore the section filter: the once-per-track wildcard look reaches the whole catalog. */
+	anySection?: boolean;
 }
 
 /**
@@ -42,17 +50,28 @@ export interface PickRequest {
  * made once by requiring `carries` of an accent. Weighting instead keeps every option reachable
  * and simply makes the spectrum-led ones win the coin tosses.
  *
- * Measured on a real intro: the pair the picker chose delivered 1.27 bytes of movement where the
- * two most spectrum-led candidates in the same pool delivered 2.24, across 2.7x the spatial
- * spread. Scaled against 3 bytes of `taste.quiet` and weighted 4, so a genuinely reactive layer
- * outweighs both the novelty penalty (2.2 per prior use) and a one-band energy mismatch (1.6),
- * but three uses of the same effect still lose to a fresh one. Swept: at 2 nothing changed hands,
- * at 4 intro drift went 1.76 to 4.37 corpus-wide, at 6 it reached 4.75 and started spending
- * variety for it.
+ * Spent as a rank inside the eligible pool rather than against an absolute scale: only the
+ * ORDER of `taste.quiet` is trusted, because the stored magnitudes go stale every time the
+ * quiet pool or the house floor changes and the ordering mostly survives that. This is the
+ * span of the whole ladder; the per-step gap is capped at 1.1 in `pick` so neighbouring
+ * candidates stay a coin toss (jitter 1.4) while the ends stay decisive. Swept as the
+ * absolute weight: at 2 nothing changed hands, at 4 intro drift went 1.76 to 4.37
+ * corpus-wide, at 6 it reached 4.75 and started spending variety for it.
  */
 const QUIET_WEIGHT = 4;
-/** Bytes of movement at which a layer counts as fully reactive; above this it stops competing. */
-const QUIET_FULL = 3;
+
+export interface PickerOptions {
+	/**
+	 * Refuse every effect that declares a `character`, however it scores.
+	 *
+	 * Set where the track's flash allowance is zero: the families that forbid the strobe as a
+	 * hit forbid it as an effect too, or an rnb night is "no flashes" in the punctuation and
+	 * blinder slams in every accent. A filter rather than a weight, unlike everything else in
+	 * here, because the gesture is forbidden rather than dispreferred - and it can only empty
+	 * a pool down to the effects that are not flashes, which is a pool worth having.
+	 */
+	vetoCharacter?: boolean;
+}
 
 export class EffectPicker {
 	private readonly effects: readonly EffectDef[];
@@ -60,10 +79,12 @@ export class EffectPicker {
 	private readonly lastInRole = new Map<LayerRole, string>();
 	private readonly byGroup = new Map<string, string>();
 	private readonly rng: Rng;
+	private readonly vetoCharacter: boolean;
 
-	constructor(effects: readonly EffectDef[], rng: Rng) {
+	constructor(effects: readonly EffectDef[], rng: Rng, opts: PickerOptions = {}) {
 		this.effects = effects;
 		this.rng = rng;
+		this.vetoCharacter = opts.vetoCharacter ?? false;
 	}
 
 	/** Marks an effect as spent without picking it, for one chosen ahead of time. */
@@ -90,8 +111,17 @@ export class EffectPicker {
 
 		const eligible = this.effects.filter((e) => {
 			if (e.role !== req.role) return false;
+			if (this.vetoCharacter && e.taste.character) return false;
 			if (req.mustCarry && e.taste.carries === false) return false;
-			if (!e.taste.sections.includes(req.section)) return false;
+			// Either vocabulary: an effect written for choruses says 'chorus'; the rest of the
+			// catalog speaks the club kinds and serves a chorus as the drop-class passage it is.
+			if (
+				!req.anySection &&
+				!e.taste.sections.includes(req.section) &&
+				!e.taste.sections.includes(sectionBase(req.section))
+			) {
+				return false;
+			}
 			if (req.lengthBars < e.taste.minBars || req.lengthBars > e.taste.maxBars) return false;
 			if (e.taste.peakReserved) {
 				if (!req.allowPeakReserved) return false;
@@ -101,6 +131,20 @@ export class EffectPicker {
 		});
 		if (eligible.length === 0) return null;
 
+		// The quiet preference as a rank within THIS pool, not a position on an absolute
+		// scale. The absolute map had two failure modes the shows actually exhibited: a
+		// probe outlier saturated the whole bonus and won its section in 98% of seeds, and
+		// any two candidates more than the jitter apart stopped being a choice at all. Rank
+		// keeps the ordering - which survives a stale probe far better than the magnitudes
+		// do - and the step is capped so adjacent candidates stay inside the seed's reach.
+		const quietRank = new Map<string, number>();
+		let quietStep = 0;
+		if (req.bare) {
+			const ranked = [...eligible].sort((a, b) => (a.taste.quiet ?? 0) - (b.taste.quiet ?? 0));
+			ranked.forEach((e, i) => quietRank.set(e.id, i));
+			quietStep = Math.min(1.1, QUIET_WEIGHT / Math.max(1, eligible.length - 1));
+		}
+
 		const scored = eligible.map((e) => {
 			// Two bands out is a different kind of moment, not a slightly wrong one.
 			const distance = Math.abs(e.taste.energy - target);
@@ -109,12 +153,19 @@ export class EffectPicker {
 				-1.6 * distance -
 				2.2 * seen -
 				(e.id === previous ? 6 : 0) +
+				// A tie-breaker, deliberately under one energy band and half a use of novelty.
+				// At 3 it was a mandate: within a family, every show reached for the same
+				// signatures and two-thirds of any two shows' vocabularies were identical.
+				(req.prefer?.includes(e.id) ? 1.1 : 0) +
 				// Only where it is the whole show. In a groove or a drop there is a kit, a
 				// transient layer and a master doing the reacting, and a bed that fights them is
 				// noise rather than information.
-				(req.bare ? QUIET_WEIGHT * Math.min(1, (e.taste.quiet ?? 0) / QUIET_FULL) : 0) +
-				// Enough jitter to break ties between equals, never enough to overrule the fit.
-				this.rng.float() * 0.9;
+				(req.bare ? quietStep * (quietRank.get(e.id) ?? 0) : 0) +
+				// Jitter wide enough that the seed genuinely chooses among near-equals - at 0.9
+				// the first choice for a role at a given energy was close to deterministic, so
+				// same-family shows opened on the same bed night after night - and still under
+				// one energy band, so the fit keeps the last word.
+				this.rng.float() * 1.4;
 			return { def: e, score };
 		});
 
@@ -135,18 +186,39 @@ export class EffectPicker {
 	 * four distinct biggest moments between them. The seed is the track's own hash, so the
 	 * choice is still the same every time for the same track.
 	 */
-	strongest(role: LayerRole, section: SectionKind, lengthBars: number): EffectDef | null {
+	strongest(
+		role: LayerRole,
+		section: SectionKind,
+		lengthBars: number,
+		peak: 'slam' | 'bloom' = 'slam'
+	): EffectDef | null {
 		const eligible = this.effects.filter(
 			(e) =>
 				e.role === role &&
-				e.taste.sections.includes(section) &&
+				// A hit performer renders black until the player arms it, so reserved here it is
+				// either a duplicate of the drop-opener hit or a no-op on the biggest moment.
+				!e.taste.hitOnly &&
+				// A bloom family's peak arrives as light, not as interruption: a shutter or a
+				// strobe winning it is the rig malfunction the profile exists to prevent.
+				!(peak === 'bloom' && e.taste.character === 'flash') &&
+				!(this.vetoCharacter && e.taste.character) &&
+				(e.taste.sections.includes(section) ||
+					e.taste.sections.includes(sectionBase(section))) &&
 				lengthBars >= e.taste.minBars &&
 				lengthBars <= e.taste.maxBars &&
 				(this.used.get(e.id) ?? 0) === 0
 		);
 		if (eligible.length === 0) return null;
 
-		const scored = eligible.map((e) => ({ def: e, score: e.taste.energy + this.rng.float() * 0.9 }));
+		// No signature bonus here, and that is a lesson rather than an omission: at +0.7
+		// against 0.9 of seed jitter, one master won the peak of nearly every show in its
+		// family - blinderWall opened eight of eleven rock tracks - and the peak is exactly
+		// the moment that must never become the expected thing. The seed alone decides
+		// among the several effects written to be the biggest thing in the room.
+		const scored = eligible.map((e) => ({
+			def: e,
+			score: e.taste.energy + this.rng.float() * 0.9
+		}));
 		scored.sort((a, b) => b.score - a.score || a.def.id.localeCompare(b.def.id));
 		return scored[0].def;
 	}

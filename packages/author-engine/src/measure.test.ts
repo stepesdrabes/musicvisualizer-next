@@ -22,7 +22,12 @@ describe('coverage', () => {
 	});
 
 	it('gives every cue frames to be measured over', () => {
-		for (const cue of reading.cues) expect(cue.level).toBeGreaterThan(0);
+		// A void is darkness on purpose - no house floor is what makes it mean something - so
+		// brightness is only evidence of frames for every other kind of cue.
+		for (const cue of reading.cues) {
+			if (cue.section === 'void') continue;
+			expect(cue.level, `cue at ${cue.bar}`).toBeGreaterThan(0);
+		}
 	});
 });
 

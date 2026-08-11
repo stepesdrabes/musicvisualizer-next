@@ -1,5 +1,14 @@
-import type { EffectDef, Hit, LayerRole, Show, TrackAnalysis } from '@mv/core';
-import { HIT_RULES, LAYER_ROLES, PHRASE_BARS, hitSeconds, onPhraseGrid, phraseOffset } from '@mv/core';
+import type { EffectDef, Hit, LayerRole, Show, TrackAnalysis, TrackContext } from '@mv/core';
+import { allowedFlashes } from './genre.ts';
+import {
+	HIT_RULES,
+	LAYER_ROLES,
+	PHRASE_BARS,
+	hitSeconds,
+	onPhraseGrid,
+	phraseOffset,
+	sectionBase
+} from '@mv/core';
 
 export type Severity = 'error' | 'warning';
 
@@ -21,6 +30,8 @@ export interface LintContext {
 	analysis: TrackAnalysis;
 	/** Built-ins plus anything the show generated. */
 	effects: Map<string, EffectDef>;
+	/** What the track is; decides the flash allowance. Absent falls back to one flash. */
+	context?: TrackContext | null;
 }
 
 /**
@@ -102,9 +113,20 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// inserted break or a bar of 2/4, and a global anchor cannot follow it. Dragging those
 	// boundaries onto the grid anyway cost 1.7 points of boundary F0.5 across 374 annotated
 	// tracks. What this still forbids is a cue placed off-phrase where nothing changed.
+	// A bar is on the phrase grid when it sits on a 4-bar multiple counted from ITS OWN
+	// section's start. Phrases count from the drop, not from bar 0: a track that inserts an
+	// odd passage shifts its phase mid-song, and the global anchor then disagrees with what
+	// everyone in the room is counting. The global grid is still accepted, for cues placed
+	// against the anchor on tracks where the two agree.
 	const measured = new Set(analysis.sections.map((s) => s.startBar));
+	const sectionStartOf = (bar: number): number => {
+		for (const s of analysis.sections) if (bar >= s.startBar && bar < s.endBar) return s.startBar;
+		return 0;
+	};
 	const onPhrase = (bar: number) =>
-		onPhraseGrid(bar, tempo.phraseAnchorBar) || measured.has(bar);
+		onPhraseGrid(bar, tempo.phraseAnchorBar) ||
+		measured.has(bar) ||
+		(bar - sectionStartOf(bar)) % PHRASE_BARS === 0;
 
 	for (let i = 1; i < cues.length; i++) {
 		const cue = cues[i];
@@ -198,7 +220,10 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 					cue.bar
 				);
 			}
-			if (!def.taste.sections.includes(cue.section)) {
+			if (
+				!def.taste.sections.includes(cue.section) &&
+				!def.taste.sections.includes(sectionBase(cue.section))
+			) {
 				warn(
 					'effect-out-of-place',
 					`"${def.id}" is not intended for a ${cue.section} (allowed: ${def.taste.sections.join(', ')})`,
@@ -281,7 +306,7 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 	// not add before it.
 	for (let i = 0; i < cues.length - 1; i++) {
 		if (cues[i].section !== 'build') continue;
-		const next = cues.slice(i + 1).find((c) => c.section === 'drop');
+		const next = cues.slice(i + 1).find((c) => sectionBase(c.section) === 'drop');
 		if (!next) continue;
 		const buildLayers = countLayers(cues[i].layers);
 		const dropLayers = countLayers(next.layers);
@@ -406,7 +431,12 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			// length decides how hard the cut is, not whether the room returns.
 			const inVoid = section === 'void';
 			const next = analysis.sections.find((s) => s.startBar > hit.bar);
-			if (!inVoid && next && next.kind === 'drop' && next.startBar - hit.bar <= HIT_RULES.blackout.maxBars) {
+			if (
+				!inVoid &&
+				next &&
+				sectionBase(next.kind) === 'drop' &&
+				next.startBar - hit.bar <= HIT_RULES.blackout.maxBars
+			) {
 				const end = hitEnd(hit);
 				if (Math.abs(end - next.startBar) > 1e-9) {
 					err(
@@ -419,21 +449,58 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 		}
 	}
 
-	// One flash in the whole show, counting strobes and blackouts together.
+	// The flash allowance, counting strobes and blackouts together: genre times energy, one
+	// for a track nothing could identify, zero for the families that forbid the gesture.
 	//
-	// The same allowance the engine plans against, checked here so an agent's show cannot spend
-	// more. Counted together because they are one gesture from the audience's side: the room
-	// stops being a room and becomes an event, and the second time it happens it is a lighting
-	// rig. An error rather than a warning, because it is the difference between a show with a
-	// biggest moment and a show without one.
+	// The same function the engine plans against, so an agent's show cannot spend more.
+	// Counted together because they are one gesture from the audience's side: the room stops
+	// being a room and becomes an event, and past the budget it is a lighting rig. An error
+	// rather than a warning, because it is the difference between a show with a biggest
+	// moment and a show without one.
+	const allowance = allowedFlashes(analysis, ctx.context);
 	const flashes = hits.filter((h) => h.kind === 'strobe' || h.kind === 'blackout');
-	if (flashes.length > 1) {
-		const where = flashes.map((h) => `${h.kind} at ${h.bar}`).join(', ');
+	// A strobe smuggled in as a cue's master layer with its trigger armed is the same gesture
+	// as a strobe hit, and it spends the same card - otherwise the budget governs the timeline
+	// and not the room.
+	const armedStrobes = show.cues.filter((c) => {
+		const master = c.layers.master;
+		if (!master) return false;
+		const def = ctx.effects.get(master.effect);
+		return (
+			def?.taste.hitOnly === true &&
+			def.taste.character === 'flash' &&
+			(master.params?.trigger ?? 0) > 0.5
+		);
+	});
+	const spent = flashes.length + armedStrobes.length;
+	if (spent > allowance) {
+		const where = [
+			...flashes.map((h) => `${h.kind} at ${h.bar}`),
+			...armedStrobes.map((c) => `armed strobe master at ${c.bar}`)
+		].join(', ');
 		err(
 			'flash-budget',
-			`${flashes.length} strobes and blackouts (${where}); a show gets one, spent on the moment that deserves it`,
-			flashes[1].bar
+			`${spent} strobes and blackouts (${where}); this track earns ${allowance}, spent on the moments that deserve them`,
+			flashes[Math.min(allowance, flashes.length - 1)]?.bar ?? armedStrobes[0].bar
 		);
+	}
+
+	// The same allowance, applied to what the cues are made of: a family that has earned no
+	// flashes does not get blinder slams or strobes as ordinary layers instead. Mirrors the
+	// picker's veto, so an agent's revision cannot reintroduce what the engine refused.
+	if (allowance === 0) {
+		for (const cue of show.cues) {
+			for (const role of LAYER_ROLES) {
+				const spec = cue.layers[role];
+				const character = spec ? ctx.effects.get(spec.effect)?.taste.character : undefined;
+				if (!character) continue;
+				err(
+					'flash-character',
+					`${spec!.effect} is a ${character} effect and this track's flash allowance is zero; the family forbids the gesture in any layer`,
+					cue.bar
+				);
+			}
+		}
 	}
 
 	// Punctuation is anchored to something an audience can hear: the phrase grid, a boundary the

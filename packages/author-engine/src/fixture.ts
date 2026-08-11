@@ -33,8 +33,18 @@ export function fixture(bpm = 128, drift = 0): TrackAnalysis {
 		for (let i = 0; i < bar; i++) t += barLength * (1 + drift * Math.sin(i * 2.399));
 		return t;
 	};
-	const energyOf = (kind: SectionSpan['kind']) =>
-		({ intro: 20, groove: 62, breakdown: 30, build: 55, void: 4, drop: 92, outro: 18 })[kind];
+	const energyOf = (kind: SectionSpan['kind']): number =>
+		({
+			intro: 20,
+			groove: 62,
+			verse: 58,
+			breakdown: 30,
+			build: 55,
+			void: 4,
+			drop: 92,
+			chorus: 88,
+			outro: 18
+		})[kind];
 
 	const bars: BarRow[] = [];
 	for (const [from, to, kind] of PLAN) {
@@ -51,6 +61,7 @@ export function fixture(bpm = 128, drift = 0): TrackAnalysis {
 				kicks: kind === 'drop' || kind === 'groove' ? 4 : 0,
 				snares: 2,
 				hats: 8,
+				vocal: 0,
 				events: []
 			});
 		}

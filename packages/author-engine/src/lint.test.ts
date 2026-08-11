@@ -34,6 +34,7 @@ function fixture(): TrackAnalysis {
 				kicks: kind === 'void' || kind === 'intro' ? 0 : 4,
 				snares: 2,
 				hats: 8,
+				vocal: 0,
 				events: kind === 'void' ? ['silence'] : []
 			});
 		}
