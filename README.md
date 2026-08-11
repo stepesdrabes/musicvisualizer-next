@@ -32,6 +32,17 @@ actually is rather than for its genre. Tempo is the one thing research may overr
 detected figure disagrees with a published one by a suspicious ratio, it can call `reanalyse`
 and the whole grid is rebuilt around the corrected value.
 
+The engine path is not working blind any more either. Ingest resolves what a rip actually is
+from keyless free APIs - yt-dlp's own music metadata, song.link, Deezer (ISRC and published
+tempo), iTunes and MusicBrainz genres, LRCLIB synced lyrics - and an 18 MB genre model then
+listens to the middle of the track and outvotes the record shop where they disagree: The
+Weeknd is filed under R&B while Blinding Lights is synthwave, and the room lights the record
+that is playing. All of it lands in a cached `TrackContext`; every lookup is timeout-guarded
+and optional, so an offline ingest degrades to exactly what it was before any of this existed.
+A published tempo that re-hears the detected one at a clean ratio corrects the metrical level
+automatically - the same correction the agent has always been allowed to make from research,
+now made by the engine from the same kind of evidence.
+
 The system prompt is written to Anthropic's Opus 5 guidance (no self-verification
 instructions, no shouted emphasis, the hardest constraint restated last) and the craft in it
 is attributed - Rosenberg on spending strong colour sparingly, Sinclair on putting the darkest
@@ -52,7 +63,7 @@ packages/transport-ddp  DDP over UDP              -> core
 packages/author-ai    Agent SDK, tools, backends  -> core, analysis, author-engine
 packages/author-engine  deterministic show generation + the linter  -> core
 packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
-packages/core         contracts, geometry, colour, DSL, 63 effects, mixer, player
+packages/core         contracts, geometry, colour, DSL, 73 effects, mixer, player
 ```
 
 The layering is enforced by separate `package.json` files rather than by convention: `core`
@@ -76,13 +87,23 @@ The room is lit before anyone decides whether to spend a model on it. `author-en
 a complete show from the analysis alone in about a millisecond: it covers every bar, keeps
 each effect inside the taste metadata it declares, reserves the biggest look in the catalog
 for the peak section and nowhere else, climbs the intensity through a build, cuts the light in
-every void, and lints clean. Every drop slams and the phrases inside a loud passage are
-answered with colour, but the flash is rationed: one strobe **or** one blackout in a whole
-show, spent on the biggest moment that can hold it. Past the second one the room has said the
-only thing a flash says. It is deterministic - the seed is the analysis hash, so the same
-track is the same show every time, and a different track is a different one. Reroll steps that
-seed and composes again, which is how a favourite track stops being one picture forever without
-giving up a bug that reproduces.
+every void, and lints clean. It also knows what kind of night it is running: a genre profile
+(fifteen families, distilled from how working designers actually light each of them) sets the
+palette discipline - techno gets one hue and white, pop may pastel, metal runs hot - the
+motion clock, how often the drum layer answers, and what marks a peak: a slam, a bloom, or a
+swell. The flash is rationed by the same table: strobes and blackouts share a budget scaled by
+genre and by how hard the track actually goes, so a techno night earns several phrase-locked
+strobes, a pop song one or two chorus-tied, and a ballad none at all - and the linter enforces
+the same allowance the planner spends. The allowance governs the effects themselves too: a
+family that has earned no flashes does not get blinder slams or strobes as ordinary layers
+by another door. The craft that survives every genre is structural now as well - the bar
+before a drop dips instead of peaking, the first chorus holds its accent back so every return
+adds something, a ballad's biggest arrival is a two-bar rise rather than a one-beat step, and
+dim sections gain chroma rather than losing it, because a dim room drained of colour reads
+grey, not hushed. It is deterministic - the seed is the analysis hash, so
+the same track is the same show every time, and a different track is a different one. Reroll
+steps that seed and composes again, which is how a favourite track stops being one picture
+forever without giving up a bug that reproduces.
 
 What it cannot do is know what the song is. So `author-ai` does not write a show; it revises
 that one. Handing the agent a draft that already satisfies every structural rule spends it on
@@ -112,6 +133,13 @@ rather than a second agent loop, and it costs roughly two orders of magnitude le
 One effect per file in `packages/core/src/effects/`. Each declares taste metadata (energy
 1-5, allowed sections, min/max bars, whether it is reserved for one moment per show) so
 restraint is structural rather than something the author has to remember.
+
+Some effects are a genre's signature - the techno shutter-cut, the drum & bass roller whose
+pulses arrive front-centre exactly on the downbeat, the disco mirror ball, the blinder wall a
+rock chorus earns - and the genre profile weights the picker toward them wherever they are
+legal, without ever emptying a pool. Each show also plants one wildcard: a single look that
+belongs to no section, midway through the longest steady passage, because the fiftieth listen
+of a favourite track should still contain one thing it did not expect.
 
 Claude writes two to five more per track, specific to that song. Each is admitted only after
 passing the same gate the built-ins pass: finite, non-negative, bounded pixels across a
@@ -144,6 +172,21 @@ become something, and none of them would have happened against a tool that only 
 Brevity is enforced rather than requested: the linter warns on a brief over ~150 words, on
 long cue notes, and on a show with fewer than two effects of its own. The effort belongs in
 the effects, not in prose about them.
+
+## Models
+
+Two ONNX graphs, fetched once into `models/` with pinned digests, none required: every
+consumer has a life without its model, so a machine that cannot download still analyses.
+
+- **Beat This!** (79 MB, MIT) finds the beats and downbeats.
+- **discogs-effnet** (18 MB, CC BY-NC-SA) hears the genre from the middle of the track.
+
+Vocal stem separation was built, measured and removed. It cost about two minutes per track
+and bought two subtle accent effects, a drum detector that heard marginally cleaner snares,
+and boundary evidence the annotated corpora scored as worthless. The chorus and verse
+detection that actually reads as intelligence comes from synced lyrics, which cost one free
+HTTP call. If a stem is ever worth having again it wants to be a background upgrade after
+the track is already playing, never a thing anyone waits behind.
 
 ## How the grid is found
 
@@ -183,15 +226,33 @@ cost is the point: hard-snapping to an eight-bar grid throws away nearly 40% of 
 boundaries even in dance music, where a soft cost lets the evidence overrule the prior when
 the music really does move at six bars.
 
-Which sections repeat which is a transitive closure over segment similarity, so a third
-chorus that only directly matches the second is still a chorus.
+A refinement pass then pulls each boundary onto the arrival next door when the evidence there
+clearly beats it - the bar the sub slams, the kit returns, the bar before collapses. The DP
+optimises cohesion, which is right everywhere except at a hard drop, where the drop bar and
+the bar after it are nearly identical rows and the boundary slides one bar late - which is
+exactly how the failures were reported from the room. A boundary placed on a measured arrival
+is then pinned: the phrase snap may not drag it back onto a majority-fitted grid, because a
+track that inserts an odd passage shifts its phrase phase mid-song and no single grid
+describes it. For the same reason, phrases are counted from each section's own start -
+punctuation, interior cue splits and `phraseStart` all walk the grid the audience is actually
+counting on, which re-anchors at every drop.
 
-Only then are they named, and the vocabulary is chosen per track first: a ballad has no drop,
-and announcing its loudest eight bars as one would be an invention. A loud passage is a drop
-when something set it up - a rise across the boundary into it - and when the track has had two
-phrases to establish what it is dropping from. `energyRank` is by mean rather than peak, so a
-long mid-energy verse containing one loud bar cannot outrank a short chorus that is loud
-throughout.
+Which sections repeat which is a transitive closure over segment similarity, so a third
+chorus that only directly matches the second is still a chorus. Repeats of the same material
+are labelled once, on pooled evidence: two passages of one group must not land on opposite
+sides of the drop/groove decision, which is how a first drop used to come out `groove` while
+its reprise came out `drop`.
+
+Only then are they named, and the vocabulary is chosen per track first: club families read
+drop/build/void, song families read verse/chorus - the same slots in the cue grammar,
+different treatment, because a chorus is an anthem to bloom and a drop is an impact to slam,
+and labelling a pop chorus `drop` is how it inherits a warehouse's strobe. Synced lyrics
+sharpen the call where they exist: the chorus is the passage whose lines the track repeats,
+so a loud verse carrying none of the hook is demoted and the section sitting squarely on the
+repeated block is promoted. A loud passage is a drop when something set it up - a rise across
+the boundary into it - and when the track has had two phrases to establish what it is dropping
+from. `energyRank` is by mean rather than peak, so a long mid-energy verse containing one loud
+bar cannot outrank a short chorus that is loud throughout.
 
 ## The app
 
@@ -286,7 +347,7 @@ wins over the stored one.
 
 ```sh
 npm run dev            # the app
-npm test               # 471 tests
+npm test               # 503 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
@@ -323,16 +384,19 @@ Pass several comma-separated hosts and the fixture is split across them.
 
 ## Known gaps
 
-- **There is no measurement harness.** It was removed deliberately, to be rebuilt rather than
-  extended. `measureEffect` in `core` still characterises one effect at a time and the gate
-  still admits or rejects one; what is gone is anything that sweeps the catalog or scores the
-  analysis against a corpus.
-- **`taste.quiet` has no producer.** Twenty-seven effects declare a number the picker chooses
-  on, and nothing left in the tree can regenerate or falsify it. Changing a quiet-pool effect,
-  the spectrum or the house floor silently invalidates whatever it claims.
-- **Nothing separates the stems.** `vocalGlow` guesses the voice from the mid band and the
-  stereo image because there is nothing better to read. A separation model would give a vocal
-  presence curve, a clean drum stem where snare detection is currently the weak link, and the
-  moment the voice drops out and the beat takes over, which this repertoire does constantly and
-  the analysis cannot see at all. It costs a model download, a second decode pass and an
-  `ANALYSIS_VERSION` bump, so it wants measuring before it is built.
+- **The measurement harness is young.** `bench/` was rebuilt from nothing this pass: a corpus
+  fetcher, a reanalyser that keeps ids, and probes for enrichment coverage, boundary
+  arrivals, genre activations and the composed shows' scoreboard. What it did not have
+  at first was annotated ground truth; it does now - 150 Harmonix and 120 Raveform
+  tracks under `bench/corpus/`, scored by `bench/structscore.ts` - and the boundary tuning
+  that ships is the variant that won on both corpora, not the one that argued best.
+- **`taste.quiet` has a producer again** (`bench/quietprobe.ts`), and the stored numbers
+  are current: measured post-revert over the full 35-track cache. The picker also now spends
+  them as a rank within the eligible pool rather than as positions on an absolute scale, so
+  the ordering is all that has to survive the next time the quiet pool or the house floor
+  changes - magnitudes drifting stale no longer decides picks on their own. Nothing asserts
+  the numbers; re-run the probe after touching any effect in the quiet pool.
+- **Genre labelling is only as good as its two voters.** The metadata chain answers with the
+  artist's genre and the audio model with the record's; where both are wrong the show still
+  gets the default profile. The families themselves are a lighting vocabulary, so a wrong
+  family is a wrong accent, not a broken show.

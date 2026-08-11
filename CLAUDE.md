@@ -74,7 +74,10 @@ Colour goes through `SLOT` so a show's palette reaches the effect without it kno
 hues. Multiply speeds by `ctx.motion`; derive time constants from `ctx.f.beatPeriod`, never
 from bpm. `taste` metadata is what the linter enforces restraint with, so fill it in honestly,
 and keep `sections` to the ones the effect is actually for: it is a hard filter, and an effect
-that claims every section will be picked for one it has no business in.
+that claims every section will be picked for one it has no business in. Sections come in two
+vocabularies - club (`drop`, `groove`) and song (`chorus`, `verse`) - and eligibility is
+checked through `sectionBase()`, so a drop effect serves a chorus without listing it; list
+`chorus` or `verse` explicitly only for an effect written for that reading and not the other.
 
 Two traps that have each cost a rewrite:
 
