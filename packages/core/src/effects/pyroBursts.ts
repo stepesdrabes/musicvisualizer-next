@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sectionBase } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { addSample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
@@ -30,7 +31,8 @@ export const pyroBursts: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
-		peakReserved: false
+		peakReserved: false,
+		character: 'impact'
 	},
 	params: [INTENSITY, param('lifeBeats', 'Burst life beats', 4, 1, 8, 0.5)],
 	create(g) {
@@ -59,7 +61,7 @@ export const pyroBursts: EffectDef = {
 				if (walls.length === 0) return;
 
 				const bigMoment =
-					f.section === 'drop' && f.downbeat && (f.timeSinceDrop < 0.3 || f.phraseStart);
+					sectionBase(f.section) === 'drop' && f.downbeat && (f.timeSinceDrop < 0.3 || f.phraseStart);
 				const slam = f.kickEnv > 0.85 && f.snareEnv > 0.65;
 				if ((bigMoment || slam) && armedFor !== f.barIndex) {
 					armedFor = f.barIndex;

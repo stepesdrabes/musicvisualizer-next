@@ -13,7 +13,9 @@ export const strobe: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 2,
-		peakReserved: false
+		peakReserved: false,
+		hitOnly: true,
+		character: 'flash'
 	},
 	params: [
 		INTENSITY,

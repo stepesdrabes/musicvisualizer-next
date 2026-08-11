@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sectionBase } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { alphaFor, clamp, envelope, lerp } from '../dsl/math.ts';
@@ -34,7 +35,7 @@ export const chorusBloom: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 2.13
+		quiet: 4.15
 	},
 	params: [INTENSITY],
 	create(g) {
@@ -81,7 +82,7 @@ export const chorusBloom: EffectDef = {
 				// so it answers "how loud is this for this song" and a genuinely quiet passage
 				// still rests.
 				let target = clamp(0.12 + f.energy * 0.5);
-				if (f.section === 'drop') {
+				if (sectionBase(f.section) === 'drop') {
 					const phrases = Math.floor(f.timeSinceDrop / Math.max(0.1, f.beatPeriod * 32));
 					const lift = Math.min(0.3, Number.isFinite(phrases) ? phrases * 0.15 : 0.3);
 					target = clamp(0.45 + f.sectionProgress * 0.4 + lift);

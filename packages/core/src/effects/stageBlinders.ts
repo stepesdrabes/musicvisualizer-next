@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sectionBase } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
@@ -18,11 +19,16 @@ export const stageBlinders: EffectDef = {
 	blurb: 'Tungsten blinder slam on the downbeat, cooling white-to-amber like filament.',
 	taste: {
 		energy: 4,
-		sections: ['groove', 'breakdown', 'build', 'drop'],
+		// No 'breakdown': a stripped passage lit by blinder slams is the documented failure
+		// the mustCarry rule exists for, and this effect once caused it.
+		sections: ['groove', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
 		peakReserved: false,
-		quiet: 6.08
+		// A slam is an event; the room is dark between them. Its old quiet score was the
+		// probe rewarding exactly that flash, which is why it declares none now.
+		carries: false,
+		character: 'impact'
 	},
 	params: [INTENSITY, param('everyBeat', 'Every beat', 0, 0, 1, 1)],
 	create(g) {
@@ -41,7 +47,7 @@ export const stageBlinders: EffectDef = {
 
 				const at = tint.update(spectralTilt(f), f.dt);
 
-				const everyBeat = p.everyBeat > 0.5 || f.section === 'drop';
+				const everyBeat = p.everyBeat > 0.5 || sectionBase(f.section) === 'drop';
 				// A blinder answers the drums. Struck off the envelopes rather than the booleans:
 				// a beat the kit is not playing gets the softer slam it deserves.
 				if (everyBeat ? f.beat : f.downbeat) env.fire(clamp(0.6 + (f.kickEnv + f.snareEnv) * 0.4));

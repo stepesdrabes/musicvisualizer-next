@@ -32,7 +32,7 @@ export const bassRing: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 2.18,
+		quiet: 3.06,
 		// The dark ceiling beam is the whole point of the look, and it is also why this cannot
 		// be the only thing in a cue: one of the room's five strips is off at all times.
 		carries: false

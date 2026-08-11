@@ -67,8 +67,29 @@ export interface EffectTaste {
 	 * scaling. Either way they emit almost nothing in a quiet passage, and gamma 2.2 sends
 	 * anything under 0.08 to byte zero, so a cue whose only substantial layer is one of these
 	 * comes out black rather than dim. Absent means it carries.
+	 *
+	 * The quiet probe cannot decide this: it rewards bytes of movement, and a flash moves the
+	 * most bytes of anything while being dark most of every bar. Any effect that is an event
+	 * with darkness between - a slam, a burst, a strobe - declares `carries: false` however
+	 * high its measured `quiet` comes out.
 	 */
 	carries?: boolean;
+	/**
+	 * True for a master that renders black until the player arms `trigger` from a hit.
+	 *
+	 * These are punctuation, not looks: placed in a cue's master layer with no hit behind
+	 * them they are a no-op, so the planner's reserved-peak choice must never land on one.
+	 */
+	hitOnly?: boolean;
+	/**
+	 * What kind of gesture this is, declared only where a genre may need to refuse it.
+	 *
+	 * `flash` is light as interruption - strobes and shutters, dark between frames. `impact`
+	 * is light as a blow - slams, blinders, bursts. The families whose flash allowance is
+	 * zero forbid both as effects exactly as they forbid them as hits; everything else is
+	 * ungoverned and leaves this absent.
+	 */
+	character?: 'flash' | 'impact';
 	/**
 	 * How much this moves over a quiet passage, as a share of its own mean level.
 	 *
@@ -80,10 +101,10 @@ export interface EffectTaste {
 	 * and delivers 4.41. Only the beds and accents that can appear in a quiet section declare it;
 	 * absent means it has never been asked to hold one.
 	 *
-	 * These are stored measurements with no producer left in the tree, and nothing asserts them
-	 * because measuring needs the audio cache and a test may not depend on it. Changing an effect
-	 * in the quiet pool, the spectrum or the house floor invalidates whatever it declares here,
-	 * and re-measuring means writing the instrument first.
+	 * These are stored measurements from `bench/quietprobe.ts`, and nothing asserts them
+	 * because measuring needs the audio cache and a test may not depend on it. Changing an
+	 * effect in the quiet pool, the spectrum or the house floor invalidates whatever it
+	 * declares here; re-run the probe and paste its numbers back.
 	 *
 	 * The planner prefers a high one where there is nothing else happening. Measured on a real
 	 * intro, the pair the picker chose delivered 1.27 bytes of movement where the two most

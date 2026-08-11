@@ -21,7 +21,8 @@ export const lightning: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 8,
-		peakReserved: false
+		peakReserved: false,
+		character: 'impact'
 	},
 	params: [INTENSITY, param('density', 'Strike density', 0.35)],
 	create(g) {

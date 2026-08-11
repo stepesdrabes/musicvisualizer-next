@@ -23,9 +23,10 @@ export const flexStrobe: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 2.71,
+		quiet: 3.52,
 		// A flash is an event, not a level: it is dark most of the time.
-		carries: false
+		carries: false,
+		character: 'flash'
 	},
 	params: [INTENSITY],
 	create(g) {

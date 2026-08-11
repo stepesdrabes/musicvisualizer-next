@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sectionBase } from '../contracts/frame.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
@@ -24,7 +25,7 @@ export const confetti: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 2.49,
+		quiet: 3.12,
 		// Bursts of particles, and nothing at all between them.
 		carries: false
 	},
@@ -42,7 +43,7 @@ export const confetti: EffectDef = {
 				const { f, p, palette, hueShift } = ctx;
 				fadeToBlack(out, f.dt, beatRelease(f.beatPeriod, 0.45));
 
-				const popNow = f.section === 'drop' ? f.beat : f.downbeat;
+				const popNow = sectionBase(f.section) === 'drop' ? f.beat : f.downbeat;
 				if (!popNow || f.beatIndex === lastBeat) return;
 				lastBeat = f.beatIndex;
 				popCount++;

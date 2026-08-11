@@ -1,6 +1,7 @@
 import type { EffectDef, LayerRole } from '../contracts/effect.ts';
 
 import { ambientDrift } from './ambientDrift.ts';
+import { anthemWash } from './anthemWash.ts';
 import { aurora } from './aurora.ts';
 import { auroraBorealis } from './auroraBorealis.ts';
 import { bandBloom } from './bandBloom.ts';
@@ -8,6 +9,7 @@ import { barFill } from './barFill.ts';
 import { bassRing } from './bassRing.ts';
 import { beamFlick } from './beamFlick.ts';
 import { blackout } from './blackout.ts';
+import { blinderWall } from './blinderWall.ts';
 import { breathe } from './breathe.ts';
 import { buildStrobe } from './buildStrobe.ts';
 import { cascade } from './cascade.ts';
@@ -17,6 +19,7 @@ import { chromaBurst } from './chromaBurst.ts';
 import { clapAlong } from './clapAlong.ts';
 import { colorBump } from './colorBump.ts';
 import { comet } from './comet.ts';
+import { crownSpill } from './crownSpill.ts';
 import { confetti } from './confetti.ts';
 import { discoBall } from './discoBall.ts';
 import { doubleKickGatling } from './doubleKickGatling.ts';
@@ -26,6 +29,7 @@ import { feedbackSwell } from './feedbackSwell.ts';
 import { flexStrobe } from './flexStrobe.ts';
 import { glitchScan } from './glitchScan.ts';
 import { gradientSpin } from './gradientSpin.ts';
+import { halftimeBounce } from './halftimeBounce.ts';
 import { harmonicRibbon } from './harmonicRibbon.ts';
 import { hatTicker } from './hatTicker.ts';
 import { harmonicHaze } from './harmonicHaze.ts';
@@ -33,11 +37,13 @@ import { headbang } from './headbang.ts';
 import { heartbeat } from './heartbeat.ts';
 import { hueCarousel } from './hueCarousel.ts';
 import { iridescence } from './iridescence.ts';
+import { kickCannon } from './kickCannon.ts';
 import { kickTunnel } from './kickTunnel.ts';
 import { laidbackWave } from './laidbackWave.ts';
 import { lavaBlobs } from './lavaBlobs.ts';
 import { lightning } from './lightning.ts';
 import { meterBuild } from './meterBuild.ts';
+import { mirrorBall } from './mirrorBall.ts';
 import { moshSlam } from './moshSlam.ts';
 import { nebula } from './nebula.ts';
 import { phraseArc } from './phraseArc.ts';
@@ -46,7 +52,9 @@ import { pump } from './pump.ts';
 import { pyroBursts } from './pyroBursts.ts';
 import { rainbowRain } from './rainbowRain.ts';
 import { riser } from './riser.ts';
+import { rollerChase } from './rollerChase.ts';
 import { shockwave } from './shockwave.ts';
+import { shutterCut } from './shutterCut.ts';
 import { sineRoll } from './sineRoll.ts';
 import { slam } from './slam.ts';
 import { snareWhip } from './snareWhip.ts';
@@ -59,6 +67,8 @@ import { strobe } from './strobe.ts';
 import { subSwell } from './subSwell.ts';
 import { subThrob } from './subThrob.ts';
 import { sweep } from './sweep.ts';
+import { tideBloom } from './tideBloom.ts';
+import { undertow } from './undertow.ts';
 import { vocalGlow } from './vocalGlow.ts';
 import { vortex } from './vortex.ts';
 import { vuTowers } from './vuTowers.ts';
@@ -78,6 +88,8 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	iridescence,
 	auroraBorealis,
 	chorusBloom,
+	anthemWash,
+	undertow,
 	subThrob,
 	spectrumBed,
 	harmonicHaze,
@@ -88,7 +100,9 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	comet,
 	pump,
 	riser,
+	rollerChase,
 	gradientSpin,
+	halftimeBounce,
 	pixelRain,
 	sineRoll,
 	vuTowers,
@@ -128,11 +142,17 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	harmonicRibbon,
 	bandBloom,
 	breathe,
+	mirrorBall,
+	kickCannon,
+	crownSpill,
 	// master
+	blinderWall,
 	slam,
 	strobe,
 	chromaBurst,
-	colorBump
+	colorBump,
+	shutterCut,
+	tideBloom
 ];
 
 /** Mutable so a show's generated effects can join the vocabulary at load time. */

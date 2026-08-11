@@ -23,7 +23,7 @@ export const nebula: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 1.41
+		quiet: 2.27
 	},
 	params: [INTENSITY, param('scale', 'Scale', 0.4), param('surge', 'Bass surge', 0.6)],
 	create(g) {

@@ -7,7 +7,8 @@ export {
 	NUM_BANDS,
 	SECTION_KINDS,
 	SPECTRUM_BANDS,
-	createShowFrame
+	createShowFrame,
+	sectionBase
 } from './contracts/frame.ts';
 export type {
 	BlendMode,
@@ -36,6 +37,8 @@ export type {
 	TrackAnalysis
 } from './contracts/analysis.ts';
 export { ANALYSIS_VERSION } from './contracts/analysis.ts';
+export type { GenreFamily, LyricLine, TrackContext } from './contracts/context.ts';
+export { CONTEXT_VERSION, GENRE_FAMILIES, emptyContext } from './contracts/context.ts';
 export { decodeBase64, encodeBase64 } from './base64.ts';
 export type {
 	Cue,

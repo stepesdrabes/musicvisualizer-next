@@ -24,7 +24,8 @@ export const buildStrobe: EffectDef = {
 		maxBars: 16,
 		peakReserved: false,
 		// A strobe cannot be the thing a room is lit by; it is what happens to a lit room.
-		carries: false
+		carries: false,
+		character: 'flash'
 	},
 	params: [INTENSITY],
 	create(g) {

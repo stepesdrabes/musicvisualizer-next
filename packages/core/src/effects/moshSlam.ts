@@ -20,7 +20,8 @@ export const moshSlam: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		character: 'impact'
 	},
 	params: [INTENSITY, param('beatsPerSlam', 'Beats per slam', 2, 0.5, 4, 0.5)],
 	create(g) {

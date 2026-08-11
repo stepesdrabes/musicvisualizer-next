@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { sectionBase } from '../contracts/frame.ts';
 import { sample } from '../color/palette.ts';
 import { paletteArc } from '../dsl/math.ts';
 import { setPixel } from '../dsl/buffer.ts';
@@ -40,7 +41,9 @@ export const chromaBurst: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
-				if (f.section === 'drop' && f.downbeat) {
+				// A chorus is the song vocabulary's drop; arming on the literal kind alone left
+				// a pop peak carrying this and never firing it.
+				if (sectionBase(f.section) === 'drop' && f.downbeat) {
 					const impact = f.timeSinceDrop < 0.3;
 					if ((impact || f.phraseStart) && armedFor !== f.barIndex) {
 						armedFor = f.barIndex;

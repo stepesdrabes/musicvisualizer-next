@@ -3,7 +3,7 @@ import type { Cue, Hit, Show } from './contracts/show.ts';
 import { LAYER_ROLES } from './contracts/effect.ts';
 import type { Palette, ShowPalette } from './contracts/palette.ts';
 import type { SectionKind, ShowFrame } from './contracts/frame.ts';
-import { NUM_BANDS, createShowFrame } from './contracts/frame.ts';
+import { NUM_BANDS, createShowFrame, sectionBase } from './contracts/frame.ts';
 import { decodeBase64 } from './base64.ts';
 import { blendPalettes, makePalette, swapped } from './color/palette.ts';
 import { FlashEnvelope } from './dsl/env.ts';
@@ -71,7 +71,11 @@ const SECTION_FLOOR: Record<SectionKind, number> = {
 	breakdown: 0.34,
 	build: 0.38,
 	groove: 0.32,
-	drop: 0.09
+	verse: 0.32,
+	drop: 0.09,
+	// A chorus is bright like a drop but arrives by lift, so it keeps a touch more floor:
+	// the room blooms rather than detonating out of black.
+	chorus: 0.14
 };
 
 /**
@@ -143,6 +147,7 @@ export class ShowPlayer {
 	private widthCurve = new Float32Array(0);
 	private stereoFps = 25;
 
+
 	/** frames * spectrumBands, as shipped: bytes, decoded once on load. */
 	private spectrumData: Uint8Array<ArrayBufferLike> = new Uint8Array(0);
 	private spectrumBands = 0;
@@ -155,6 +160,9 @@ export class ShowPlayer {
 	private entriesPerBar = 1;
 	private barSection: SectionKind[] = [];
 	private sectionBounds: { start: number; end: number }[] = [];
+	/** Per bar: the start bar of its section, and which section that is. The phrase origin. */
+	private barSectionStart = new Int32Array(0);
+	private barSectionOrdinal = new Int32Array(0);
 
 	private readonly kickEnv = new FlashEnvelope();
 	private readonly snareEnv = new FlashEnvelope();
@@ -213,6 +221,17 @@ export class ShowPlayer {
 		this.barSection = new Array<SectionKind>(nBars);
 		for (let i = 0; i < nBars; i++) this.barSection[i] = analysis.bars[i].section;
 
+		// Phrases count from the section start, not from a global anchor: the audience counts
+		// from the drop, and a track whose phase shifts mid-song has no single grid to count on.
+		this.barSectionStart = new Int32Array(nBars);
+		this.barSectionOrdinal = new Int32Array(nBars);
+		for (const s of analysis.sections) {
+			for (let b = Math.max(0, s.startBar); b < Math.min(nBars, s.endBar); b++) {
+				this.barSectionStart[b] = s.startBar;
+				this.barSectionOrdinal[b] = s.index;
+			}
+		}
+
 		// Beat resolution where the analysis has it, falling back to the bar table for a blob
 		// written before it did. Bar 0 begins at beat `downbeatPhase`, so that is what turns a
 		// bar position into an index into the beat-aligned arrays.
@@ -249,9 +268,12 @@ export class ShowPlayer {
 		this.widthCurve = Float32Array.from(analysis.stereo?.width ?? []);
 		this.stereoFps = analysis.stereo?.fps || 25;
 
+
 		this.sectionBounds = analysis.sections.map((s) => ({ start: s.startTime, end: s.endTime }));
+		// Drop-CLASS arrivals, not the literal kind: a chorus is the song vocabulary's drop, and
+		// build progress that never reaches 1.0 on a pop track starves every effect that climbs.
 		this.dropTimes = analysis.sections
-			.filter((s) => s.kind === 'drop')
+			.filter((s) => sectionBase(s.kind) === 'drop')
 			.map((s) => s.startTime)
 			.sort((a, b) => a - b);
 
@@ -259,7 +281,7 @@ export class ShowPlayer {
 		for (let i = 0; i < analysis.sections.length; i++) {
 			const s = analysis.sections[i];
 			if (s.kind !== 'build' && s.kind !== 'void') continue;
-			const drop = analysis.sections.slice(i + 1).find((x) => x.kind === 'drop');
+			const drop = analysis.sections.slice(i + 1).find((x) => sectionBase(x.kind) === 'drop');
 			if (!drop) continue;
 			// Merge a build immediately followed by a void so the progress bar keeps climbing
 			// through the silence instead of restarting.
@@ -374,11 +396,18 @@ export class ShowPlayer {
 		const barsF = barAtTime(tempo, t);
 		const barIndex = Math.floor(barsF);
 		const barPhase = barsF - barIndex;
-		const phrasesF = (barsF - tempo.phraseAnchorBar) / tempo.barsPerPhrase;
+
+		// Section-relative phrase: origin at the section start, ordinal folded into the index
+		// so a phrase edge fires at every section change even when both sides read zero.
+		const nBars = this.barSectionStart.length;
+		const clamped = Math.min(Math.max(barIndex, 0), Math.max(0, nBars - 1));
+		const origin = nBars > 0 ? this.barSectionStart[clamped] : tempo.phraseAnchorBar;
+		const ordinal = nBars > 0 ? this.barSectionOrdinal[clamped] : 0;
+		const phrasesF = (barsF - origin) / tempo.barsPerPhrase;
 
 		const beatsF = (barIndex + barPhase) * tempo.beatsPerBar;
 		const beatIndex = Math.floor(beatsF);
-		const phraseIndex = Math.floor(phrasesF);
+		const phraseIndex = ordinal * 4096 + Math.floor(phrasesF);
 
 		// Local, not the track median: an effect that derives its time constants from this on a
 		// track that speeds up should speed up with it.
@@ -476,14 +505,14 @@ export class ShowPlayer {
 		if (n === 0) {
 			f.pan = 0;
 			f.panWidth = 0;
-			return;
+		} else {
+			const x = clamp(t * this.stereoFps, 0, n - 1);
+			const i0 = Math.floor(x);
+			const i1 = Math.min(i0 + 1, n - 1);
+			const u = x - i0;
+			f.pan = this.panCurve[i0] + (this.panCurve[i1] - this.panCurve[i0]) * u;
+			f.panWidth = this.widthCurve[i0] + (this.widthCurve[i1] - this.widthCurve[i0]) * u;
 		}
-		const x = clamp(t * this.stereoFps, 0, n - 1);
-		const i0 = Math.floor(x);
-		const i1 = Math.min(i0 + 1, n - 1);
-		const u = x - i0;
-		f.pan = this.panCurve[i0] + (this.panCurve[i1] - this.panCurve[i0]) * u;
-		f.panWidth = this.widthCurve[i0] + (this.widthCurve[i1] - this.widthCurve[i0]) * u;
 	}
 
 	private updateDrums(t: number, dt: number, a: TrackAnalysis): void {

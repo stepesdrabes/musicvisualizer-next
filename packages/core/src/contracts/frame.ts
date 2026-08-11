@@ -2,25 +2,46 @@
  * `void` is a section rather than a modifier: the bar of near-silence before a drop is
  * the strongest move in the vocabulary, and naming it lets the linter require that the
  * blackout there is deliberate and bounded.
+ *
+ * `verse` and `chorus` are the song-family reading of `groove` and `drop`: the same slots
+ * in the cue grammar, different treatment. A chorus is an anthem to bloom, not an impact
+ * to slam, and labelling it `drop` is how a pop song got a warehouse's strobe. The
+ * analyser picks the vocabulary per track from what the track is; `sectionBase` maps the
+ * song kinds back onto their club ancestors wherever only the energy class matters.
  */
 export type SectionKind =
 	| 'intro'
 	| 'groove'
+	| 'verse'
 	| 'breakdown'
 	| 'build'
 	| 'void'
 	| 'drop'
+	| 'chorus'
 	| 'outro';
 
 export const SECTION_KINDS: readonly SectionKind[] = [
 	'intro',
 	'groove',
+	'verse',
 	'breakdown',
 	'build',
 	'void',
 	'drop',
+	'chorus',
 	'outro'
 ];
+
+/**
+ * The club ancestor of a song kind, itself for everything else.
+ *
+ * Effects declare `taste.sections` in either vocabulary: one written for choruses lists
+ * 'chorus'; the rest of the catalog keeps its seven kinds and is eligible for a chorus
+ * because a chorus is a drop-class passage. Pickers and linters compare through this.
+ */
+export function sectionBase(kind: SectionKind): SectionKind {
+	return kind === 'verse' ? 'groove' : kind === 'chorus' ? 'drop' : kind;
+}
 
 /** Sub: chest thump. Low: kick body and bass. Mid: vocals and leads. Air: hats and risers. */
 export const Band = { Sub: 0, Low: 1, Mid: 2, Air: 3 } as const;
@@ -98,6 +119,7 @@ export interface ShowFrame {
 	 */
 	pan: number;
 	panWidth: number;
+
 
 	kick: boolean;
 	snare: boolean;

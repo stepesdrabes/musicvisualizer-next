@@ -31,7 +31,7 @@ export const breathe: EffectDef = {
 		minBars: 4,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 3.42
+		quiet: 4.39
 	},
 	params: [INTENSITY, param('bars', 'Bars per breath', 0.5), param('tilt', 'Colour travel', 0.5)],
 	create(g) {

@@ -1,0 +1,80 @@
+import type { EffectDef } from '../contracts/effect.ts';
+import { SLOT } from '../contracts/palette.ts';
+import { setSample } from '../color/palette.ts';
+import { alphaFor, clamp, lerp } from '../dsl/math.ts';
+import { Follower, PulseEnv } from '../dsl/env.ts';
+import { nblend } from '../dsl/buffer.ts';
+import { sinewave } from '../dsl/wave.ts';
+import { ringU } from '../dsl/space.ts';
+import { bandAt } from '../dsl/spectrum.ts';
+import { INTENSITY } from './helpers.ts';
+
+/**
+ * The anthem floor: the whole room held high and saturated, one broad crest of light
+ * making a slow lap of the perimeter, a soft swell answering every downbeat.
+ *
+ * Written for choruses and nothing else - the point is a floor that reads as "the song is
+ * here now", which a warehouse drop neither needs nor earns. Big and simple where
+ * `chorusBloom` is articulate: that one answers six bands with six petals, this one answers
+ * the mix with its whole body, and the pair being different is what gives the seed a choice.
+ */
+export const anthemWash: EffectDef = {
+	id: 'anthemWash',
+	name: 'Anthem Wash',
+	role: 'bed',
+	blurb: 'Full-room chorus floor: one slow-orbiting crest, a swell on every downbeat.',
+	taste: {
+		energy: 3,
+		sections: ['chorus'],
+		minBars: 2,
+		maxBars: 32,
+		peakReserved: false
+	},
+	params: [INTENSITY],
+	create(g) {
+		const buf = new Float32Array(g.count * 3);
+		// The level answers the music, read through a follower as loud beds must be: the
+		// band envelopes cannot move inside a bar and a chorus floor that holds one number
+		// for four beats is a poster, not a band playing.
+		const body = new Follower(0.03, 0.2);
+		const swell = new PulseEnv();
+		let crest = 0;
+
+		return {
+			reset() {
+				body.reset();
+				swell.reset();
+				crest = 0;
+				buf.fill(0);
+			},
+			render(out, ctx) {
+				const { f, p, palette, hueShift } = ctx;
+
+				const level = body.update(
+					clamp(bandAt(f, 0.3) * 0.9 + bandAt(f, 0.6) * 0.7),
+					f.dt
+				);
+				if (f.downbeat) swell.fire(0.7 + level * 0.3);
+				const lift = swell.decay(f.dt, f.beatPeriod, 2);
+
+				// One lap of the room per 32 beats. Slow on purpose: the crest is where the
+				// chorus is standing, not something chasing the mix.
+				crest += (f.dt * ctx.motion) / Math.max(0.1, f.beatPeriod * 32);
+
+				const gain = (0.5 + p.intensity * 1.1) * (0.5 + level * 0.55 + lift * 0.25);
+
+				for (let i = 0; i < g.count; i++) {
+					const u = ringU(g, i);
+					const arc = 0.62 + 0.38 * sinewave(u - crest);
+					// Colour varies by POSITION only: base into the bright read at the crest,
+					// with the downbeat swell allowed a touch of white at its peak. The crest
+					// being brighter than the far wall is the ramp doing its job.
+					const slot = lerp(lerp(SLOT.base, SLOT.glow, arc), SLOT.white, lift * 0.22);
+					setSample(buf, i, palette, slot + hueShift, gain * arc);
+				}
+
+				nblend(out, buf, alphaFor(f.dt, lerp(0.08, 0.03, lift)));
+			}
+		};
+	}
+};

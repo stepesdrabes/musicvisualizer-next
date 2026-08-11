@@ -20,7 +20,9 @@ export const slam: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 1,
-		peakReserved: false
+		peakReserved: false,
+		hitOnly: true,
+		character: 'impact'
 	},
 	params: [
 		INTENSITY,

@@ -8,8 +8,13 @@ import { runGate, scriptFrames } from './gate.ts';
 
 const g = buildGeometry(DEFAULT_ROOM);
 
+// One gate run per effect, shared by the per-effect blocks and the aggregate below. The gate
+// renders a 21-bar journey at 60 fps, so a second full pass over the catalog is half a minute
+// of duplicate work inside a single test's timeout.
+const GATE = new Map(BUILT_IN_EFFECTS.map((d) => [d.id, runGate(d, g)] as const));
+
 describe.each(BUILT_IN_EFFECTS.map((d) => [d.id, d] as const))('%s', (_id, def) => {
-	const result = runGate(def, g);
+	const result = GATE.get(def.id)!;
 
 	it('passes the admission gate', () => {
 		expect(result.failures).toEqual([]);
@@ -29,7 +34,7 @@ describe.each(BUILT_IN_EFFECTS.map((d) => [d.id, d] as const))('%s', (_id, def) 
 });
 
 it('every effect emits light', () => {
-	const dark = BUILT_IN_EFFECTS.filter((d) => !runGate(d, g).producesLight).map((d) => d.id);
+	const dark = BUILT_IN_EFFECTS.filter((d) => !GATE.get(d.id)!.producesLight).map((d) => d.id);
 	expect(dark).toEqual([]);
 });
 

@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 9;
+export const ANALYSIS_VERSION = 11;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -68,7 +68,8 @@ export type EventTag =
 	| 'kick_out'
 	| 'bass_in'
 	| 'bass_out'
-	| 'filter_sweep';
+	| 'filter_sweep'
+	| 'vocal_in';
 
 /** One row per bar. This is the granularity every cue is authored at. */
 export interface BarRow {
@@ -84,6 +85,11 @@ export interface BarRow {
 	kicks: number;
 	snares: number;
 	hats: number;
+	/**
+	 * 0..1, the share of the bar under a synced lyric line. Zero wherever no lyrics were
+	 * found, so an offline ingest carries a column of zeros rather than a different shape.
+	 */
+	vocal: number;
 	events: EventTag[];
 }
 

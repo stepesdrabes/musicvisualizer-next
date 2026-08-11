@@ -18,7 +18,8 @@ export const colorBump: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 0,
 		maxBars: 1,
-		peakReserved: false
+		peakReserved: false,
+		hitOnly: true
 	},
 	params: [INTENSITY, param('trigger', 'Trigger', 0, 0, 1, 1)],
 	create(g) {

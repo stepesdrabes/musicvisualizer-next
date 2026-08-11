@@ -27,7 +27,7 @@ export const vocalGlow: EffectDef = {
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 3.67,
+		quiet: 4.68,
 		// A spotlight on the front wall by design: 28% of the room lit and nearly half its
 		// output in the brightest tenth of the pixels. Beautiful over a bed, and the reason a
 		// quiet cue carrying it and nothing else showed as one lit wall in a dark room.
@@ -57,6 +57,9 @@ export const vocalGlow: EffectDef = {
 				// why its core sat clipped at white whatever the vocal was doing.
 				out.fill(0);
 
+				// The mid band leaning against the sub is the best guess at a voice the frame
+				// offers: vocals and leads live there, and subtracting the bottom stops a bass
+				// drop reading as somebody singing.
 				const vocal = clamp(f.bands[Band.Mid] * 1.5 - f.bands[Band.Sub] * 0.2);
 				const lvl = level.update(vocal, f.beat, f.dt, f.beatPeriod);
 				// Leaned by the mix rather than placed by it: pan is a property of the recording,
