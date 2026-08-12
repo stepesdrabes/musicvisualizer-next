@@ -78,6 +78,11 @@ that claims every section will be picked for one it has no business in. Sections
 vocabularies - club (`drop`, `groove`) and song (`chorus`, `verse`) - and eligibility is
 checked through `sectionBase()`, so a drop effect serves a chorus without listing it; list
 `chorus` or `verse` explicitly only for an effect written for that reading and not the other.
+An effect whose whole gesture answers one drum stream declares `taste.kit`, and the picker
+keeps it out of passages where that stream is silent; a grid-locked pulse that reads as the
+kit additionally gates its strikes on a `Presence` of the hit envelope, so a suspension rests
+the room instead of being pounded through. A change to what the engine composes must bump
+`SHOW_VERSION`, or every already-cached track keeps its old show and never hears the fix.
 
 Two traps that have each cost a rewrite:
 
@@ -94,7 +99,8 @@ Two traps that have each cost a rewrite:
   TIME only slowly.
 
 Reach for the DSL before writing the loop by hand: `ringU`, `alphaFor`, `setPixel`,
-`fillSolid`, `stampOnStrip`, `ringsFor`/`scatter`, `fadeToBlack`, `Follower`, `PulseEnv`.
+`fillSolid`, `stampOnStrip`, `ringsFor`/`scatter`, `fadeToBlack`, `Follower`, `PulseEnv`,
+`Presence`.
 Anything added under `src/dsl/` also becomes vocabulary for Claude-generated effects, so
 document it in `renderDslReference()` in `packages/author-ai/src/catalog.ts`.
 

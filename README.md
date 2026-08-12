@@ -196,6 +196,17 @@ beats - and measured on a real track the shimmer turned out not to be there, whi
 own beat-rate stepping was. Level and articulation come off the spectrum through a `Follower`
 now; the beat envelopes are left to say how loud a passage is, which is what they are good for.
 
+The kit is read the same way. An effect whose whole gesture answers one drum - the kick tunnel,
+the snare whip - declares which, and the picker keeps it out of any passage where that stream
+is silent, because a kick effect over a sung verse is either a dead layer or a lie about the
+arrangement. The grid-locked slammers keep their timing from the grid but take their permission
+to strike from a `Presence` of the hit envelope, so when the producer pulls the kick out for
+eight bars the room rests with it and comes back when it does. The same honesty governs
+punctuation: a drop whose arrival bar carries no kick gets its slam demoted to a colour flood,
+and the strobe keeps musical subdivisions but never exceeds 8 Hz - past that the flashes fuse
+into a texture, measured in this room at 9.4 Hz on a 140 bpm track where the same gesture at
+half the rate still reads as events.
+
 Colour is spent the same way. The palette slots are one ramp - deep, base, glow, white, third,
 accent - and the first three are a single hue at three lightnesses, so a gradient that stops at
 glow is a brightness ramp wearing a palette's clothes. Reaching a second colour means crossing
@@ -278,6 +289,12 @@ track that inserts an odd passage shifts its phrase phase mid-song and no single
 describes it. For the same reason, phrases are counted from each section's own start -
 punctuation, interior cue splits and `phraseStart` all walk the grid the audience is actually
 counting on, which re-anchors at every drop.
+
+A track that ends inside its loudest section still ends: the last kick leaves and the file
+rings out, and the DP rarely pays for a boundary two bars from the finish. A trailing outro is
+carved instead, the way the void is - walked back from the last bar while the kick is absent
+and the level has clearly left the section's body - so the show winds down with the record
+rather than holding the full drop stack through the decay.
 
 Which sections repeat which is a transitive closure over segment similarity, so a third
 chorus that only directly matches the second is still a chorus. Repeats of the same material
@@ -377,6 +394,15 @@ dissolve meant to be invisible.
 It runs server-side too. The hardware follows a sync from the browser, and a sync that stops arriving
 for three seconds is a tab that has closed - so the room rests then as well, rather than freezing on
 whatever was on the walls when somebody shut the laptop.
+
+Lounge is also where a track goes when the analyser loses it. Some grids defeat the DSP - a wrong
+metrical level reads a pop song in 2/4 and every judgement downstream inherits the damage, thirty-five
+cues over twenty-three sections changing looks every six seconds. The analysis carries its own trust
+verdict, tripped by fragmentation rather than by confidence alone (one track sits at meter confidence
+0.55 with clean structure while another at 0.88 is chopped to bits), and a track it does not trust runs
+the lounge scenes instead of its authored show: the scenes follow the same spectrum and the same
+boundaries without believing either very far. The queue row says so and offers to run the show anyway,
+and that answer is remembered per track.
 
 ## The desktop app
 
