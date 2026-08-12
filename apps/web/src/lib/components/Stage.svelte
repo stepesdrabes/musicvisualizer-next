@@ -4,6 +4,7 @@
 	import type { LoadState, Step } from '$lib/types.ts';
 	import Activity from './Activity.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
+	import Segmented from '$lib/ui/Segmented.svelte';
 	import Spinner from '$lib/ui/Spinner.svelte';
 
 	let {
@@ -36,6 +37,9 @@
 	let renderer: RoomRenderer | null = $state(null);
 	let view = $state<CameraView>('orbit');
 
+	let layer: HTMLDivElement | undefined = $state();
+	let column: HTMLDivElement | undefined = $state();
+
 	// {@attach} rather than $effect: the canvas is the only dependency, and an $effect reading
 	// the other controls would tear down and rebuild the whole WebGL context on every tweak.
 	function mount(canvas: HTMLCanvasElement) {
@@ -51,20 +55,44 @@
 		renderer = r;
 		v.roomRenderer = r;
 
-		const host = canvas.parentElement!;
-		const ro = new ResizeObserver(() => {
-			const rect = host.getBoundingClientRect();
-			r.resize(rect.width, rect.height);
-		});
-		ro.observe(host);
-
 		return () => {
-			ro.disconnect();
 			v.roomRenderer = null;
 			renderer = null;
 			r.dispose();
 		};
 	}
+
+	/**
+	 * Two rectangles, not one.
+	 *
+	 * The canvas is the whole window, so that a lit room glows through the panels; the room is
+	 * looked at in the column between them. Both are watched, because the column changes without
+	 * the window doing anything - a rail collapses, the timeline drawer opens - and that is
+	 * exactly when the room needs re-framing.
+	 */
+	$effect(() => {
+		const r = renderer;
+		const canvas = layer;
+		const frame = column;
+		if (!r || !canvas || !frame) return;
+
+		const apply = () => {
+			const c = canvas.getBoundingClientRect();
+			const f = frame.getBoundingClientRect();
+			r.resize(c.width, c.height, {
+				x: f.left - c.left,
+				y: f.top - c.top,
+				width: f.width,
+				height: f.height
+			});
+		};
+
+		const ro = new ResizeObserver(apply);
+		ro.observe(canvas);
+		ro.observe(frame);
+		apply();
+		return () => ro.disconnect();
+	});
 
 	$effect(() => {
 		if (renderer) renderer.setView(view);
@@ -78,15 +106,11 @@
 	];
 </script>
 
-<div class="room-layer"><canvas {@attach mount}></canvas></div>
+<div class="room-layer" bind:this={layer}><canvas {@attach mount}></canvas></div>
 
-<div class="stage floats">
+<div class="stage floats" bind:this={column}>
 	<div class="overlay top">
-		<div class="segmented">
-			{#each VIEWS as v (v.id)}
-				<button class:on={view === v.id} onclick={() => (view = v.id)}>{v.label}</button>
-			{/each}
-		</div>
+		<Segmented options={VIEWS} bind:value={view} variant="glass" ariaLabel="Camera" />
 
 		<span class="spacer"></span>
 
@@ -181,41 +205,20 @@
 	.overlay.bottom {
 		bottom: 0;
 	}
-	.overlay > * {
+	/*
+	 * `:global` because one of these is a component.
+	 *
+	 * Svelte scopes a selector by requiring its own hash class on the elements it matches, and a
+	 * child component's root element never carries the parent's. Without this the camera presets
+	 * inherit the stage's `pointer-events: none` and cannot be clicked at all - which is exactly
+	 * what happened the moment they became a `Segmented` rather than markup written here.
+	 */
+	.overlay > :global(*) {
 		pointer-events: auto;
 	}
 	.spacer {
 		flex: 1;
 		pointer-events: none;
-	}
-
-	.segmented {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding: 3px;
-		border-radius: var(--radius-md);
-		background: #0d0d10cc;
-		backdrop-filter: blur(10px);
-		border: 1px solid #ffffff14;
-	}
-	.segmented button {
-		height: 26px;
-		padding: 0 11px;
-		border-radius: var(--radius-sm);
-		font-size: 12.5px;
-		font-weight: 500;
-		color: var(--muted-foreground);
-		transition:
-			background-color 0.12s ease,
-			color 0.12s ease;
-	}
-	.segmented button:hover {
-		color: var(--foreground);
-	}
-	.segmented button.on {
-		background: #ffffff17;
-		color: var(--foreground);
 	}
 
 	/* The same floating tray as the view presets, as one pill rather than a row of them. */

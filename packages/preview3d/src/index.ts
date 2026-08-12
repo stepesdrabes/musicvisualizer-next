@@ -2,7 +2,7 @@ import type { LedFrame, LedSink, LedSinkStats } from '@mv/core';
 import type { RoomRenderer } from './RoomRenderer.ts';
 
 export { RoomRenderer } from './RoomRenderer.ts';
-export type { CameraView, RoomRendererOptions } from './RoomRenderer.ts';
+export type { CameraView, RoomRendererOptions, Viewport } from './RoomRenderer.ts';
 
 /** Wraps the 3D view as a sink, so preview and hardware are fed identically. */
 export function createPreviewSink(renderer: RoomRenderer): LedSink {

@@ -29,7 +29,27 @@ const STRIP_THICKNESS = 0.03;
 /** Metres the strip sits proud of its wall, so it does not z-fight with the surface. */
 const STRIP_STANDOFF = 0.012;
 
+/** Scratch for the framing maths, which runs on every resize. Module-level, so it allocates once. */
+const FIT_EYE = new THREE.Vector3();
+const FIT_CORNER = new THREE.Vector3();
+const FIT_RIGHT = new THREE.Vector3();
+const FIT_UP = new THREE.Vector3();
+
 export type CameraView = 'orbit' | 'top' | 'front';
+
+/**
+ * The part of the canvas the room is meant to read as being in, in canvas pixels.
+ *
+ * The canvas is the whole window - the chrome floats on top of it so a lit room glows through
+ * the panels - but the room is judged in the gap between them. Fitting it to the canvas puts a
+ * third of it behind the rails and the player bar.
+ */
+export interface Viewport {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
 
 export interface RoomRendererOptions {
 	spec: RoomSpec;
@@ -56,6 +76,25 @@ export class RoomRenderer {
 	private wallMaterials: THREE.ShaderMaterial[] = [];
 	private ambientUniform = { value: new THREE.Color(0, 0, 0) };
 	private disposed = false;
+
+	/**
+	 * Which preset the camera is still sitting on, or null once it has been orbited.
+	 *
+	 * A preset re-frames itself when the window changes shape; a camera the user has moved does
+	 * not, because being pulled back to a canned distance on the next resize is the room
+	 * fighting them.
+	 */
+	private framed: CameraView | null = 'orbit';
+
+	/**
+	 * The point in the room a preset aims at, before it is offset to sit in the viewport.
+	 *
+	 * Kept apart from `controls.target` because framing moves the whole rig, and re-framing from
+	 * an already-moved target would walk the room out of the window one resize at a time.
+	 */
+	private readonly baseTarget = new THREE.Vector3();
+	private canvas = { width: 1, height: 1 };
+	private viewport: Viewport = { x: 0, y: 0, width: 1, height: 1 };
 
 	set showDots(v: boolean) {
 		if (this.dots) this.dots.visible = v;
@@ -107,16 +146,20 @@ export class RoomRenderer {
 		this.renderer.toneMapping = THREE.NoToneMapping;
 		this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-		this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 40);
+		// Both are placeholders: `applyProjection` derives them from the viewport on first resize.
+		this.camera = new THREE.PerspectiveCamera(RoomRenderer.VIEW_FOV, 1, 0.1, 40);
 		this.camera.position.set(spec.width * 0.85, -spec.depth * 1.15, spec.height * 0.75);
 		this.camera.up.set(0, 0, 1);
 
 		this.controls = new OrbitControls(this.camera, canvas);
 		this.controls.target.set(0, 0, spec.height * 0.45);
+		this.baseTarget.copy(this.controls.target);
 		this.controls.enableDamping = true;
 		this.controls.dampingFactor = 0.08;
 		this.controls.minDistance = 0.8;
 		this.controls.maxDistance = 22;
+		// Touching the camera hands it over: from here it is the user's until a preset is pressed.
+		this.controls.addEventListener('start', () => (this.framed = null));
 		this.controls.update();
 
 		this.scene.background = new THREE.Color(0x05050a);
@@ -192,7 +235,102 @@ export class RoomRenderer {
 				this.controls.target.set(0, 0, s.height * 0.45);
 				break;
 		}
+		this.baseTarget.copy(this.controls.target);
+		this.framed = view;
+		this.frame();
 		this.controls.update();
+	}
+
+	/** A little air past the room's own extent, so a bloom halo is not clipped by the frame. */
+	private static readonly FIT_MARGIN = 1.04;
+
+	/** The vertical field of view the room is framed with, over the viewport rather than the canvas. */
+	private static readonly VIEW_FOV = 52;
+
+	/**
+	 * Shear the frustum so the viewport is the window, without moving the camera.
+	 *
+	 * The obvious alternative - translate the whole rig until the room sits over the viewport -
+	 * is wrong here, and expensively so: a world-space shift displaces near geometry further on
+	 * screen than far, so correcting for it means backing off, which enlarges the shift, which
+	 * means backing off again. Measured across the real layouts it settles with the room at
+	 * under half the height it should have. An off-axis projection has no such feedback: the
+	 * camera stays on the axis through the room and only the projection is off-centre, which is
+	 * the same construction a window onto a scene uses on any multi-display wall.
+	 */
+	private applyProjection(): void {
+		const { width, height } = this.canvas;
+		const v = this.viewport;
+		const cx = v.x + v.width / 2;
+		const cy = v.y + v.height / 2;
+		// A virtual frame centred on the viewport and large enough to contain the canvas, so the
+		// canvas is an off-centre cut of it.
+		const halfW = Math.max(cx, width - cx);
+		const halfH = Math.max(cy, height - cy);
+		const t = Math.tan((RoomRenderer.VIEW_FOV * Math.PI) / 360);
+
+		// `fov` describes the virtual frame, so it is the viewport's own angle scaled up by how
+		// much taller that frame is.
+		this.camera.fov = (2 * Math.atan((t * 2 * halfH) / v.height) * 180) / Math.PI;
+		this.camera.aspect = halfW / halfH;
+		this.camera.setViewOffset(2 * halfW, 2 * halfH, halfW - cx, halfH - cy, width, height);
+		this.camera.updateProjectionMatrix();
+	}
+
+	/**
+	 * Push the camera along its own sight line until the whole room is inside the frustum.
+	 *
+	 * Both screen axes, not just the vertical one the FOV is defined on: at a wide, short
+	 * viewport the limit is height and at a narrow one it is width, which is why a fixed
+	 * distance cropped the room whenever the drawer opened or a rail was collapsed.
+	 *
+	 * Solved per corner rather than from the bounding box's extent, because the two are not the
+	 * same answer: the corner nearest the camera subtends the largest angle and is rarely the one
+	 * furthest off-axis. Bounding both and adding them backs off about 20% too far, which shows
+	 * up as the room shrinking on the ordinary window it used to fit.
+	 */
+	private frame(): void {
+		const s = this.opts.spec;
+		const eye = FIT_EYE.copy(this.camera.position).sub(this.controls.target);
+		const dist = eye.length();
+		if (dist < 1e-4) return;
+		eye.divideScalar(dist);
+
+		const right = FIT_RIGHT.crossVectors(eye, this.camera.up);
+		// Looking straight along `up` leaves no horizontal to measure. `top` is tilted off
+		// vertical for OrbitControls' sake, so this only guards against a camera set by hand.
+		if (right.lengthSq() < 1e-8) return;
+		right.normalize();
+		const up = FIT_UP.crossVectors(right, eye).normalize();
+
+		// The viewport's own angles: the projection has already been sheared so that the camera
+		// axis runs through the middle of it, which is what lets this ignore the canvas entirely.
+		const fitV = Math.tan((RoomRenderer.VIEW_FOV * Math.PI) / 360);
+		const fitH = fitV * (this.viewport.width / this.viewport.height);
+
+		// A corner sits at depth `at - u.eye` and at a fixed offset across the screen, so the
+		// distance it needs is `u.eye + offset / tan(half fov)`. The room wants the largest.
+		let need = 0;
+		for (let corner = 0; corner < 8; corner++) {
+			const u = FIT_CORNER.set(
+				(corner & 1 ? 0.5 : -0.5) * s.width,
+				(corner & 2 ? 0.5 : -0.5) * s.depth,
+				corner & 4 ? s.height : 0
+			).sub(this.baseTarget);
+			const along = u.dot(eye);
+			need = Math.max(
+				need,
+				along + Math.abs(u.dot(up)) / fitV,
+				along + Math.abs(u.dot(right)) / fitH
+			);
+		}
+
+		const at = Math.max(
+			this.controls.minDistance,
+			Math.min(this.controls.maxDistance, need * RoomRenderer.FIT_MARGIN)
+		);
+		this.controls.target.copy(this.baseTarget);
+		this.camera.position.copy(this.controls.target).addScaledVector(eye, at);
 	}
 
 	/**
@@ -407,10 +545,20 @@ export class RoomRenderer {
 	 */
 	private static readonly PIXEL_BUDGET = 3_000_000;
 
-	resize(width: number, height: number): void {
+	resize(width: number, height: number, viewport?: Viewport): void {
 		if (width <= 0 || height <= 0) return;
-		this.camera.aspect = width / height;
-		this.camera.updateProjectionMatrix();
+		this.canvas = { width, height };
+		this.viewport =
+			viewport && viewport.width > 0 && viewport.height > 0
+				? viewport
+				: { x: 0, y: 0, width, height };
+		this.applyProjection();
+		// A preset means the same thing at every window shape, so it re-fits. A camera the user
+		// has orbited is theirs, and a resize is not a reason to take it back.
+		if (this.framed) {
+			this.frame();
+			this.controls.update();
+		}
 
 		const ratio = Math.max(
 			1,
