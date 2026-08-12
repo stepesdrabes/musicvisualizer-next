@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod env;
+mod framerate;
 mod server;
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -12,13 +13,18 @@ const TOP_BAR_HEIGHT: f64 = 56.0;
 
 /// Where the controls start, and how much room they need.
 ///
-/// macOS puts them near the top of a 28pt title bar; this bar is twice that, so left alone
-/// they ride high above the wordmark beside them. The y centres a 12pt button in the bar:
-/// half the bar, less half the button.
+/// macOS puts them near the top of a 28pt title bar; this bar is twice that, so left alone they
+/// ride high above the wordmark beside them.
+///
+/// `y` is not the button's top edge, which is what makes this a number rather than a formula.
+/// tao resizes the title bar container to `button height + y` and moves only each button's x,
+/// leaving them wherever AppKit had laid them out inside it - so they end up higher than `y` by
+/// however much padding that container carries, and nothing publishes that figure. Set by eye
+/// against the 56pt bar, so that the circles sit on the same line as the wordmark beside them.
 #[cfg(target_os = "macos")]
 const TRAFFIC_LIGHT_X: f64 = 20.0;
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHT_Y: f64 = TOP_BAR_HEIGHT / 2.0 - 6.0;
+const TRAFFIC_LIGHT_Y: f64 = TOP_BAR_HEIGHT / 2.0 + 1.0;
 
 /// Leading space the bar keeps clear of them: three buttons at 20pt spacing, plus a gap.
 #[cfg(target_os = "macos")]
@@ -32,27 +38,21 @@ fn main() {
 		.setup(|app| {
 			let handle = app.handle().clone();
 
-			let started = server::start(&handle);
-			let server = match started {
-				Ok(server) => server,
-				Err(message) => {
-					// Nothing to show it in yet, so the failure goes to the console and the app
-					// exits rather than opening a window onto nothing.
-					eprintln!("LightningStrike could not start: {message}");
-					std::process::exit(1);
-				}
-			};
+			// Both of these are bounded and quick, and the initialization script needs the second
+			// one before the window exists. Everything slow happens after the window is on screen.
+			let path = env::resolve_path();
+			let missing = env::missing_tools(&path);
+			let started = server::spawn(&handle, &path);
 
-			let url = format!("http://127.0.0.1:{}/", server.port)
-				.parse()
-				.expect("a url built from a port is a url");
-
-			let mut builder = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
-				.title("LightningStrike")
-				.inner_size(1440.0, 900.0)
-				.min_inner_size(1024.0, 660.0)
-				.resizable(true)
-				.initialization_script(&shell_hints(&server));
+			// The splash, not the server: a window the user can see comes first, and the sidecar
+			// is navigated to when it answers.
+			let mut builder =
+				WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
+					.title("LightningStrike")
+					.inner_size(1440.0, 900.0)
+					.min_inner_size(1024.0, 660.0)
+					.resizable(true)
+					.initialization_script(&shell_hints(&missing));
 
 			#[cfg(target_os = "macos")]
 			{
@@ -87,7 +87,41 @@ fn main() {
 				});
 			}
 
+			// Before anything is drawn in it, so the first frame is already at the display's rate.
+			let _ = window.with_webview(|webview| {
+				if !framerate::unlock(webview.inner()) {
+					eprintln!("[shell] the webview's 60 fps cap could not be lifted");
+				}
+			});
+
 			window.show().inspect_err(|_| server::stop(&handle))?;
+
+			// From here nothing blocks the run loop. The window is up, so a slow start reads as a
+			// slow start and a failed one has somewhere to say so.
+			match started {
+				Err(message) => {
+					let _ = window.eval(failed(&message));
+				}
+				Ok(server) => {
+					let url: tauri::Url = format!("http://127.0.0.1:{}/", server.port)
+						.parse()
+						.expect("a url built from a port is a url");
+					let show = window.clone();
+					let owner = handle.clone();
+					tauri::async_runtime::spawn(async move {
+						if server::wait_ready(server.port).await {
+							let _ = show.navigate(url);
+						} else {
+							server::stop(&owner);
+							let _ = show.eval(failed(&format!(
+								"The server did not answer on port {} within 20 seconds.",
+								server.port
+							)));
+						}
+					});
+				}
+			}
+
 			Ok(())
 		})
 		.build(tauri::generate_context!())
@@ -112,12 +146,18 @@ fn set_inset(inset: f64) -> String {
 /// A global rather than an IPC call so the first paint already has it: the top bar has to
 /// reserve space for the traffic lights on the very first frame, and a round trip would show
 /// the layout moving.
-fn shell_hints(server: &server::Server) -> String {
-	let missing = serde_json::to_string(&server.missing_tools).unwrap_or_else(|_| "[]".into());
+fn shell_hints(missing_tools: &[&'static str]) -> String {
+	let missing = serde_json::to_string(missing_tools).unwrap_or_else(|_| "[]".into());
 	format!(
 		"window.__LIGHTNINGSTRIKE__ = {{ desktop: true, platform: {platform:?}, \
 		 missingTools: {missing} }}; {inset};",
 		platform = std::env::consts::OS,
 		inset = set_inset(TRAFFIC_LIGHT_INSET),
 	)
+}
+
+/// Say why nothing is going to happen, in the window rather than to a console nobody is reading.
+fn failed(message: &str) -> String {
+	let text = serde_json::to_string(message).unwrap_or_else(|_| "\"Unknown failure\"".into());
+	format!("window.lightningstrikeFailed && window.lightningstrikeFailed({text})")
 }

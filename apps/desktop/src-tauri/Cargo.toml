@@ -9,10 +9,17 @@ description = "LightningStrike desktop shell"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+# No `macos-private-api`: it exists for transparent windows and vibrancy, neither of which this
+# window uses, and it puts the webview on a compositing path that is not the opaque fast one.
+tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# For the one private WebKit call that lets the room draw above 60 fps. See `framerate.rs`.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
 
 [profile.release]
 codegen-units = 1

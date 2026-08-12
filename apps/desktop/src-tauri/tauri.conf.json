@@ -4,11 +4,11 @@
 	"version": "0.1.0",
 	"identifier": "cz.drabek.lightningstrike",
 	"build": {
-		"frontendDist": "../splash"
+		"frontendDist": "../splash",
+		"beforeBuildCommand": "node scripts/bundle.js"
 	},
 	"app": {
 		"withGlobalTauri": false,
-		"macOSPrivateApi": true,
 		"windows": [],
 		"security": {
 			"csp": null

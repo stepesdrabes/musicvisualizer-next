@@ -2,8 +2,82 @@
 <meta charset="utf-8" />
 <title>LightningStrike</title>
 <!--
-	Tauri requires a frontendDist, and nothing loads this: the window is created against the
-	local server once it answers, so a splash would only ever flash. Kept as the required
-	placeholder, and as the note explaining why it is empty.
+	What the window holds while the server comes up.
+
+	The sidecar is a Node process with an ONNX runtime and a SvelteKit graph behind it, so a cold
+	start is seconds; waiting for it before opening a window is what made a launch look like a
+	hang. This is on screen first, and the shell navigates away from it once the server answers -
+	or calls `lightningstrikeFailed` and leaves the reason here, because a Finder-launched app has
+	no console for anyone to read.
 -->
-<body style="background:#09090b"></body>
+<style>
+	html,
+	body {
+		height: 100%;
+		margin: 0;
+	}
+	body {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 18px;
+		background: #09090b;
+		color: #a1a1aa;
+		font:
+			14px/1.5 ui-sans-serif,
+			-apple-system,
+			system-ui,
+			sans-serif;
+		-webkit-user-select: none;
+		user-select: none;
+	}
+	.bolt {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 46px;
+		height: 46px;
+		border-radius: 12px;
+		background: #fafafa;
+		color: #0a0a0b;
+		/* Breathing rather than spinning: it is waiting, not working. */
+		animation: breathe 1.9s ease-in-out infinite;
+	}
+	@keyframes breathe {
+		50% {
+			opacity: 0.45;
+		}
+	}
+	#why {
+		display: none;
+		max-width: 460px;
+		padding: 0 24px;
+		text-align: center;
+		color: #f87171;
+		white-space: pre-wrap;
+	}
+	body.failed .bolt {
+		animation: none;
+		background: #26262c;
+		color: #71717a;
+	}
+	body.failed #why {
+		display: block;
+	}
+</style>
+<body>
+	<span class="bolt">
+		<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+			<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5Z" />
+		</svg>
+	</span>
+	<p id="why"></p>
+	<script>
+		// Called from the shell. Nothing else on this page runs.
+		window.lightningstrikeFailed = (message) => {
+			document.getElementById('why').textContent = message;
+			document.body.classList.add('failed');
+		};
+	</script>
+</body>

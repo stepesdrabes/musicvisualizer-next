@@ -3,7 +3,9 @@
 //
 //   node scripts/bundle.js
 //
-// Run by `npm run bundle` before `tauri build`. Idempotent; safe to re-run.
+// Wired in as `beforeBuildCommand`, so `tauri build` cannot package a stale server: nothing here
+// is checked in, and on a dirty tree the build used to ship whatever `apps/web/build` happened to
+// hold. Still runnable by hand as `npm run bundle`, which is what `tauri dev` needs. Idempotent.
 
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';

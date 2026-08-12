@@ -8,8 +8,6 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-use crate::env;
-
 /// Long enough to cover a cold start where the OS is paging the runtime in, short enough that
 /// a genuinely broken sidecar reports rather than hangs.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
@@ -17,7 +15,6 @@ const POLL_EVERY: Duration = Duration::from_millis(40);
 
 pub struct Server {
 	pub port: u16,
-	pub missing_tools: Vec<&'static str>,
 }
 
 /// The running sidecar, held so that quitting can end it.
@@ -28,15 +25,17 @@ pub struct Server {
 /// a room that keeps lighting after the app is gone.
 struct Sidecar(Mutex<Option<CommandChild>>);
 
-/// Start the bundled Node server and wait until it answers.
+/// Start the bundled Node server. Returns as soon as the process exists, not when it answers.
+///
+/// The waiting is `wait_ready`, deliberately apart: this runs on the thread that owns the
+/// window, and the sidecar takes seconds to come up. Doing both here is what left the app with
+/// no window at all until the server was serving, which macOS reports as not responding.
 ///
 /// The port is chosen here rather than fixed, so the app never collides with a dev server on
 /// 5180 or with a second copy of itself. It binds every interface on purpose: the queue is
 /// server state precisely so that phones in the room can add to it.
-pub fn start(app: &AppHandle) -> Result<Server, String> {
+pub fn spawn(app: &AppHandle, path: &str) -> Result<Server, String> {
 	let port = free_port()?;
-	let path = env::resolve_path();
-	let missing_tools = env::missing_tools(&path);
 
 	let entry = resource(app, "server/index.js")?;
 	let models = resource(app, "models")?;
@@ -56,7 +55,7 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 		.arg(entry)
 		.env("PORT", port.to_string())
 		.env("HOST", "0.0.0.0")
-		.env("PATH", &path)
+		.env("PATH", path)
 		.env("MV_CACHE_DIR", cache)
 		.env("MV_MODEL_DIR", models)
 		.env("NODE_ENV", "production");
@@ -88,13 +87,17 @@ pub fn start(app: &AppHandle) -> Result<Server, String> {
 		}
 	});
 
-	match wait_until_listening(port) {
-		true => Ok(Server { port, missing_tools }),
-		false => {
-			stop(app);
-			Err(format!("the server did not answer on port {port} within 20 seconds"))
-		}
-	}
+	Ok(Server { port })
+}
+
+/// Wait until the sidecar answers, off the thread that owns the window.
+///
+/// `spawn_blocking` rather than an async sleep loop: the wait below is a blocking connect with a
+/// blocking sleep between tries, and putting that on an async worker is what it is for.
+pub async fn wait_ready(port: u16) -> bool {
+	tauri::async_runtime::spawn_blocking(move || wait_until_listening(port))
+		.await
+		.unwrap_or(false)
 }
 
 /// End the sidecar. Idempotent, because both the failed-start path and the exit path call it.
