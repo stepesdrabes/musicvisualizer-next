@@ -17,6 +17,7 @@
 	import Dialog from '$lib/ui/Dialog.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
+	import Segmented from '$lib/ui/Segmented.svelte';
 	import Slider from '$lib/ui/Slider.svelte';
 	import Switch from '$lib/ui/Switch.svelte';
 
@@ -94,16 +95,11 @@
 
 	<section>
 		<h3>Colour</h3>
-		<div class="seg" role="group" aria-label="Where the room's colour comes from">
-			{#each COLOUR_SOURCES as option (option.id)}
-				<button
-					class="pick"
-					class:on={ambient.source === option.id}
-					onclick={() => source(option.id)}>
-					{option.label}
-				</button>
-			{/each}
-		</div>
+		<Segmented
+			options={COLOUR_SOURCES}
+			value={ambient.source}
+			ariaLabel="Where the room's colour comes from"
+			onpick={source} />
 
 		{#if picked}
 			<div class="line">
@@ -278,31 +274,6 @@
 		color: var(--muted-foreground);
 	}
 
-	.seg {
-		display: flex;
-		gap: 2px;
-		padding: 2px;
-		border-radius: var(--radius-md);
-		background: var(--muted);
-	}
-	.pick {
-		flex: 1;
-		padding: 5px 11px;
-		border-radius: calc(var(--radius-md) - 3px);
-		font-size: 12px;
-		white-space: nowrap;
-		color: var(--subtle-foreground);
-		transition:
-			background-color 0.13s ease,
-			color 0.13s ease;
-	}
-	.pick:hover {
-		color: var(--foreground);
-	}
-	.pick.on {
-		background: var(--card-raised);
-		color: var(--foreground);
-	}
 
 	.line {
 		display: flex;

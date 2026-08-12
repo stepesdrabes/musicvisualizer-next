@@ -1,5 +1,5 @@
 import { error, json } from '@sveltejs/kit';
-import { OFFSET_MAX_MS, OFFSET_MIN_MS } from '$lib/hardware.ts';
+import { OFFSET_MAX_MS, OFFSET_MIN_MS, isOutputFps } from '$lib/hardware.ts';
 import {
 	BRIGHTNESS_MAX,
 	BRIGHTNESS_MIN,
@@ -16,7 +16,7 @@ import {
 import { isLocal } from '$lib/server/access.ts';
 import { settings } from '$lib/server/settings.ts';
 import type { ColourSource } from '@mv/core';
-import type { BackendId } from '@mv/author-ai';
+import { authorModel, isEffort, type EffortLevel } from '@mv/author-ai';
 import type { RequestHandler } from './$types';
 
 /**
@@ -41,9 +41,10 @@ export const PUT: RequestHandler = async (event) => {
 	if (typeof body.autopilot === 'boolean') patch.autopilot = body.autopilot;
 	if (typeof body.lounge === 'boolean') patch.lounge = body.lounge;
 	if (typeof body.rest === 'boolean') patch.rest = body.rest;
-	if (body.authorBackend === 'claude' || body.authorBackend === 'deepseek') {
-		patch.authorBackend = body.authorBackend;
-	}
+	// Checked against the catalogue rather than merely typed, so nothing that reaches the CLI as
+	// a `--model` argument came from the request body.
+	if (authorModel(body.authorModel)) patch.authorModel = body.authorModel;
+	if (isEffort(body.authorEffort)) patch.authorEffort = body.authorEffort;
 	if (isColourSource(body.ambientColour)) patch.ambientColour = body.ambientColour;
 	// Clamped rather than rejected: every one of these is a slider, and the bound is what the
 	// control is for rather than a validity rule worth failing a request over. The hue wraps
@@ -60,6 +61,9 @@ export const PUT: RequestHandler = async (event) => {
 	if (number(body.outputOffsetMs)) {
 		patch.outputOffsetMs = clamp(body.outputOffsetMs, OFFSET_MIN_MS, OFFSET_MAX_MS);
 	}
+	// One of three rather than clamped: this is a picker, and a rate between them is not a
+	// slower version of either, it is a frame interval nothing was tuned against.
+	if (isOutputFps(body.outputFps)) patch.outputFps = body.outputFps;
 	if (Object.keys(patch).length === 0) error(400, 'nothing to change');
 
 	return json(await settings.update(patch));
@@ -67,8 +71,10 @@ export const PUT: RequestHandler = async (event) => {
 
 interface Writable {
 	deepseekApiKey?: string;
-	authorBackend?: BackendId;
+	authorModel?: string;
+	authorEffort?: EffortLevel;
 	outputOffsetMs?: number;
+	outputFps?: number;
 	autopilot?: boolean;
 	lounge?: boolean;
 	rest?: boolean;

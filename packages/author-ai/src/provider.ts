@@ -34,6 +34,45 @@ export const CLAUDE: AuthorProvider = {
 	effort: (level) => level
 };
 
+export interface AuthorModel {
+	id: string;
+	label: string;
+	/** One phrase on what picking it changes, shown beside the name. */
+	note: string;
+	backend: BackendId;
+}
+
+/**
+ * The models the app offers, in the order it offers them.
+ *
+ * Every one of them has a million-token context, which is the entry requirement rather than a
+ * preference: the bar table for a four-minute track plus the DSL reference is most of a
+ * 200k window before the agent has read anything, and a model that compacts halfway through
+ * loses the grid its cues are addressed against. That is what rules out Haiku here, and it is
+ * the same constraint `deepseek`'s `CLAUDE_CODE_AUTO_COMPACT_WINDOW` below is answering.
+ */
+export const AUTHOR_MODELS: readonly AuthorModel[] = [
+	{ id: 'claude-opus-5', label: 'Claude Opus 5', note: 'Default', backend: 'claude' },
+	{ id: 'claude-sonnet-5', label: 'Claude Sonnet 5', note: 'Cheaper', backend: 'claude' },
+	{ id: 'claude-opus-4-8', label: 'Claude Opus 4.8', note: 'Previous', backend: 'claude' },
+	{ id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', note: 'Cheapest', backend: 'deepseek' }
+];
+
+export const DEFAULT_MODEL = AUTHOR_MODELS[0].id;
+
+/** Anthropic's five. DeepSeek folds them into its three through `deepseekEffort`. */
+export const EFFORTS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const DEFAULT_EFFORT: EffortLevel = 'high';
+
+/** Undefined for anything not on the list, which is how an unknown id fails to be honoured. */
+export function authorModel(id: string | undefined): AuthorModel | undefined {
+	return AUTHOR_MODELS.find((m) => m.id === id);
+}
+
+export function isEffort(v: unknown): v is EffortLevel {
+	return EFFORTS.includes(v as EffortLevel);
+}
+
 /**
  * V4 offers three levels where Anthropic offers five.
  *

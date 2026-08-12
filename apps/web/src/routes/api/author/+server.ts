@@ -10,7 +10,7 @@ import {
 } from '@mv/core';
 import { analysisPath, findAudioFile, isValidId, readContext, readMeta, showPath } from '@mv/analysis';
 import { composeShow, formatFindings, lintShow } from '@mv/author-engine';
-import { reviseShow, type AuthorEvent, type BackendId } from '@mv/author-ai';
+import { reviseShow, type AuthorEvent } from '@mv/author-ai';
 import { isLocal } from '$lib/server/access.ts';
 import { settings } from '$lib/server/settings.ts';
 import type { RequestHandler } from './$types';
@@ -29,8 +29,10 @@ export const GET: RequestHandler = async (event) => {
 	const id = url.searchParams.get('id');
 	if (!id || !isValidId(id)) error(400, 'valid track id required');
 
-	const asked = url.searchParams.get('backend') ?? (await settings.read()).authorBackend;
-	const chosen = await settings.provider((asked === 'deepseek' ? 'deepseek' : 'claude') as BackendId);
+	const chosen = await settings.authoring(
+		url.searchParams.get('model'),
+		url.searchParams.get('effort')
+	);
 	if ('error' in chosen) error(400, chosen.error);
 
 	let analysis: TrackAnalysis;
@@ -80,11 +82,14 @@ export const GET: RequestHandler = async (event) => {
 			try {
 				send('event', {
 					type: 'note',
-					text: `authoring ${analysis.title} with ${chosen.provider.label}`
+					text: `authoring ${analysis.title} with ${chosen.model} at ${chosen.effort} effort`
 				} satisfies AuthorEvent);
 
 				const result = await reviseShow(grid, geometry, draft, {
 					provider: chosen.provider,
+					model: chosen.model,
+					briefEffort: chosen.effort,
+					showEffort: chosen.effort,
 					audioPath,
 					context,
 					onAnalysis: (next) => (grid = next),

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
-	import type { AuthorBackend, Settings, Step } from '$lib/types.ts';
+	import type { AuthorEffort, Settings, Step } from '$lib/types.ts';
 	import { titleCase } from '$lib/format.ts';
 	import { activeCue } from '$lib/timeline.ts';
+	import { menu } from '$lib/menu.svelte.ts';
 	import Activity from './Activity.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -21,11 +22,13 @@
 		log,
 		steps,
 		warnings,
+		trustNote = null,
 		settings,
 		canAuthor = false,
 		authoring = false,
 		onauthor,
-		onbackend,
+		onmodel,
+		oneffort,
 		onkey,
 		onrelevel,
 		onreroll,
@@ -39,11 +42,14 @@
 		log: string[];
 		steps: Step[];
 		warnings: string[];
+		/** Why the current track runs in lounge rather than its show; null when it does not. */
+		trustNote?: string | null;
 		settings: Settings;
 		canAuthor?: boolean;
 		authoring?: boolean;
-		onauthor: (backend: AuthorBackend) => void;
-		onbackend: (backend: AuthorBackend) => void;
+		onauthor: () => void;
+		onmodel: (id: string) => void;
+		oneffort: (effort: AuthorEffort) => void;
 		onkey: (key: string) => void;
 		onrelevel: (level: number) => void;
 		onreroll: () => void;
@@ -52,23 +58,57 @@
 	} = $props();
 
 	/**
-	 * Which model spends the evening's credits.
+	 * How hard the model thinks, in the words the API uses for it.
 	 *
-	 * A choice rather than a setting because the two are not interchangeable: one costs about a
-	 * hundred times what the other does, and which one a track deserves is a decision made while
-	 * looking at the track.
+	 * Presentation only - the ids are the contract. `xhigh` is spelled out because a label is
+	 * read rather than passed, and nobody says "ex high" out loud.
 	 */
-	const BACKENDS: { id: AuthorBackend; label: string; note: string }[] = [
-		{ id: 'claude', label: 'Claude', note: 'Opus 5' },
-		{ id: 'deepseek', label: 'DeepSeek', note: 'V4 Flash, far cheaper per show' }
+	const EFFORTS: { id: AuthorEffort; label: string; note?: string }[] = [
+		{ id: 'low', label: 'Low' },
+		{ id: 'medium', label: 'Medium' },
+		{ id: 'high', label: 'High', note: 'Default' },
+		{ id: 'xhigh', label: 'Very high' },
+		{ id: 'max', label: 'Max' }
 	];
 
-	const backend = $derived(settings.authorBackend);
+	const model = $derived(
+		settings.authorModels.find((m) => m.id === settings.authorModel) ?? settings.authorModels[0]
+	);
+	const needsKey = $derived(model?.backend === 'deepseek' && !settings.hasDeepseekKey);
 	let draftKey = $state('');
+
+	/**
+	 * The whole choice in one list, because it is one choice.
+	 *
+	 * A key it cannot spend is the only reason an option is refused here: the model is what the
+	 * night costs, and the effort is how much of that it spends.
+	 */
+	function openMenu(e: MouseEvent) {
+		menu.show(
+			e.currentTarget as HTMLElement,
+			() => [
+				{
+					label: 'Model',
+					value: settings.authorModel,
+					items: settings.authorModels.map((m) => ({
+						id: m.id,
+						label: m.label,
+						note: m.note,
+						disabled: m.backend === 'deepseek' && !settings.hasDeepseekKey,
+						title:
+							m.backend === 'deepseek' && !settings.hasDeepseekKey
+								? 'Needs a DeepSeek API key'
+								: undefined
+					}))
+				},
+				{ label: 'Effort', value: settings.authorEffort, items: EFFORTS }
+			],
+			(group, id) => (group === 0 ? onmodel(id) : oneffort(id as AuthorEffort))
+		);
+	}
 
 	const TABS = [
 		{ id: 'show', label: 'Show' },
-		{ id: 'cues', label: 'Cues' },
 		{ id: 'design', label: 'Design' },
 		{ id: 'log', label: 'Log' }
 	];
@@ -104,6 +144,32 @@
 			.map(([role, v]) => `${role[0]}:${v!.effect}`)
 			.join(' ');
 	}
+
+	// Nothing requires a show to store its cues in bar order, and an agent's show is whatever
+	// JSON the model wrote. Sorted once here rather than per section.
+	const ordered = $derived(show ? [...show.cues].sort((a, b) => a.bar - b.bar) : []);
+
+	function cuesIn(startBar: number, endBar: number): Show['cues'] {
+		return ordered.filter((c) => c.bar >= startBar && c.bar < endBar);
+	}
+
+	/**
+	 * Which sections are open.
+	 *
+	 * The one holding the playhead opens itself, so following a show costs nothing; a section the
+	 * user has touched keeps whatever they set it to. Keyed by the show as well as the index so a
+	 * different track starts closed rather than inheriting the last one's shape.
+	 */
+	let manual = $state<Record<string, boolean>>({});
+	const keyFor = (index: number) => `${show?.analysisHash ?? ''}:${index}`;
+
+	function isOpen(index: number, live: boolean): boolean {
+		return manual[keyFor(index)] ?? live;
+	}
+
+	function toggle(index: number, live: boolean): void {
+		manual[keyFor(index)] = !isOpen(index, live);
+	}
 </script>
 
 <aside class="floats">
@@ -114,16 +180,38 @@
 	<div class="scroll">
 		{#if tab === 'show'}
 			<div class="action">
-				<Button variant="primary" disabled={!canAuthor || authoring} onclick={() => onauthor(backend)}>
-					{#if authoring}
-						<Spinner size={14} />
-						Designing
-					{:else}
-						<Icon name="sparkles" size={15} />
-						{show ? 'Revise with' : 'Design with'}
-						{BACKENDS.find((b) => b.id === backend)?.label}
-					{/if}
-				</Button>
+				<!--
+					One button, split. Which model and how hard it thinks are settings of the same
+					decision the button carries out, so they belong on it rather than beside it - and
+					the choice made last time is the one it reads, so the common case is one click.
+				-->
+				<div class="split">
+					<Button
+						variant="primary"
+						disabled={!canAuthor || authoring || needsKey}
+						title={needsKey ? 'Needs a DeepSeek API key' : `${model?.label} at ${settings.authorEffort} effort`}
+						onclick={onauthor}>
+						{#if authoring}
+							<Spinner size={14} />
+							Designing
+						{:else}
+							<Icon name="sparkles" size={15} />
+							{show ? 'Revise with AI' : 'Design with AI'}
+						{/if}
+					</Button>
+					<Button
+						variant="primary"
+						size="icon"
+						disabled={authoring}
+						title="Which model, and how hard it thinks"
+						ariaLabel="Choose the model and effort"
+						onclick={openMenu}>
+						<Icon name="chevronDown" size={15} />
+					</Button>
+				</div>
+				{#if model}
+					<p class="chose">{model.label} <span class="sep">·</span> {settings.authorEffort} effort</p>
+				{/if}
 
 				<Button
 					variant="outline"
@@ -140,22 +228,7 @@
 					Reroll
 				</Button>
 
-				<div class="backends" role="group" aria-label="Which model designs the show">
-					{#each BACKENDS as option (option.id)}
-						<button
-							class="pick"
-							class:on={backend === option.id}
-							disabled={authoring}
-							title={option.id === 'deepseek' && !settings.hasDeepseekKey
-								? 'Needs a DeepSeek API key'
-								: option.note}
-							onclick={() => onbackend(option.id)}>
-							{option.label}
-						</button>
-					{/each}
-				</div>
-
-				{#if backend === 'deepseek' && !settings.hasDeepseekKey}
+				{#if needsKey}
 					<form
 						class="key"
 						onsubmit={(e) => {
@@ -173,82 +246,119 @@
 
 			{#if analysis}
 				<Section title="Track">
-					<dl>
-						{#if context?.artist && context?.title}
-							<dt>Resolved</dt>
-							<dd>
-								{context.artist} <span class="sep">·</span> {context.title}
-							</dd>
-						{/if}
-						{#if context?.genreFamily}
-							<dt>Lit as</dt>
-							<dd>
-								{context.genreFamily}
-								{#if context.lyrics}
-									<span class="sep">·</span> {context.lyrics.length} synced lines
-								{:else if context.instrumental}
-									<span class="sep">·</span> instrumental
-								{/if}
-							</dd>
-						{/if}
-						<dt>Tempo</dt>
-						<dd>
-							<span class="mono">{analysis.tempo.bpm}</span> bpm
-							<span class="sep">·</span> confidence
-							<span class="mono">{analysis.tempo.confidence.toFixed(2)}</span>
+					<!-- The record, then the one figure worth reading, then the facts you check once. -->
+					<div class="track">
+						<div class="who">
+							<span class="named truncate">
+								{context?.artist && context?.title
+									? `${context.artist} - ${context.title}`
+									: analysis.title}
+							</span>
+							{#if context?.genreFamily}
+								<Badge title="the family the show was lit as">{context.genreFamily}</Badge>
+							{/if}
+						</div>
+
+						<div class="tempo">
+							<span class="figure mono">{analysis.tempo.bpm}</span>
+							<span class="unit">bpm</span>
+							<span class="conf mono subtle" title="margin over the runner-up reading">
+								{analysis.tempo.confidence.toFixed(2)}
+							</span>
 							{#if analysis.tempo.ambiguous}
 								<!-- Only where the evidence really is split. Offering the correction on every
 								     track would teach people to ignore it. -->
 								<Badge
 									variant="warn"
-									title="an unusual tempo for a tactus; a commoner reading of the same beats is offered below">
+									title="an unusual tempo for a tactus; a commoner reading of the same beats is offered beside it">
 									Ambiguous
 								</Badge>
 							{/if}
-						</dd>
+							{#each analysis.tempo.alternativeBpm as alt (alt)}
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={relevelling}
+									title="re-read the whole grid at this level"
+									onclick={() => onrelevel(alt / analysis.tempo.bpm)}>
+									{Math.round(alt)}
+								</Button>
+							{/each}
+						</div>
 
-						{#if analysis.tempo.alternativeBpm.length > 0}
-							<dt>Re-read at</dt>
-							<dd class="levels">
-								{#each analysis.tempo.alternativeBpm as alt (alt)}
-									<Button
-										variant="outline"
-										size="sm"
-										disabled={relevelling}
-										onclick={() => onrelevel(alt / analysis.tempo.bpm)}>
-										{Math.round(alt)} bpm
-									</Button>
-								{/each}
-							</dd>
-						{/if}
-
-						<dt>Grid</dt>
-						<dd>
-							{analysis.tempo.beatsPerBar}/4 <span class="sep">·</span> phrase
-							<span class="mono">{analysis.tempo.barsPerPhrase}</span>
-							<span class="sep">·</span> anchor
-							<span class="mono">{analysis.tempo.phraseAnchorBar}</span>
-						</dd>
-						<dt>Bars</dt>
-						<dd><span class="mono">{analysis.bars.length}</span></dd>
-						<dt>Loudness</dt>
-						<dd><span class="mono">{analysis.integratedLufs}</span> LUFS</dd>
-					</dl>
+						<p class="facts subtle">
+							<span class="mono">{analysis.tempo.beatsPerBar}/4</span>
+							<span class="sep">·</span>
+							phrase <span class="mono">{analysis.tempo.barsPerPhrase}</span>
+							<span class="sep">·</span>
+							<span class="mono">{analysis.bars.length}</span> bars
+							<span class="sep">·</span>
+							<span class="mono">{analysis.integratedLufs}</span> LUFS
+							{#if context?.lyrics}
+								<span class="sep">·</span>
+								<span class="mono">{context.lyrics.length}</span> synced lines
+							{:else if context?.instrumental}
+								<span class="sep">·</span> instrumental
+							{/if}
+						</p>
+					</div>
 				</Section>
 
+				<!--
+					The arrangement is the cue sheet. Cues are addressed by bar and every bar belongs to
+					a section, so a separate list of them was the same information sorted differently -
+					and only one of the two could say where the room is now.
+				-->
 				<Section title="Arrangement">
 					<ul class="sections">
 						{#each analysis.sections as s (s.index)}
-							<li class:now={readout.bar >= s.startBar && readout.bar < s.endBar}>
-								<span class="swatch" style:background={`var(--sec-${s.kind})`}></span>
-								<span class="kind">{titleCase(s.kind)}</span>
-								<span class="mono subtle">{s.startBar}-{s.endBar}</span>
-								<span class="spacer"></span>
-								{#if s.energyRank === 1}<Badge variant="live">Peak</Badge>{/if}
-								<span class="mono subtle">{s.meanEnergy}</span>
+							{@const live = readout.bar >= s.startBar && readout.bar < s.endBar}
+							{@const cues = cuesIn(s.startBar, s.endBar)}
+							{@const open = cues.length > 0 && isOpen(s.index, live)}
+							<li class:now={live}>
+								<button
+									class="row"
+									aria-expanded={open}
+									disabled={cues.length === 0}
+									onclick={() => toggle(s.index, live)}>
+									<span class="swatch" style:background={`var(--sec-${s.kind})`}></span>
+									<span class="kind">{titleCase(s.kind)}</span>
+									<span class="mono subtle">{s.startBar}-{s.endBar}</span>
+									<span class="spacer"></span>
+									{#if s.energyRank === 1}<Badge variant="live">Peak</Badge>{/if}
+									<span class="mono subtle">{s.meanEnergy}</span>
+									<span class="caret" class:open>
+										{#if cues.length > 0}<Icon name="chevronDown" size={13} />{/if}
+									</span>
+								</button>
+
+								{#if open}
+									<ul class="cues">
+										{#each cues as cue (cue.bar)}
+											<li class:live={liveCue?.bar === cue.bar}>
+												<span class="mono bar">{cue.bar}</span>
+												<span class="mono energy" title="intensity">
+													{(cue.intensity ?? show?.defaults.intensity ?? 0).toFixed(2)}
+												</span>
+												<span class="layers truncate" title={cue.note ?? ''}>
+													{layerList(cue)}
+												</span>
+											</li>
+										{/each}
+									</ul>
+								{/if}
 							</li>
 						{/each}
 					</ul>
+				</Section>
+			{/if}
+
+			{#if trustNote}
+				<Section title="Lounge carries this track">
+					<p class="brief">
+						The analyser lost this grid ({trustNote}), so the calm scenes follow the track
+						instead of the authored show. The queue row can override it.
+					</p>
 				</Section>
 			{/if}
 
@@ -295,31 +405,7 @@
 			{#if steps.length > 0}
 				<div class="pad"><Activity {steps} /></div>
 			{:else}
-				<p class="empty subtle">Nothing yet. Press Design with Claude.</p>
-			{/if}
-		{:else if tab === 'cues'}
-			{#if show}
-				<table class="cues">
-					<thead>
-						<tr><th>Bar</th><th>Section</th><th>Layers</th><th>Int</th></tr>
-					</thead>
-					<tbody>
-						{#each show.cues as c (c.bar)}
-							<tr class:now={liveCue?.bar === c.bar}>
-								<td class="mono">{c.bar}</td>
-								<td>
-									<span class="dot" style:background={`var(--sec-${c.section})`}></span>{titleCase(
-										c.section
-									)}
-								</td>
-								<td class="layers mono" title={c.note}>{layerList(c)}</td>
-								<td class="mono">{((c.intensity ?? show.defaults.intensity) * 100).toFixed(0)}</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{:else}
-				<p class="empty subtle">No show yet.</p>
+				<p class="empty subtle">Nothing yet. Press Design with AI.</p>
 			{/if}
 		{:else}
 			<pre class="mono" bind:this={logEl}>{log.join('\n')}</pre>
@@ -359,33 +445,29 @@
 		width: 100%;
 	}
 
-	.backends {
+	/*
+	 * One control, split by a rule rather than by a gap.
+	 *
+	 * A gap shows the panel through it, which is nearly black and reads as two buttons that
+	 * happen to be touching. A faint rule on the white keeps it one object with two halves.
+	 */
+	.split {
 		display: flex;
-		gap: 2px;
-		margin-top: 8px;
-		padding: 2px;
-		border-radius: var(--radius-md);
-		background: var(--muted);
 	}
-	.pick {
-		flex: 1;
-		padding: 5px 0;
-		border-radius: calc(var(--radius-md) - 3px);
-		font-size: 12px;
+	.split :global(.btn:first-child) {
+		border-radius: var(--radius-md) 0 0 var(--radius-md);
+	}
+	.split :global(.btn:last-child) {
+		width: 34px;
+		flex: none;
+		border-radius: 0 var(--radius-md) var(--radius-md) 0;
+		border-left-color: #00000024;
+	}
+	.chose {
+		margin: 6px 0 10px;
+		font-size: 11.5px;
+		text-align: center;
 		color: var(--subtle-foreground);
-		transition:
-			background-color 0.13s ease,
-			color 0.13s ease;
-	}
-	.pick:hover:not(:disabled) {
-		color: var(--foreground);
-	}
-	.pick.on {
-		background: var(--card-raised);
-		color: var(--foreground);
-	}
-	.pick:disabled {
-		opacity: 0.4;
 	}
 
 	.key {
@@ -398,29 +480,52 @@
 		flex: none;
 	}
 
-	dl {
-		display: grid;
-		grid-template-columns: 78px 1fr;
-		gap: 7px 10px;
-		margin: 0;
-		font-size: 13px;
+	.track {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
 	}
-	dt {
-		color: var(--subtle-foreground);
-	}
-	dd {
-		margin: 0;
-		color: var(--muted-foreground);
+	.who {
 		display: flex;
 		align-items: center;
-		gap: 5px;
+		gap: 8px;
+		min-width: 0;
+	}
+	.named {
+		font-size: 13.5px;
+		font-weight: 500;
+		color: var(--foreground);
+	}
+	.tempo {
+		display: flex;
+		align-items: baseline;
+		gap: 7px;
 		flex-wrap: wrap;
+	}
+	.figure {
+		font-size: 26px;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		line-height: 1;
+		color: var(--foreground);
+	}
+	.unit {
+		font-size: 13px;
+		color: var(--muted-foreground);
+	}
+	.conf {
+		font-size: 12px;
+	}
+	.facts {
+		margin: 0;
+		font-size: 12px;
 	}
 	.sep {
 		opacity: 0.4;
 	}
-	.levels {
-		gap: 6px;
+	/* Aligned to the figure's baseline rather than sitting under it: they re-read the same number. */
+	.tempo :global(.btn) {
+		width: auto;
 	}
 
 	ul.sections {
@@ -431,18 +536,73 @@
 		flex-direction: column;
 		gap: 2px;
 	}
-	ul.sections li {
+	ul.sections > li {
+		border-radius: var(--radius-sm);
+	}
+	ul.sections > li.now {
+		background: var(--muted);
+	}
+	.row {
 		display: flex;
 		align-items: center;
 		gap: 9px;
+		width: 100%;
 		padding: 5px 8px;
 		border-radius: var(--radius-sm);
 		font-size: 13px;
+		text-align: left;
 		color: var(--muted-foreground);
 	}
-	ul.sections li.now {
-		background: var(--muted);
+	.row:hover:not(:disabled) {
 		color: var(--foreground);
+	}
+	ul.sections > li.now .row {
+		color: var(--foreground);
+	}
+	.caret {
+		display: flex;
+		width: 13px;
+		flex: none;
+		color: var(--subtle-foreground);
+		transition: rotate 0.14s ease;
+	}
+	.caret.open {
+		rotate: 180deg;
+	}
+
+	ul.cues {
+		list-style: none;
+		margin: 0;
+		padding: 0 8px 6px 25px;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+	}
+	ul.cues li {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 2px 6px;
+		border-radius: var(--radius-sm);
+		font-size: 12px;
+		color: var(--subtle-foreground);
+	}
+	ul.cues li.live {
+		background: var(--card-raised);
+		color: var(--foreground);
+	}
+	.bar {
+		width: 26px;
+		flex: none;
+		text-align: right;
+	}
+	.energy {
+		width: 30px;
+		flex: none;
+	}
+	.layers {
+		flex: 1;
+		min-width: 0;
 	}
 	.swatch {
 		width: 9px;
@@ -507,45 +667,6 @@
 	}
 	ul.warns li {
 		margin-bottom: 5px;
-	}
-
-	table.cues {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 12.5px;
-	}
-	table.cues th {
-		text-align: left;
-		color: var(--subtle-foreground);
-		font-weight: 500;
-		padding: 10px 12px;
-		position: sticky;
-		top: 0;
-		background: var(--panel-strong);
-		backdrop-filter: var(--panel-blur);
-		border-bottom: 1px solid var(--border);
-	}
-	table.cues td {
-		padding: 7px 12px;
-		color: var(--muted-foreground);
-		border-bottom: 1px solid var(--border-soft);
-		white-space: nowrap;
-	}
-	table.cues tr.now td {
-		background: var(--muted);
-		color: var(--foreground);
-	}
-	.layers {
-		max-width: 140px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.dot {
-		display: inline-block;
-		width: 7px;
-		height: 7px;
-		border-radius: 50%;
-		margin-right: 7px;
 	}
 
 	pre {

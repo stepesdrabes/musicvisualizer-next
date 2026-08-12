@@ -1,8 +1,21 @@
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CACHE_DIR } from '@mv/analysis';
+import { DEFAULT_OUTPUT_FPS, isOutputFps } from '$lib/hardware.ts';
 import { DEFAULT_AMBIENT, type AmbientSettings, type ColourSource } from '@mv/core';
-import { CLAUDE, deepseek, type AuthorProvider, type BackendId } from '@mv/author-ai';
+import {
+	AUTHOR_MODELS,
+	CLAUDE,
+	DEFAULT_EFFORT,
+	DEFAULT_MODEL,
+	authorModel,
+	deepseek,
+	isEffort,
+	type AuthorModel,
+	type AuthorProvider,
+	type BackendId,
+	type EffortLevel
+} from '@mv/author-ai';
 
 const SETTINGS_FILE = join(CACHE_DIR, 'settings.json');
 
@@ -16,8 +29,16 @@ interface SettingsFile {
 	 * behind: anyone who can reach loopback on this machine is already sitting at it.
 	 */
 	deepseekApiKey?: string;
-	/** Which backend the authoring button spends by default. */
+	/**
+	 * Which backend the authoring button spends.
+	 *
+	 * Superseded by `authorModel`, which names one of them exactly. Still read, so a machine
+	 * that chose DeepSeek before the models were nameable keeps its choice.
+	 */
 	authorBackend?: BackendId;
+	/** One of `AUTHOR_MODELS`. The backend is whichever one it belongs to. */
+	authorModel?: string;
+	authorEffort?: EffortLevel;
 	/**
 	 * How far ahead of the audio the strips are driven, milliseconds.
 	 *
@@ -26,6 +47,8 @@ interface SettingsFile {
 	 * and it is dialled by eye against the real room. Positive runs the room early.
 	 */
 	outputOffsetMs?: number;
+	/** Frames a second on the wire. Belongs to the fixture, like the trim above it. */
+	outputFps?: number;
 	/**
 	 * Whether the radio keeps the queue from running out.
 	 *
@@ -54,8 +77,21 @@ interface SettingsFile {
 export interface PublicSettings {
 	/** Never the key itself. Whether one is stored is all the interface needs to know. */
 	hasDeepseekKey: boolean;
+	/** Derived from `authorModel`, so nothing downstream has to know a model to name a desk. */
 	authorBackend: BackendId;
+	authorModel: string;
+	authorEffort: EffortLevel;
+	/**
+	 * The catalogue itself, rather than a copy of it kept in the browser by hand.
+	 *
+	 * Every other cross-boundary type in this app is mirrored in `lib/types.ts` on purpose, but
+	 * this is data rather than a shape: a model added to `AUTHOR_MODELS` should appear in the
+	 * menu without a second edit, and a stale duplicate here would offer a model the server
+	 * would then refuse.
+	 */
+	authorModels: readonly AuthorModel[];
 	outputOffsetMs: number;
+	outputFps: number;
 	autopilot: boolean;
 	lounge: boolean;
 	rest: boolean;
@@ -76,12 +112,30 @@ class Settings {
 		return this.cached;
 	}
 
+	/**
+	 * The model this machine authors with.
+	 *
+	 * A stored id that is no longer offered falls back to the default rather than being kept,
+	 * because the alternative is a button that spends nothing and a 400 nobody expected.
+	 */
+	private modelIn(file: SettingsFile): AuthorModel {
+		const stored = authorModel(file.authorModel);
+		if (stored) return stored;
+		const legacy = AUTHOR_MODELS.find((m) => m.backend === file.authorBackend);
+		return legacy ?? authorModel(DEFAULT_MODEL)!;
+	}
+
 	async read(): Promise<PublicSettings> {
 		const file = await this.load();
+		const model = this.modelIn(file);
 		return {
 			hasDeepseekKey: typeof file.deepseekApiKey === 'string' && file.deepseekApiKey.length > 0,
-			authorBackend: file.authorBackend ?? 'claude',
+			authorBackend: model.backend,
+			authorModel: model.id,
+			authorEffort: file.authorEffort ?? DEFAULT_EFFORT,
+			authorModels: AUTHOR_MODELS,
 			outputOffsetMs: file.outputOffsetMs ?? 0,
+			outputFps: isOutputFps(file.outputFps) ? file.outputFps : DEFAULT_OUTPUT_FPS,
 			autopilot: file.autopilot ?? false,
 			lounge: file.lounge ?? false,
 			// On by default. A room that holds its last cue forever after the music stops is the
@@ -141,6 +195,30 @@ class Settings {
 		const key = process.env.DEEPSEEK_API_KEY || (await this.load()).deepseekApiKey;
 		if (!key) return { error: 'no DeepSeek API key is stored; add one in the show panel' };
 		return { provider: deepseek(key) };
+	}
+
+	/**
+	 * The whole authoring choice, resolved: which desk, which model, how hard it thinks.
+	 *
+	 * `asked` is whatever the request named, which may be nothing and may be a model this build
+	 * does not offer. Either way what comes back is a model on the list, so nothing downstream
+	 * has to defend against a free string reaching the CLI.
+	 */
+	async authoring(
+		asked?: string | null,
+		effortAsked?: string | null
+	): Promise<
+		{ provider: AuthorProvider; model: string; effort: EffortLevel } | { error: string }
+	> {
+		const file = await this.load();
+		const model = authorModel(asked ?? undefined) ?? this.modelIn(file);
+		const chosen = await this.provider(model.backend);
+		if ('error' in chosen) return chosen;
+		return {
+			provider: chosen.provider,
+			model: model.id,
+			effort: isEffort(effortAsked) ? effortAsked : (file.authorEffort ?? DEFAULT_EFFORT)
+		};
 	}
 }
 
