@@ -5,6 +5,7 @@ import {
 	PHRASE_BARS,
 	nearestPhraseBar,
 	onPhraseGrid,
+	sectionBase,
 	type EventTag,
 	type SectionKind
 } from '@mv/core';
@@ -534,6 +535,17 @@ export function arrange(
 		i++;
 	}
 
+	// --- the ring-out ----------------------------------------------------------------------
+	carveRingOut(segments, energy, kicksPerBar, count);
+
+	// A void at the END of the track sets up nothing: the void instruction is the held breath
+	// before a drop, and silence after the last note is the record being over. Same reasoning
+	// as opening silence relabelling to intro, and placed here rather than in the silence pass
+	// so the segment keeps a void's protections through the phrase snap - its edges are where
+	// the sound stopped, and dragging them lights silence or cuts a played bar.
+	const tail = segments[segments.length - 1];
+	if (tail?.kind === 'void') tail.kind = 'outro';
+
 	// --- events --------------------------------------------------------------------------
 	const air = (b: number) => bandsN[b * NUM_BANDS + 3];
 	const sub = (b: number) => bandsN[b * NUM_BANDS];
@@ -581,6 +593,50 @@ export function arrange(
 	}
 
 	return { segments, energy, bands: bandsN, events, phraseAnchorBar: anchor };
+}
+
+/**
+ * A track that ends inside its loudest section still ENDS: the last kick leaves, the level
+ * collapses, and the file rings out - and a show that reads the section table alone holds
+ * the full drop stack pounding through the decay. The DP rarely splits a two-bar tail off
+ * an eight-bar drop (a boundary there costs more than the tail's difference buys), so the
+ * outro-by-position rule above never sees one. Carved here instead, the same way the void
+ * is: walked back from the last bar while the kick is gone and the level has clearly left
+ * the section's own body.
+ *
+ * Capped at four bars because this is a ring-out, not a structure rewrite: a longer decay
+ * is a real outro and the DP's to find. Runs after the phrase snap so the boundary stays
+ * where it was measured, exactly like a void's edges.
+ */
+export function carveRingOut(
+	segments: Segment[],
+	energy: Float32Array,
+	kicksPerBar: Int32Array,
+	count: number
+): void {
+	const last = segments[segments.length - 1];
+	if (!last) return;
+	const base = sectionBase(last.kind);
+	if (base !== 'drop' && base !== 'groove') return;
+	const len = last.endBar - last.startBar;
+	if (len < 4) return;
+
+	// The section's own body, read off its first half so the tail being judged cannot
+	// dilute the reference it is judged against.
+	const body = mean(energy, last.startBar, last.startBar + Math.max(2, len >> 1));
+	let carve = 0;
+	while (carve < 4 && last.endBar - carve - 1 >= last.startBar + 2) {
+		const b = last.endBar - carve - 1;
+		if (kicksPerBar[b] > 0) break;
+		if (energy[b] > body * 0.6) break;
+		carve++;
+	}
+	if (carve === 0) return;
+
+	const start = last.endBar - carve;
+	last.endBar = start;
+	// Carved rather than detected, so it belongs to no group - the same contract a void has.
+	segments.push({ startBar: start, endBar: count, kind: 'outro', group: -1 });
 }
 
 function meanBand(bandsN: Float32Array, from: number, to: number, band: number): number {

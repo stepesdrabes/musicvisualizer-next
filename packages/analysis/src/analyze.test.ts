@@ -575,3 +575,55 @@ describe('artwork', () => {
 		expect(art.hue!).toBeLessThan(160);
 	});
 });
+
+describe('the ring-out', () => {
+	it('ends a track that finishes inside its loudest section with an outro', () => {
+		// A drop that pounds to two bars from the end, then only the pad ringing out - the
+		// arrangement that used to hold the full drop stack through the decay.
+		const rings = synthesise(128, [
+			{ bars: 4, kick: 0, snare: 0, hat: 0, bass: 0, pad: 0.6, riser: false },
+			{ bars: 8, kick: 0.9, snare: 0.7, hat: 0.5, bass: 0.7, pad: 0.5, riser: false },
+			{ bars: 4, kick: 0.5, snare: 0.8, hat: 0.6, bass: 0, pad: 0.7, riser: true },
+			{ bars: 12, kick: 1, snare: 0.8, hat: 0.6, bass: 0.9, pad: 0.6, riser: false },
+			{ bars: 2, kick: 0, snare: 0, hat: 0, bass: 0, pad: 0.5, riser: false }
+		]);
+		const a = analyzeTrack({
+			mono: rings.mono,
+			sampleRate: rings.sampleRate,
+			duration: rings.duration,
+			hash: 'rings-out',
+			trackId: 'file-000000000000',
+			title: 'Rings Out'
+		});
+		const last = a.sections.at(-1)!;
+		expect(last.kind).toBe('outro');
+		// And it begins after the last kick, not before it: the room winds down with the
+		// record, it does not cut the final hits off.
+		expect(a.bars[last.startBar].t).toBeGreaterThanOrEqual(rings.kick.at(-1)! - 0.05);
+	});
+});
+
+describe('trailing silence', () => {
+	it('ends as an outro, never as a void', () => {
+		// A void is the held breath before a drop; silence after the last note is the record
+		// being over, and a room holding a deliberate blackout instruction through it reads as
+		// a fault rather than an ending.
+		const fades = synthesise(128, [
+			{ bars: 4, kick: 0, snare: 0, hat: 0, bass: 0, pad: 0.6, riser: false },
+			{ bars: 8, kick: 0.9, snare: 0.7, hat: 0.5, bass: 0.7, pad: 0.5, riser: false },
+			{ bars: 4, kick: 0.5, snare: 0.8, hat: 0.6, bass: 0, pad: 0.7, riser: true },
+			{ bars: 12, kick: 1, snare: 0.8, hat: 0.6, bass: 0.9, pad: 0.6, riser: false },
+			{ bars: 4, kick: 0, snare: 0, hat: 0, bass: 0, pad: 0, riser: false, silent: true }
+		]);
+		const a = analyzeTrack({
+			mono: fades.mono,
+			sampleRate: fades.sampleRate,
+			duration: fades.duration,
+			hash: 'fades-out',
+			trackId: 'file-000000000000',
+			title: 'Fades Out'
+		});
+		expect(a.sections.at(-1)!.kind).toBe('outro');
+		expect(a.sections.some((s) => s.kind === 'void' && s.startBar >= 28)).toBe(false);
+	});
+});

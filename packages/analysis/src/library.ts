@@ -2,28 +2,34 @@ import { open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GenreFamily } from '@mv/core';
+import { ANALYSIS_VERSION, SHOW_VERSION } from '@mv/core';
 import { CACHE_DIR } from './paths.ts';
 import type { TrackMeta } from './ingest.ts';
 
 /**
- * Recover a run time from an analysis without parsing it.
+ * Recover a field from the head of an analysis without parsing it.
  *
- * Tracks analysed before the meta carried a duration would otherwise show none until they
- * were ingested again. The analyses are around 400 kB each, so this reads the head of the
- * file: `duration` is written within the first few lines, and a couple of kilobytes is
- * enough to find it whatever the key order.
+ * The analyses are around 400 kB each, so this reads the first couple of kilobytes:
+ * `version` and `duration` are both written within the first few lines, whatever the key
+ * order, and that is enough to know whether a blob is current without opening it.
  */
-async function durationFromAnalysis(path: string): Promise<number | null> {
+async function headOfAnalysis(
+	path: string
+): Promise<{ duration: number | null; version: number | null }> {
 	let handle;
 	try {
 		handle = await open(path, 'r');
 		const buffer = Buffer.alloc(2048);
 		const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-		const match = /"duration"\s*:\s*([0-9.]+)/.exec(buffer.subarray(0, bytesRead).toString('utf8'));
-		const value = match ? Number(match[1]) : Number.NaN;
-		return Number.isFinite(value) && value > 0 ? value : null;
+		const head = buffer.subarray(0, bytesRead).toString('utf8');
+		const num = (key: string) => {
+			const match = new RegExp(`"${key}"\\s*:\\s*([0-9.]+)`).exec(head);
+			const value = match ? Number(match[1]) : Number.NaN;
+			return Number.isFinite(value) && value > 0 ? value : null;
+		};
+		return { duration: num('duration'), version: num('version') };
 	} catch {
-		return null;
+		return { duration: null, version: null };
 	} finally {
 		await handle?.close();
 	}
@@ -32,6 +38,14 @@ async function durationFromAnalysis(path: string): Promise<number | null> {
 export interface LibraryEntry extends TrackMeta {
 	/** An analysis exists, so this track loads without touching the network. */
 	analysed: boolean;
+	/**
+	 * The cached artifacts are the versions this build writes, so the track may play as-is.
+	 * False means a queue row must go through prepare again - a stale analysis is silently
+	 * wrong rather than obviously broken, and a stale engine show never hears an engine fix.
+	 * A model-authored show is exempt from the show half: it is kept across versions on
+	 * purpose, being the one artifact money was spent on.
+	 */
+	current: boolean;
 	authored: 'none' | 'engine' | 'claude' | 'deepseek';
 	/** The lighting family, once something has listened to the track. Null until enriched. */
 	genreFamily: GenreFamily | null;
@@ -56,6 +70,7 @@ async function readGenre(path: string): Promise<GenreFamily | null> {
 
 interface ShowStamp {
 	authored: 'engine' | 'claude' | 'deepseek';
+	version: number;
 	updatedAt: number;
 }
 
@@ -72,10 +87,11 @@ async function readShowStamp(path: string): Promise<ShowStamp | null> {
 		const show = JSON.parse(raw) as {
 			authoredBy?: 'engine' | 'claude' | 'deepseek';
 			generatedEffects?: unknown[];
+			version?: number;
 		};
 		const authored =
 			show.authoredBy ?? ((show.generatedEffects?.length ?? 0) > 0 ? 'claude' : 'engine');
-		return { authored, updatedAt: info.mtimeMs };
+		return { authored, version: show.version ?? 0, updatedAt: info.mtimeMs };
 	} catch {
 		return null;
 	}
@@ -107,20 +123,20 @@ export async function readLibrary(): Promise<LibraryEntry[]> {
 
 			const analysisFile = join(CACHE_DIR, `${id}.analysis.json`);
 			const analysed = existsSync(analysisFile);
+			const head = analysed
+				? await headOfAnalysis(analysisFile)
+				: { duration: null, version: null };
 
 			// Written back rather than recovered on every listing, so the repair happens once per
 			// track and the next read is as cheap as any other.
-			if (!meta.duration && analysed) {
-				const duration = await durationFromAnalysis(analysisFile);
-				if (duration !== null) {
-					meta = { ...meta, duration };
-					await writeFile(
-						join(CACHE_DIR, `${id}.meta.json`),
-						JSON.stringify(meta, null, '\t')
-					).catch(() => {
-						// A read-only cache still lists correctly; it just repairs itself each time.
-					});
-				}
+			if (!meta.duration && head.duration !== null) {
+				meta = { ...meta, duration: head.duration };
+				await writeFile(
+					join(CACHE_DIR, `${id}.meta.json`),
+					JSON.stringify(meta, null, '\t')
+				).catch(() => {
+					// A read-only cache still lists correctly; it just repairs itself each time.
+				});
 			}
 
 			const [show, genreFamily] = await Promise.all([
@@ -130,6 +146,10 @@ export async function readLibrary(): Promise<LibraryEntry[]> {
 			return {
 				...meta,
 				analysed,
+				current:
+					head.version === ANALYSIS_VERSION &&
+					show !== null &&
+					(show.version === SHOW_VERSION || show.authored !== 'engine'),
 				authored: show?.authored ?? 'none',
 				genreFamily,
 				updatedAt: Math.max(metaStat.mtimeMs, show?.updatedAt ?? 0)

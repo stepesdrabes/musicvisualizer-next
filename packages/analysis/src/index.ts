@@ -6,6 +6,7 @@ export { assessMetricalLevel, type MetricalAssessment } from './metricalLevel.ts
 export { STEREO_FPS, analyseStereo } from './stereo.ts';
 export { CACHE_DIR, MODEL_DIR, workspaceRoot } from './paths.ts';
 export { readLibrary, type LibraryEntry } from './library.ts';
+export { gridTrust, type GridTrust } from '@mv/core';
 export { radioFor, searchSongs, watchUrl, type Song } from './ytmusic.ts';
 export {
 	analysisPath,
@@ -13,6 +14,7 @@ export {
 	findAudioFile,
 	ingest,
 	isValidId,
+	markGridTrusted,
 	publishedLevel,
 	readContext,
 	readMeta,

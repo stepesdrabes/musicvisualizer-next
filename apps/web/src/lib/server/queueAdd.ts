@@ -43,7 +43,10 @@ export async function enrichFromLibrary(items: NewItem[]): Promise<NewItem[]> {
 
 	return items.map((item) => {
 		const hit = item.trackId ? byId.get(item.trackId) : undefined;
-		const cached = hit?.analysed && hit.authored !== 'none' ? hit : undefined;
+		// Current, not merely present: a stale-version analysis is silently wrong and a
+		// stale engine show never hears an engine fix, so those rows go through prepare
+		// again rather than playing whatever an older build left behind.
+		const cached = hit?.analysed && hit.current && hit.authored !== 'none' ? hit : undefined;
 		return {
 			...item,
 			title: item.title ?? hit?.title,
@@ -51,6 +54,11 @@ export async function enrichFromLibrary(items: NewItem[]): Promise<NewItem[]> {
 			thumbnail: item.thumbnail ?? hit?.thumbnail,
 			duration: item.duration ?? hit?.duration ?? 0,
 			authored: cached?.authored ?? 'none',
+			loungeOnly:
+				cached !== undefined &&
+				cached.gridTrust?.trusted === false &&
+				!cached.gridTrustOverride,
+			trustNote: cached?.gridTrust?.reasons.join('; ') || undefined,
 			// A track played before already knows its family; a new one learns it at ingest.
 			genre: hit?.genreFamily ?? undefined
 		};

@@ -1,4 +1,5 @@
 import { error, json } from '@sveltejs/kit';
+import { markGridTrusted } from '@mv/analysis';
 import type { NewItem, QueueState } from '$lib/queueModel.ts';
 import { isLocal } from '$lib/server/access.ts';
 import { queue } from '$lib/server/queueStore.ts';
@@ -10,7 +11,17 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async () => json(await queue.ready());
 
 interface Body {
-	action: 'add' | 'remove' | 'move' | 'playNext' | 'jump' | 'next' | 'prev' | 'clear' | 'retry';
+	action:
+		| 'add'
+		| 'remove'
+		| 'move'
+		| 'playNext'
+		| 'jump'
+		| 'next'
+		| 'prev'
+		| 'clear'
+		| 'retry'
+		| 'runShow';
 	items?: NewItem[];
 	key?: string;
 	to?: number;
@@ -65,6 +76,16 @@ export const POST: RequestHandler = async (event) => {
 			await runner.retry(body.key);
 			state = queue.snapshot;
 			break;
+		case 'runShow': {
+			// The owner overrides the trust verdict: this track runs its authored show. Written
+			// to the track's meta as well as the row, so the answer outlives the queue.
+			if (!body.key) error(400, 'key required');
+			const item = queue.snapshot.items.find((i) => i.key === body.key);
+			if (!item) error(404, 'no such row');
+			if (item.trackId) await markGridTrusted(item.trackId);
+			state = queue.patch(body.key, { loungeOnly: false });
+			break;
+		}
 		default:
 			error(400, 'unknown action');
 	}

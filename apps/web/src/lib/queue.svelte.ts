@@ -90,4 +90,9 @@ export class QueueClient {
 	retry(key: string): Promise<Response> {
 		return this.post({ action: 'retry', key });
 	}
+
+	/** Override the grid-trust verdict: run this row's authored show, and remember that. */
+	runShow(key: string): Promise<Response> {
+		return this.post({ action: 'runShow', key });
+	}
 }

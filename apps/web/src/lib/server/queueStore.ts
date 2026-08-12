@@ -50,18 +50,26 @@ class QueueStore {
 			if (!Array.isArray(raw.items)) throw new Error('not a queue');
 			// A row written before the genre was carried has one in the cache already, and a set
 			// list where only the newest rows say what they are reads as a bug rather than as a
-			// field that arrived late.
-			const genres = new Map(
-				(await readLibrary()).map((e) => [e.id, e.genreFamily ?? undefined])
-			);
+			// field that arrived late. The trust verdict is refreshed the same way.
+			const entries = new Map((await readLibrary()).map((e) => [e.id, e]));
 			const items = raw.items.map((i) => {
-				const genre = i.genre ?? (i.trackId ? genres.get(i.trackId) : undefined);
-				// Anything that was mid-flight when the process died is not mid-flight now.
+				const hit = i.trackId ? entries.get(i.trackId) : undefined;
+				const genre = i.genre ?? hit?.genreFamily ?? undefined;
+				// Anything that was mid-flight when the process died is not mid-flight now - and
+				// a row left ready by an older build is not ready now: its analysis or its engine
+				// show is the old version's, and replaying it as-is is how a fix never arrives.
+				const stale = i.status === 'ready' && hit !== undefined && !hit.current;
 				const revived =
-					i.status === 'ready' || i.status === 'error'
+					(i.status === 'ready' && !stale) || i.status === 'error'
 						? i
 						: { ...i, status: 'pending' as const, message: '' };
-				return genre === revived.genre ? revived : { ...revived, genre };
+				const loungeOnly = hit
+					? hit.gridTrust?.trusted === false && !hit.gridTrustOverride
+					: revived.loungeOnly;
+				const trustNote = hit
+					? hit.gridTrust?.reasons.join('; ') || undefined
+					: revived.trustNote;
+				return { ...revived, genre, loungeOnly, trustNote };
 			});
 			this.state = { items, currentKey: raw.currentKey ?? null, revision: raw.revision ?? 0 };
 		} catch {

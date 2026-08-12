@@ -49,7 +49,8 @@ export type {
 	LayerSpec,
 	Show
 } from './contracts/show.ts';
-export { HIT_RULES, SHOW_VERSION } from './contracts/show.ts';
+export { HIT_RULES, SHOW_VERSION, STROBE_MAX_HZ, strobePerBeat } from './contracts/show.ts';
+export { gridTrust, type GridTrust } from './trust.ts';
 export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 
 export { DEFAULT_ROOM, buildGeometry, roomRegions } from './geometry.ts';

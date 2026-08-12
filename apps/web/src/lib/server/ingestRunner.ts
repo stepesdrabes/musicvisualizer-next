@@ -1,5 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { BUILT_IN_EFFECTS, type Show } from '@mv/core';
+import { BUILT_IN_EFFECTS, SHOW_VERSION, type Show } from '@mv/core';
 import { showPath } from '@mv/analysis';
 import { composeShow, lintShow } from '@mv/author-engine';
 import { currentItem, nextItem, type ItemStatus, type QueueItem } from '$lib/queueModel.ts';
@@ -49,7 +49,18 @@ async function prepare(item: QueueItem, onStage: (stage: string) => void) {
 	let show: Show | null = null;
 	try {
 		const existing = JSON.parse(await readFile(showPath(result.id), 'utf8')) as Show;
-		if (existing.analysisHash === result.analysis.hash) show = existing;
+		const author = existing.authoredBy ?? (existing.generatedEffects.length > 0 ? 'claude' : 'engine');
+		// A model-authored show is kept across engine versions - it is the one artifact money
+		// was spent on. An engine show is kept only while nothing under it has moved: an older
+		// build's show never hears an engine fix, and the audio hash cannot see a re-analysis -
+		// the same file gains a different section table, and cues composed against the old one
+		// keep pounding through a passage the analyser has since relabelled.
+		if (
+			existing.analysisHash === result.analysis.hash &&
+			(author !== 'engine' || (existing.version === SHOW_VERSION && result.fromCache))
+		) {
+			show = existing;
+		}
 	} catch {
 		// No show yet, or one written against a grid that has since been re-analysed.
 	}
@@ -76,7 +87,10 @@ async function prepare(item: QueueItem, onStage: (stage: string) => void) {
 		? (show.authoredBy ?? (show.generatedEffects.length > 0 ? 'claude' : 'engine'))
 		: 'none';
 
-	return { result, authored };
+	const trust = result.meta.gridTrust;
+	const loungeOnly = trust?.trusted === false && !result.meta.gridTrustOverride;
+
+	return { result, authored, loungeOnly, trustNote: trust?.reasons.join('; ') || undefined };
 }
 
 /**
@@ -131,7 +145,7 @@ class IngestRunner {
 	private async run(item: QueueItem): Promise<void> {
 		queue.patch(item.key, { status: 'resolving', message: 'Resolving' });
 		try {
-			const { result, authored } = await prepare(item, (stage) => {
+			const { result, authored, loungeOnly, trustNote } = await prepare(item, (stage) => {
 				queue.patch(item.key, {
 					status: STAGES[stage] ?? 'analysing',
 					message: LABELS[stage] ?? stage
@@ -147,6 +161,8 @@ class IngestRunner {
 				thumbnail: result.meta.thumbnail,
 				duration: result.meta.duration ?? result.analysis.duration,
 				authored,
+				loungeOnly,
+				trustNote,
 				genre: result.context?.genreFamily ?? undefined
 			});
 			if (item.auto) autopilot.noteSuccess();

@@ -38,6 +38,14 @@ export interface QueueItem {
 	authored: Authored;
 	/** The lighting family, once the track has been enriched. Absent until then. */
 	genre?: string;
+	/**
+	 * The analyser lost this track's grid, so the room runs the lounge scenes over it instead
+	 * of the authored show. Set from the analysis's own trust verdict; cleared by the owner
+	 * overriding it from the row.
+	 */
+	loungeOnly?: boolean;
+	/** Why the grid is not trusted, for the row and the inspector. */
+	trustNote?: string;
 	/** Reserved for guests adding from their own device. Absent means the host added it. */
 	addedBy?: string;
 	/** Set only by the radio topping the queue up, so a row nobody chose can say so. */
@@ -64,6 +72,8 @@ export interface NewItem {
 	duration?: number;
 	authored?: Authored;
 	genre?: string;
+	loungeOnly?: boolean;
+	trustNote?: string;
 	addedBy?: string;
 	auto?: true;
 }
@@ -169,6 +179,8 @@ function makeItem(input: NewItem, key: string, now: number): QueueItem {
 		message: '',
 		authored: input.authored ?? 'none',
 		genre: input.genre,
+		loungeOnly: input.loungeOnly,
+		trustNote: input.trustNote,
 		addedBy: input.addedBy,
 		auto: input.auto,
 		addedAt: now

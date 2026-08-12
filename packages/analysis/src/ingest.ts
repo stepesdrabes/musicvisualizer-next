@@ -4,7 +4,7 @@ import { basename, extname, join, resolve } from 'node:path';
 import { CACHE_DIR } from './paths.ts';
 import { createHash } from 'node:crypto';
 import type { TrackAnalysis, TrackContext } from '@mv/core';
-import { ANALYSIS_VERSION, CONTEXT_VERSION } from '@mv/core';
+import { ANALYSIS_VERSION, CONTEXT_VERSION, gridTrust } from '@mv/core';
 import { analyzeTrack } from './analyze.ts';
 import { artworkHue } from './artwork.ts';
 import { decodeAudio, downloadAudio, probe, type ProbeResult } from './decode.ts';
@@ -70,6 +70,29 @@ export interface TrackMeta {
 	 * the track should not re-download the image.
 	 */
 	artHue?: number | null;
+	/**
+	 * Whether the analysed grid deserves its authored show, held here so the queue can read
+	 * it without opening a 400 kB analysis per row. A track this says not to trust runs in
+	 * the lounge scenes instead; absent means trusted (analysed before the verdict existed).
+	 */
+	gridTrust?: { trusted: boolean; reasons: string[] };
+	/**
+	 * The owner overrode the verdict from the queue: run the authored show regardless. Kept
+	 * beside the verdict so a re-analysis refreshes the evidence without erasing the answer.
+	 */
+	gridTrustOverride?: true;
+}
+
+/**
+ * The owner's word beats the verdict: run this track's authored show from now on, whatever
+ * the analyser thinks of its grid. On the meta rather than the queue row, so the answer
+ * survives the row being pruned and the track being queued again next month.
+ */
+export async function markGridTrusted(id: string): Promise<void> {
+	const meta = await readMeta(id);
+	if (!meta) return;
+	meta.gridTrustOverride = true;
+	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 }
 
 export async function readMeta(id: string): Promise<TrackMeta | null> {
@@ -304,10 +327,11 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			// meaning. Version mismatch has to discard it.
 			if (cached.version === ANALYSIS_VERSION) {
 				log('cached');
-				// Tracks analysed before meta carried a duration get one here, so a list of the
-				// cache does not have to open a 400 kB analysis per row to show a run time.
-				if (!meta.duration) {
-					meta.duration = cached.duration;
+				// Tracks analysed before meta carried a duration or a trust verdict get them
+				// here, so a list of the cache does not have to open a 400 kB analysis per row.
+				if (!meta.duration || !meta.gridTrust) {
+					meta.duration = meta.duration || cached.duration;
+					meta.gridTrust = meta.gridTrust ?? gridTrust(cached);
 					await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 				}
 				return { id, audioPath, analysis: cached, meta, context, fromCache: true };
@@ -377,9 +401,9 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));
-	if (!meta.duration) {
-		meta.duration = analysis.duration;
-		await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
-	}
+	// A fresh grid means a fresh verdict on it; the override, being the owner's, survives.
+	meta.duration = meta.duration || analysis.duration;
+	meta.gridTrust = gridTrust(analysis);
+	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
 	return { id, audioPath, analysis, meta, context, fromCache: false };
 }

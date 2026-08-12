@@ -24,7 +24,8 @@
 		onautopilot,
 		onradio,
 		onsuggestion,
-		onshuffle
+		onshuffle,
+		onrunShow
 	}: {
 		items?: QueueItem[];
 		currentKey?: string | null;
@@ -42,6 +43,7 @@
 		onradio: (item: QueueItem) => void;
 		onsuggestion: (song: SearchResult) => void;
 		onshuffle: () => void;
+		onrunShow: (key: string) => void;
 	} = $props();
 
 	let dragKey = $state<string | null>(null);
@@ -144,6 +146,16 @@
 				</button>
 
 				<div class="right">
+					{#if item.loungeOnly}
+						<!-- The analyser lost this grid, so calm scenes carry the track instead. -->
+						<span
+							class="chip"
+							title={item.trustNote
+								? `The analysis is not trustworthy (${item.trustNote}), so the lounge scenes carry this one`
+								: 'The analysis is not trustworthy, so the lounge scenes carry this one'}>
+							Lounge
+						</span>
+					{/if}
 					{#if item.genre}
 						<span class="chip genre" title="How the room lights this">{item.genre}</span>
 					{/if}
@@ -158,6 +170,15 @@
 						<span class="mono subtle time">{clock(item.duration)}</span>
 					{/if}
 					<div class="tools">
+						{#if item.loungeOnly}
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								title="Run the authored show anyway"
+								onclick={() => onrunShow(item.key)}>
+								<Icon name="sparkles" size={13} />
+							</Button>
+						{/if}
 						{#if item.status === 'error'}
 							<Button variant="ghost" size="icon-sm" title="Try again" onclick={() => onretry(item.key)}>
 								<Icon name="retry" size={13} />
