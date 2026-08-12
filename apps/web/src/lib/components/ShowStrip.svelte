@@ -1,19 +1,36 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { Show, TrackAnalysis } from '@mv/core';
-	import { buildTimeline, densityColumns } from '$lib/timeline.ts';
+	import {
+		FULL_WINDOW,
+		buildTimeline,
+		densityColumns,
+		follow,
+		fractionAt,
+		fractionIn,
+		isFullWindow,
+		panBy,
+		windowSpan,
+		zoomAt,
+		type TimeWindow
+	} from '$lib/timeline.ts';
 	import { clock, titleCase } from '$lib/format.ts';
+	import Icon from '$lib/ui/Icon.svelte';
 
 	let {
 		analysis,
 		show,
 		position,
 		duration,
+		view = $bindable(FULL_WINDOW),
 		onseek
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
 		position: number;
 		duration: number;
+		/** Bound, because the scrubber above draws the same range and the drawer unmounts. */
+		view?: TimeWindow;
 		onseek: (t: number) => void;
 	} = $props();
 
@@ -22,16 +39,79 @@
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let tip = $state<{ x: number; title: string; lines: string[] } | null>(null);
 
+	/** Suppresses the auto-follow for a moment after a manual pan, so a drag is not fought. */
+	let heldUntil = 0;
+
 	const timeline = $derived(buildTimeline(analysis, show, duration));
 
-	const pct = (t: number) => (duration > 0 ? Math.max(0, Math.min(100, (t / duration) * 100)) : 0);
+	/**
+	 * Four bars, which is the closest a zoom gets.
+	 *
+	 * A floor in bars rather than in seconds, because the useful limit is "one phrase and its
+	 * approach" on every track, and that is four seconds at 240 bpm and sixteen at 60.
+	 */
+	const minSpan = $derived.by(() => {
+		if (!analysis || duration <= 0) return 0.02;
+		const bar = analysis.tempo.beatPeriod * analysis.tempo.beatsPerBar;
+		return Math.min(1, (4 * bar) / duration);
+	});
+
+	const pct = (t: number) =>
+		duration > 0 ? Math.max(-20, Math.min(120, fractionIn(view, t / duration) * 100)) : 0;
+	// A span that starts before the window still has to end where it does, so both ends are
+	// mapped and the width taken from the difference rather than from the span's own length.
 	const widthPct = (a: number, b: number) => Math.max(0.12, pct(b) - pct(a));
+
+	function across(e: { clientX: number }): number {
+		if (!host) return 0;
+		const rect = host.getBoundingClientRect();
+		return Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+	}
 
 	function seekFrom(e: PointerEvent) {
 		if (!host || duration <= 0) return;
-		const rect = host.getBoundingClientRect();
-		onseek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * duration);
+		onseek(fractionAt(view, across(e)) * duration);
 	}
+
+	/**
+	 * Vertical for zoom, horizontal for pan.
+	 *
+	 * That is what a trackpad already sends for pinch and for a two-finger swipe, and the drawer
+	 * has nothing else a scroll could mean. Non-passive because zooming has to stop the gesture
+	 * reaching whatever is behind it.
+	 */
+	function wheel(el: HTMLElement) {
+		const onWheel = (e: WheelEvent) => {
+			if (duration <= 0) return;
+			e.preventDefault();
+			heldUntil = performance.now() + 2500;
+			if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+				view = panBy(view, (e.deltaX / (el.clientWidth || 1)) * windowSpan(view));
+				return;
+			}
+			view = zoomAt(view, fractionAt(view, across(e)), Math.exp(e.deltaY * 0.004), minSpan);
+		};
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	}
+
+	function reset() {
+		view = FULL_WINDOW;
+	}
+
+	/**
+	 * The playhead pulls the window along once it has left it, unless a pan just happened.
+	 *
+	 * Untracked on purpose: this runs when the playhead moves, not when the window does. Reading
+	 * `view` as a dependency here would make the effect its own trigger.
+	 */
+	$effect(() => {
+		const at = duration > 0 ? position / duration : 0;
+		untrack(() => {
+			if (isFullWindow(view) || performance.now() < heldUntil) return;
+			view = follow(view, at);
+		});
+	});
 
 	function showTip(e: PointerEvent, title: string, lines: string[]) {
 		if (!host) return;
@@ -51,6 +131,7 @@
 		const el = canvas;
 		const w = width;
 		const a = analysis;
+		const range = view;
 		if (!el || w <= 0) return;
 
 		const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
@@ -72,7 +153,7 @@
 		const rowH = h / rows.length;
 
 		rows.forEach(([times, colour], row) => {
-			const counts = densityColumns(times, duration, Math.ceil(w));
+			const counts = densityColumns(times, duration, Math.ceil(w), range);
 			let peak = 1;
 			for (const c of counts) if (c > peak) peak = c;
 
@@ -102,7 +183,9 @@
 	<div
 		class="lanes"
 		bind:this={host}
+		{@attach wheel}
 		onpointerdown={seekFrom}
+		ondblclick={reset}
 		onpointerleave={() => (tip = null)}
 		role="presentation">
 		<div class="lane sections" aria-label="Sections">
@@ -150,7 +233,10 @@
 			{/each}
 		</div>
 
-		<div class="playhead" style:left={`${pct(position)}%`}></div>
+		<!-- Only while it is in view. `.lanes` does not clip, because the tooltip rises out of it. -->
+		{#if duration > 0 && fractionIn(view, position / duration) >= 0 && fractionIn(view, position / duration) <= 1}
+			<div class="playhead" style:left={`${pct(position)}%`}></div>
+		{/if}
 
 		{#if tip}
 			<div
@@ -173,8 +259,18 @@
 		<span>⚡ Strobe</span>
 		<span>■ Blackout</span>
 		<span>▲ Slam</span>
+		<span class="spacer"></span>
+		{#if !isFullWindow(view)}
+			<!-- Only while there is something to say: at full width the range is the track. -->
+			<button class="zoom" onclick={reset} title="Show the whole track">
+				<Icon name="search" size={12} />
+				<span class="mono">
+					{clock(view.start * duration)}-{clock(view.end * duration)}
+				</span>
+			</button>
+			<span class="sep">·</span>
+		{/if}
 		{#if show}
-			<span class="spacer"></span>
 			<span class="mono">{timeline.cues.length} cues · {timeline.markers.length} hits</span>
 			<span class="sep">·</span>
 			<span class="mono">{clock(position)} / {clock(duration)}</span>
@@ -356,6 +452,20 @@
 	}
 	.legend .spacer {
 		flex: 1;
+	}
+	.zoom {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 2px 7px;
+		border-radius: var(--radius-sm);
+		background: var(--muted);
+		font-size: 11.5px;
+		color: var(--muted-foreground);
+	}
+	.zoom:hover {
+		background: var(--hover);
+		color: var(--foreground);
 	}
 	.swatch {
 		width: 8px;

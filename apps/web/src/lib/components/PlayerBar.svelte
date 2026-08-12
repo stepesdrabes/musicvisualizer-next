@@ -3,6 +3,7 @@
 	import type { TrackMeta } from '$lib/types.ts';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import { titleCase } from '$lib/format.ts';
+	import { FULL_WINDOW, type TimeWindow } from '$lib/timeline.ts';
 	import Scrubber from './Scrubber.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -16,12 +17,15 @@
 		readout,
 		volume = $bindable(0.8),
 		timelineOpen = false,
+		view = FULL_WINDOW,
+		queued = 0,
 		hasPrev = false,
 		hasNext = false,
 		ontoggle,
 		onseek,
 		onprev,
 		onnext,
+		onsearch,
 		ontimeline
 	}: {
 		meta: TrackMeta | null;
@@ -30,16 +34,29 @@
 		readout: Readout;
 		volume?: number;
 		timelineOpen?: boolean;
+		/** What the drawer's lanes are showing, so the scrubber can bracket it. */
+		view?: TimeWindow;
+		/** Rows in the queue, which is what separates an empty night from one that is loading. */
+		queued?: number;
 		hasPrev?: boolean;
 		hasNext?: boolean;
 		ontoggle: () => void;
 		onseek: (t: number) => void;
 		onprev: () => void;
 		onnext: () => void;
+		onsearch: () => void;
 		ontimeline: () => void;
 	} = $props();
 
 	const ready = $derived(readout.duration > 0);
+	/**
+	 * Nothing loaded and nothing on the way.
+	 *
+	 * A transport with nothing behind it is a bar pretending it could play something, so it is not
+	 * rendered rather than rendered disabled. The room underneath carries on either way - it is
+	 * full-window, and resting is a thing it does rather than an absence of one.
+	 */
+	const empty = $derived(!meta && queued === 0);
 	let mutedAt = $state<number | null>(null);
 
 	function toggleMute() {
@@ -53,78 +70,97 @@
 	}
 </script>
 
-<div class="player floats">
-	<div class="now">
-		<div class="art" class:lit={readout.playing}>
-			{#if meta?.thumbnail}
-				<img src={meta.thumbnail} alt="" />
-			{:else}
-				<Icon name="music" size={18} />
-			{/if}
-		</div>
-		<div class="meta">
-			<span class="title truncate" title={meta?.title ?? ''}>{meta?.title ?? 'Nothing loaded'}</span>
-			<span class="sub truncate muted">
-				{#if meta}
-					{meta.uploader}
-					{#if analysis}
-						<span class="dot">·</span>
-						<span class="mono">{analysis.tempo.bpm.toFixed(0)}</span> bpm
-					{/if}
-				{/if}
-			</span>
-		</div>
-	</div>
-
-	<div class="controls">
-		<div class="buttons">
-			<button
-				class="step"
-				onclick={onprev}
-				disabled={!ready && !hasPrev}
-				title="Previous"
-				aria-label="Previous">
-				<Icon name="skipBack" size={17} fill />
-			</button>
-
-			<button class="play" onclick={ontoggle} disabled={!ready} aria-label="Play or pause">
-				<Icon name={readout.playing ? 'pause' : 'play'} size={16} fill strokeWidth={1.5} />
-			</button>
-
-			<button
-				class="step"
-				onclick={onnext}
-				disabled={!ready && !hasNext}
-				title="Next"
-				aria-label="Next">
-				<Icon name="skipForward" size={17} fill />
-			</button>
-		</div>
-
-		<Scrubber {analysis} {show} position={readout.position} duration={readout.duration} {onseek} />
-	</div>
-
-	<div class="right">
-		{#if ready}
-			<Badge colour={`var(--sec-${readout.section})`}>{titleCase(readout.section)}</Badge>
-			<span class="mono subtle bar">bar {readout.bar}</span>
-		{/if}
-
-		<button class="vol-btn" onclick={toggleMute} aria-label="Mute">
-			<Icon name={volume === 0 ? 'volumeOff' : 'volume'} size={16} />
-		</button>
-		<Slider bind:value={volume} ariaLabel="Volume" width="84px" />
-
-		<Button
-			variant={timelineOpen ? 'secondary' : 'ghost'}
-			size="icon"
-			title="Timeline"
-			ariaLabel="Toggle the timeline"
-			onclick={ontimeline}>
-			<Icon name={timelineOpen ? 'chevronDown' : 'chevronUp'} size={17} />
+{#if empty}
+	<div class="player empty floats">
+		<span class="mark"><Icon name="bolt" size={15} /></span>
+		<span class="line">Nothing queued</span>
+		<Button variant="outline" onclick={onsearch}>
+			<Icon name="search" size={15} />
+			Search for a track
 		</Button>
 	</div>
-</div>
+{:else}
+	<div class="player floats">
+		<div class="now">
+			<div class="art" class:lit={readout.playing}>
+				{#if meta?.thumbnail}
+					<img src={meta.thumbnail} alt="" />
+				{:else}
+					<Icon name="music" size={18} />
+				{/if}
+			</div>
+			<div class="meta">
+				<!-- With nothing queued at all the bar is not this one, so a null title here means a
+				     row that exists and is still being fetched. -->
+				<span class="title truncate" title={meta?.title ?? ''}>{meta?.title ?? 'Preparing'}</span>
+				<span class="sub truncate muted">
+					{#if meta}
+						{meta.uploader}
+						{#if analysis}
+							<span class="dot">·</span>
+							<span class="mono">{analysis.tempo.bpm.toFixed(0)}</span> bpm
+						{/if}
+					{/if}
+				</span>
+			</div>
+		</div>
+
+		<div class="controls">
+			<div class="buttons">
+				<button
+					class="step"
+					onclick={onprev}
+					disabled={!ready && !hasPrev}
+					title="Previous"
+					aria-label="Previous">
+					<Icon name="skipBack" size={17} fill />
+				</button>
+
+				<button class="play" onclick={ontoggle} disabled={!ready} aria-label="Play or pause">
+					<Icon name={readout.playing ? 'pause' : 'play'} size={16} fill strokeWidth={1.5} />
+				</button>
+
+				<button
+					class="step"
+					onclick={onnext}
+					disabled={!ready && !hasNext}
+					title="Next"
+					aria-label="Next">
+					<Icon name="skipForward" size={17} fill />
+				</button>
+			</div>
+
+			<Scrubber
+				{analysis}
+				{show}
+				position={readout.position}
+				duration={readout.duration}
+				{view}
+				{onseek} />
+		</div>
+
+		<div class="right">
+			{#if ready}
+				<Badge colour={`var(--sec-${readout.section})`}>{titleCase(readout.section)}</Badge>
+				<span class="mono subtle bar">bar {readout.bar}</span>
+			{/if}
+
+			<button class="vol-btn" onclick={toggleMute} aria-label="Mute">
+				<Icon name={volume === 0 ? 'volumeOff' : 'volume'} size={16} />
+			</button>
+			<Slider bind:value={volume} ariaLabel="Volume" width="84px" />
+
+			<Button
+				variant={timelineOpen ? 'secondary' : 'ghost'}
+				size="icon"
+				title="Timeline"
+				ariaLabel="Toggle the timeline"
+				onclick={ontimeline}>
+				<Icon name={timelineOpen ? 'chevronDown' : 'chevronUp'} size={17} />
+			</Button>
+		</div>
+	</div>
+{/if}
 
 <style>
 	.player {
@@ -137,6 +173,28 @@
 		background: var(--panel);
 		backdrop-filter: var(--panel-blur);
 		border-top: 1px solid var(--border);
+	}
+	/* One row, centred, and shorter than the bar it replaces: there is less to say. */
+	.player.empty {
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		gap: 12px;
+		padding: 10px 14px;
+	}
+	.mark {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 26px;
+		height: 26px;
+		border-radius: var(--radius-sm);
+		background: var(--primary);
+		color: var(--primary-foreground);
+	}
+	.line {
+		font-size: 13.5px;
+		color: var(--muted-foreground);
 	}
 
 	.now {

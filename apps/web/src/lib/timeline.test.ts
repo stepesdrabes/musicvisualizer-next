@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { Show, TrackAnalysis } from '@mv/core';
-import { activeCue, buildTimeline, densityColumns } from './timeline.ts';
+import {
+	activeCue,
+	buildTimeline,
+	densityColumns,
+	fractionAt,
+	fractionIn,
+	follow,
+	panBy,
+	windowSpan,
+	zoomAt
+} from './timeline.ts';
 
 const beatPeriod = 60 / 120;
 
@@ -179,5 +189,70 @@ describe('densityColumns', () => {
 	it('drops anything outside the track rather than folding it to an edge', () => {
 		const counts = densityColumns([-1, 11], 10, 10);
 		expect(Array.from(counts).reduce((a, b) => a + b, 0)).toBe(0);
+	});
+});
+
+describe('the time window', () => {
+	const full = { start: 0, end: 1 };
+
+	it('keeps the point under the pointer under it while zooming in', () => {
+		const w = zoomAt(full, 0.4, 0.5, 0.01);
+		expect(windowSpan(w)).toBeCloseTo(0.5);
+		expect(fractionIn(w, 0.4)).toBeCloseTo(fractionIn(full, 0.4));
+	});
+
+	it('keeps zooming about the same point stable across repeated steps', () => {
+		let w = full;
+		for (let i = 0; i < 6; i++) w = zoomAt(w, 0.62, 0.8, 0.01);
+		expect(fractionIn(w, 0.62)).toBeCloseTo(0.62, 5);
+	});
+
+	it('slides rather than overhangs when zooming out at an edge', () => {
+		// Anchored mid-window, the span it wants would run past the end of the track.
+		const w = zoomAt({ start: 0.9, end: 1 }, 0.95, 4, 0.01);
+		expect(windowSpan(w)).toBeCloseTo(0.4);
+		expect(w.end).toBeCloseTo(1);
+		expect(w.start).toBeCloseTo(0.6);
+	});
+
+	it('will not zoom past the floor, or out past the whole track', () => {
+		expect(windowSpan(zoomAt(full, 0.5, 0.001, 0.05))).toBeCloseTo(0.05);
+		expect(zoomAt({ start: 0.4, end: 0.6 }, 0.5, 100, 0.05)).toEqual(full);
+	});
+
+	it('pans without changing the span, and stops at both ends', () => {
+		const w = { start: 0.4, end: 0.6 };
+		expect(panBy(w, 0.1).start).toBeCloseTo(0.5);
+		expect(panBy(w, -9).start).toBeCloseTo(0);
+		expect(panBy(w, 9).end).toBeCloseTo(1);
+		for (const delta of [0.1, -9, 9]) {
+			expect(windowSpan(panBy(w, delta))).toBeCloseTo(windowSpan(w));
+		}
+	});
+
+	it('follows a playhead only once it leaves the window', () => {
+		const w = { start: 0.4, end: 0.6 };
+		expect(follow(w, 0.5)).toBe(w);
+		expect(follow(full, 0.9)).toBe(full);
+		const moved = follow(w, 0.75);
+		expect(windowSpan(moved)).toBeCloseTo(0.2);
+		expect(fractionIn(moved, 0.75)).toBeCloseTo(0.5);
+	});
+
+	it('maps a position across the window back to the track it points at', () => {
+		const w = { start: 0.25, end: 0.75 };
+		expect(fractionAt(w, 0)).toBeCloseTo(0.25);
+		expect(fractionAt(w, 1)).toBeCloseTo(0.75);
+		expect(fractionIn(w, fractionAt(w, 0.3))).toBeCloseTo(0.3);
+	});
+
+	it('buckets onsets across the window, not across the track', () => {
+		const times = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+		const zoomed = densityColumns(times, 10, 5, { start: 0.5, end: 1 });
+		// Five seconds of the track across five columns: one onset each, and nothing folded in
+		// from the half that is off-screen.
+		expect(Array.from(zoomed)).toEqual([1, 1, 1, 1, 1]);
+		const whole = densityColumns(times, 10, 5);
+		expect(Array.from(whole).reduce((a, b) => a + b, 0)).toBe(10);
 	});
 });

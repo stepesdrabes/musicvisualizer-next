@@ -1,18 +1,22 @@
 <script lang="ts">
 	import { barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
 	import { clock, titleCase } from '$lib/format.ts';
+	import { FULL_WINDOW, isFullWindow, type TimeWindow } from '$lib/timeline.ts';
 
 	let {
 		analysis,
 		show,
 		position,
 		duration,
+		view = FULL_WINDOW,
 		onseek
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
 		position: number;
 		duration: number;
+		/** The slice the timeline drawer is showing, drawn here so the zoom has somewhere to read. */
+		view?: TimeWindow;
 		onseek: (t: number) => void;
 	} = $props();
 
@@ -106,6 +110,16 @@
 		{/each}
 
 		<div class="veil" style:left={`${(played * 100).toFixed(3)}%`}></div>
+
+		<!-- Which slice the lanes below are showing. The scrubber itself stays whole: it is how
+		     you get anywhere in the track, and a zoomed seek bar cannot reach the rest of it. -->
+		{#if !isFullWindow(view)}
+			<div
+				class="window"
+				style:left={`${(view.start * 100).toFixed(3)}%`}
+				style:width={`${((view.end - view.start) * 100).toFixed(3)}%`}></div>
+		{/if}
+
 		<div class="knob" style:left={`${(played * 100).toFixed(3)}%`}></div>
 
 		{#if hoverAt !== null && duration > 0}
@@ -177,6 +191,16 @@
 		height: 9px;
 		background: #09090bc4;
 		border-radius: 0 999px 999px 0;
+		pointer-events: none;
+	}
+	/* A bracket rather than a fill: the sections underneath are what is being framed. */
+	.window {
+		position: absolute;
+		top: 50%;
+		translate: 0 -50%;
+		height: 15px;
+		border: 1px solid #ffffff59;
+		border-radius: 3px;
 		pointer-events: none;
 	}
 	.knob {

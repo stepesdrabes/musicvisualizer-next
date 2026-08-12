@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis } from '@mv/core';
 	import type { Viz } from '$lib/viz.svelte.ts';
+	import { FULL_WINDOW, type TimeWindow } from '$lib/timeline.ts';
 	import LedBands from './LedBands.svelte';
 	import ShowStrip from './ShowStrip.svelte';
 
@@ -10,6 +11,7 @@
 		show,
 		position,
 		duration,
+		view = $bindable(FULL_WINDOW),
 		onseek
 	}: {
 		viz: Viz | null;
@@ -17,13 +19,16 @@
 		show: Show | null;
 		position: number;
 		duration: number;
+		view?: TimeWindow;
 		onseek: (t: number) => void;
 	} = $props();
 </script>
 
 <div class="drawer floats">
+	<!-- The bands are the strips themselves, so their axis is the room rather than the track;
+	     only the lanes below have a time window to zoom. -->
 	<LedBands {viz} />
-	<ShowStrip {analysis} {show} {position} {duration} {onseek} />
+	<ShowStrip {analysis} {show} {position} {duration} bind:view {onseek} />
 </div>
 
 <style>
