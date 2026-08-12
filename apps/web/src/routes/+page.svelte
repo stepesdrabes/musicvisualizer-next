@@ -6,9 +6,11 @@
 	import { installHint, readShell } from '$lib/shell.svelte.ts';
 	import { DEFAULT_AMBIENT, type AmbientSettings } from '@mv/core';
 	import { indexOfKey } from '$lib/queueModel.ts';
-	import type { Candidate } from '$lib/search.svelte.ts';
+	import { DEFAULT_OUTPUT_FPS } from '$lib/hardware.ts';
+	import { FULL_WINDOW, type TimeWindow } from '$lib/timeline.ts';
+	import { libraryToCandidate, type Candidate } from '$lib/search.svelte.ts';
 	import type {
-		AuthorBackend,
+		AuthorEffort,
 		AuthorEvent,
 		LibraryEntry,
 		LoadState,
@@ -21,7 +23,9 @@
 	import Backdrop from '$components/Backdrop.svelte';
 	import HardwareModal from '$components/HardwareModal.svelte';
 	import Inspector from '$components/Inspector.svelte';
+	import LibraryModal from '$components/LibraryModal.svelte';
 	import LoungeModal from '$components/LoungeModal.svelte';
+	import Menu from '$lib/ui/Menu.svelte';
 	import PlayerBar from '$components/PlayerBar.svelte';
 	import QueuePanel from '$components/QueuePanel.svelte';
 	import RoomModal from '$components/RoomModal.svelte';
@@ -63,7 +67,13 @@
 	let settings = $state<Settings>({
 		hasDeepseekKey: false,
 		authorBackend: 'claude',
+		authorModel: 'claude-opus-5',
+		authorEffort: 'high',
+		// Empty until the settings arrive, which is what the menu has to survive rather than a
+		// guess at the catalogue that could disagree with the server's.
+		authorModels: [],
 		outputOffsetMs: 0,
+		outputFps: DEFAULT_OUTPUT_FPS,
 		autopilot: false,
 		lounge: false,
 		rest: true,
@@ -75,7 +85,16 @@
 	let shown = $state(0);
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
+	/**
+	 * The slice of the track the timeline lanes are showing.
+	 *
+	 * Held here rather than in the drawer because two things read it - the lanes and the
+	 * scrubber's bracket - and because the drawer unmounts when it closes, which would otherwise
+	 * throw the zoom away every time somebody glanced at the room.
+	 */
+	let laneView = $state<TimeWindow>(FULL_WINDOW);
 	let hardwareOpen = $state(false);
+	let libraryOpen = $state(false);
 	let loungeOpen = $state(false);
 
 	// Read once: the shell injects it before any of this runs and never changes it.
@@ -118,6 +137,18 @@
 					? current.message
 					: ''
 	);
+
+	/**
+	 * Closing the drawer throws the zoom away.
+	 *
+	 * The window outlives the drawer's markup on purpose - the scrubber draws it too - but it is a
+	 * place in one track rather than a setting, and coming back to a collapsed player still framed
+	 * on eight bars of a song that has since changed is a state nobody asked to be in.
+	 */
+	function toggleTimeline() {
+		timelineOpen = !timelineOpen;
+		if (!timelineOpen) laneView = FULL_WINDOW;
+	}
 
 	function note(line: string) {
 		log = [...log.slice(-400), line];
@@ -167,9 +198,16 @@
 		else note(`settings: ${await res.text()}`);
 	}
 
-	function chooseBackend(backend: AuthorBackend) {
-		settings = { ...settings, authorBackend: backend };
-		void patchSettings({ authorBackend: backend });
+	function chooseModel(authorModel: string) {
+		const backend =
+			settings.authorModels.find((m) => m.id === authorModel)?.backend ?? settings.authorBackend;
+		settings = { ...settings, authorModel, authorBackend: backend };
+		void patchSettings({ authorModel });
+	}
+
+	function chooseEffort(authorEffort: AuthorEffort) {
+		settings = { ...settings, authorEffort };
+		void patchSettings({ authorEffort });
 	}
 
 	function saveDeepseekKey(key: string) {
@@ -219,6 +257,31 @@
 		note(`queued ${results.length} like ${label}`);
 	}
 
+	/** Ids the queue is holding, which are the ones the library must not offer to delete. */
+	const queuedIds = $derived(
+		new Set(queue.items.map((i) => i.trackId).filter((id): id is string => id !== null))
+	);
+
+	/**
+	 * Queue something already in the cache.
+	 *
+	 * Through the same path as a palette pick, because a cached row and a catalogue hit differ
+	 * only in whether anything has to be fetched - and `pick` is where the after-effects live.
+	 */
+	function fromLibrary(entry: LibraryEntry, how: 'queue' | 'now') {
+		return pick(libraryToCandidate(entry), how);
+	}
+
+	async function forget(entry: LibraryEntry) {
+		const res = await fetch(`/api/library/${encodeURIComponent(entry.id)}`, { method: 'DELETE' });
+		if (!res.ok) {
+			note(`ERROR ${await res.text()}`);
+			return;
+		}
+		note(`deleted ${entry.title}`);
+		await refreshLibrary();
+	}
+
 	/** Four at a time, wrapping, so the button always has somewhere to go. */
 	const suggestionWindow = $derived(
 		suggestions.length === 0
@@ -263,6 +326,12 @@
 	function saveOffset(ms: number) {
 		moveOffset(ms);
 		void patchSettings({ outputOffsetMs: ms });
+	}
+
+	/** The server re-arms its own render clock; a running stream does not need restarting. */
+	function chooseFps(outputFps: number) {
+		settings = { ...settings, outputFps };
+		void patchSettings({ outputFps });
 	}
 
 	function toggleLounge(on: boolean) {
@@ -332,11 +401,12 @@
 
 	// What the room is asked to be. The renderer holds these as plain fields rather than reactive
 	// ones, so this effect is the whole of the wiring: whenever the stored settings change, they
-	// are pushed once and then read every frame from there.
+	// are pushed once and then read every frame from there. A track whose grid the analyser lost
+	// runs in lounge whatever the switch says; the switch still reads as the user left it.
 	$effect(() => {
 		const v = viz;
 		if (!v) return;
-		v.lounge = settings.lounge;
+		v.lounge = settings.lounge || (current?.loungeOnly ?? false);
 		v.rest = settings.rest;
 		v.ambient = settings.ambient;
 	});
@@ -459,8 +529,9 @@
 		}
 	}
 
-	function hosts(): string[] {
-		return ddpHost
+	/** Several comma-separated boards split the fixture between them. */
+	function hosts(source: string): string[] {
+		return source
 			.split(',')
 			.map((h) => h.trim())
 			.filter(Boolean);
@@ -473,24 +544,37 @@
 	 * starts and never again, so rerolling or authoring one while streaming leaves the room
 	 * playing the composition it was handed.
 	 */
-	function startOutput(id: string) {
+	function startOutput(id: string | null, to = ddpHost) {
 		return postJson('/api/output', {
 			action: 'start',
-			trackId: id,
-			hosts: hosts(),
+			// Absent rather than null: with no track the server starts the loop bare and the room
+			// takes the resting scenes, which is what somebody connecting before the music wants.
+			...(id ? { trackId: id } : {}),
+			hosts: hosts(to),
 			offsetMs: wireOffsetMs
 		});
 	}
 
-	async function toggleOutput() {
-		if (ddpRunning) {
-			await postJson('/api/output', { action: 'stop' });
-			note('DDP output stopped');
+	/**
+	 * Point the room at a board and start driving it.
+	 *
+	 * The address comes from the press rather than from the status, because storing it is a round
+	 * trip and the stream would otherwise start against whichever board was configured before.
+	 */
+	async function connectOutput(host: string) {
+		if (hosts(host).length === 0) return;
+		if (host !== ddpHost) await hardware.setHost(host);
+		const res = await startOutput(trackId, host);
+		if (!res.ok) {
+			note(`ERROR ${await res.text()}`);
 			return;
 		}
-		if (!trackId || hosts().length === 0) return;
-		const res = await startOutput(trackId);
-		note(res.ok ? `DDP output to ${ddpHost}` : `ERROR ${await res.text()}`);
+		note(trackId ? `DDP output to ${host}` : `DDP output to ${host}, resting`);
+	}
+
+	async function disconnectOutput() {
+		await postJson('/api/output', { action: 'stop' });
+		note('DDP output stopped');
 	}
 
 	function openSearch(seed: string) {
@@ -583,7 +667,7 @@
 		}
 	}
 
-	function author(backend: AuthorBackend) {
+	function author() {
 		if (!trackId || !analysis || !viz) return;
 		warnings = [];
 		steps = [];
@@ -653,8 +737,13 @@
 			}
 		}
 
+		// The choice travels with the request rather than being read from disk at the far end: the
+		// menu writes it optimistically, and a press landing before that PUT would otherwise spend
+		// the previous model.
 		const es = new EventSource(
-			`/api/author?id=${encodeURIComponent(trackId)}&backend=${encodeURIComponent(backend)}`
+			`/api/author?id=${encodeURIComponent(trackId)}` +
+				`&model=${encodeURIComponent(settings.authorModel)}` +
+				`&effort=${encodeURIComponent(settings.authorEffort)}`
 		);
 
 		es.addEventListener('event', (ev) => handle(JSON.parse((ev as MessageEvent).data) as AuthorEvent));
@@ -771,7 +860,9 @@
 		hardware={hardware.status}
 		{leftOpen}
 		{rightOpen}
+		cached={library.length}
 		onsearch={openSearch}
+		onlibrary={() => (libraryOpen = true)}
 		onhardware={() => (hardwareOpen = true)}
 		ontoggleLeft={() => (leftOpen = !leftOpen)}
 		ontoggleRight={() => (rightOpen = !rightOpen)} />
@@ -794,7 +885,8 @@
 				onshuffle={shuffleSuggestions}
 				onautopilot={toggleAutopilot}
 				onradio={(item) => void startRadio(item.trackId ?? '', item.title)}
-				onsuggestion={(song) => void addSuggestion(song)} />
+				onsuggestion={(song) => void addSuggestion(song)}
+				onrunShow={(k) => void queue.runShow(k)} />
 		{/if}
 
 		<Stage
@@ -816,11 +908,13 @@
 				{log}
 				{steps}
 				{warnings}
+				trustNote={current?.loungeOnly ? (current.trustNote ?? 'no reason recorded') : null}
 				{settings}
 				canAuthor={!!analysis}
 				authoring={load.phase === 'authoring'}
 				onauthor={author}
-				onbackend={chooseBackend}
+				onmodel={chooseModel}
+				oneffort={chooseEffort}
 				onkey={saveDeepseekKey}
 				onrelevel={relevel}
 				onreroll={reroll}
@@ -836,13 +930,16 @@
 		{readout}
 		bind:volume
 		{timelineOpen}
+		view={laneView}
+		queued={queue.items.length}
 		{hasPrev}
 		{hasNext}
 		ontoggle={() => void viz?.toggle()}
 		onseek={(t) => viz?.seek(t)}
 		onprev={prev}
 		onnext={next}
-		ontimeline={() => (timelineOpen = !timelineOpen)} />
+		onsearch={() => openSearch('')}
+		ontimeline={toggleTimeline} />
 
 	{#if timelineOpen}
 		<TimelineDrawer
@@ -851,6 +948,7 @@
 			{show}
 			position={readout.position}
 			duration={readout.duration}
+			bind:view={laneView}
 			onseek={(t) => viz?.seek(t)} />
 	{/if}
 </div>
@@ -863,6 +961,19 @@
 	onpick={pick} />
 
 <RoomModal />
+
+<LibraryModal
+	open={libraryOpen}
+	{library}
+	queued={queuedIds}
+	onclose={() => (libraryOpen = false)}
+	onplay={(e) => void fromLibrary(e, 'now')}
+	onqueue={(e) => void fromLibrary(e, 'queue')}
+	onradio={(e) => void startRadio(e.id, e.title)}
+	ondelete={forget} />
+
+<!-- All at the page root: a panel that blurs its backdrop cannot contain a fixed-position child. -->
+<Menu />
 
 <LoungeModal
 	open={loungeOpen}
@@ -883,15 +994,16 @@
 <HardwareModal
 	open={hardwareOpen}
 	status={hardware.status}
-	canStream={!!show}
 	onclose={() => (hardwareOpen = false)}
 	offsetMs={settings.outputOffsetMs}
+	fps={settings.outputFps}
 	onhost={(h) => void hardware.setHost(h)}
 	onregion={(r) => void hardware.setRegion(r)}
-	onprobe={(h) => void hardware.probe(h)}
+	onfps={chooseFps}
 	onoffset={moveOffset}
 	onoffsetdone={saveOffset}
-	ontoggleOutput={toggleOutput} />
+	onconnect={(h) => void connectOutput(h)}
+	ondisconnect={() => void disconnectOutput()} />
 
 <style>
 	/* No z-index of its own: the room layer inside it has to stay under the panels, which is

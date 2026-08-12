@@ -27,6 +27,8 @@ export type Authored = 'none' | 'engine' | 'claude' | 'deepseek';
 /** Mirrors @mv/analysis LibraryEntry. The family is one of GenreFamily, or null until enriched. */
 export interface LibraryEntry extends TrackMeta {
 	analysed: boolean;
+	/** The cached blobs are this build's versions, so the track plays without preparing again. */
+	current: boolean;
 	authored: Authored;
 	genreFamily: string | null;
 	updatedAt: number;
@@ -64,12 +66,33 @@ export interface LoadState {
 /** Mirrors @mv/author-ai BackendId. */
 export type AuthorBackend = 'claude' | 'deepseek';
 
+/** Mirrors @mv/author-ai EffortLevel. */
+export type AuthorEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/**
+ * Mirrors @mv/author-ai AuthorModel.
+ *
+ * The shape is mirrored, the list is not: the models themselves arrive with the settings, so
+ * adding one to the catalogue does not need an edit here as well.
+ */
+export interface AuthorModelInfo {
+	id: string;
+	label: string;
+	note: string;
+	backend: AuthorBackend;
+}
+
 /** Mirrors PublicSettings from the server. The key itself never crosses this boundary. */
 export interface Settings {
 	hasDeepseekKey: boolean;
 	authorBackend: AuthorBackend;
+	authorModel: string;
+	authorEffort: AuthorEffort;
+	authorModels: readonly AuthorModelInfo[];
 	/** How far ahead of the audio the strips run, milliseconds. Positive is early. */
 	outputOffsetMs: number;
+	/** Frames a second on the wire. One of `OUTPUT_FPS_CHOICES`. */
+	outputFps: number;
 	/** Whether the radio keeps the queue from running out. */
 	autopilot: boolean;
 	/** Calm scenes instead of the authored show, while a track is playing. */
@@ -92,8 +115,10 @@ export interface Settings {
  */
 export interface SettingsPatch {
 	deepseekApiKey?: string;
-	authorBackend?: AuthorBackend;
+	authorModel?: string;
+	authorEffort?: AuthorEffort;
 	outputOffsetMs?: number;
+	outputFps?: number;
 	autopilot?: boolean;
 	lounge?: boolean;
 	rest?: boolean;

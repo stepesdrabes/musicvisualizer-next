@@ -13,7 +13,9 @@
 		hardware,
 		leftOpen = true,
 		rightOpen = true,
+		cached = 0,
 		onsearch,
+		onlibrary,
 		onhardware,
 		ontoggleLeft,
 		ontoggleRight
@@ -24,7 +26,10 @@
 		hardware: HardwareStatus;
 		leftOpen?: boolean;
 		rightOpen?: boolean;
+		/** Tracks already downloaded, which is the only thing the library button has to say. */
+		cached?: number;
 		onsearch: (seed: string) => void;
+		onlibrary: () => void;
 		onhardware: () => void;
 		ontoggleLeft: () => void;
 		ontoggleRight: () => void;
@@ -79,6 +84,11 @@
 				<span class="truncate">{failure}</span>
 			</span>
 		{/if}
+
+		<button class="link" onclick={onlibrary} title="What is already downloaded">
+			<Icon name="listMusic" size={14} />
+			<span class="label mono">{cached}</span>
+		</button>
 
 		<button
 			class="link"

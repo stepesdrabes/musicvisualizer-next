@@ -11,6 +11,7 @@ function entry(over: Partial<LibraryEntry>): LibraryEntry {
 		webpageUrl: '',
 		source: '',
 		analysed: true,
+		current: true,
 		authored: 'engine',
 		genreFamily: null,
 		updatedAt: 0,
