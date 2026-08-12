@@ -14,6 +14,7 @@ import {
 } from '@mv/core';
 import { analysisPath, isValidId, showPath } from '@mv/analysis';
 import { createDdpSink, type DdpTarget } from '@mv/transport-ddp';
+import { DEFAULT_OUTPUT_FPS } from '$lib/hardware.ts';
 import { currentItem } from '$lib/queueModel.ts';
 import { queue } from '$lib/server/queueStore.ts';
 import { hardware } from '$lib/server/hardware.ts';
@@ -53,7 +54,10 @@ class Output {
 	private offsetMs = 0;
 	private frames = 0;
 	private lounge = false;
+	/** The current track's own verdict: its grid is lost, so lounge carries it. */
+	loungeOnly = false;
 	private rest = true;
+	private fps = DEFAULT_OUTPUT_FPS;
 
 	targets: DdpTarget[] = [];
 
@@ -82,6 +86,12 @@ class Output {
 		this.lounge = s.lounge;
 		this.rest = s.rest;
 		this.director.ambientSettings = s.ambient;
+		// The interval is the clock, so a new rate means a new interval. Only when it has actually
+		// changed: re-arming on every settings write would drop a frame each time a slider moved.
+		if (s.outputFps !== this.fps) {
+			this.fps = s.outputFps;
+			if (this.running) this.arm();
+		}
 	}
 
 	load(analysis: TrackAnalysis, show: Show): void {
@@ -93,19 +103,39 @@ class Output {
 		this.director.load(analysis, show);
 	}
 
+	/**
+	 * Forget the track without stopping the room.
+	 *
+	 * A board joined with nothing playing has no show to render, and a director with none takes
+	 * the ambient scenes immediately rather than waiting out the rest grace.
+	 */
+	clearShow(): void {
+		this.registry.clearGenerated();
+		this.director.clearShow();
+		this.trackId = null;
+	}
+
 	async start(targets: DdpTarget[], offsetMs: number): Promise<void> {
 		await this.stop();
 		this.targets = targets;
 		this.offsetMs = offsetMs;
+		this.frames = 0;
 		this.sink = createDdpSink({ targets });
 		await this.sink.open();
+		this.arm();
+	}
 
+	/**
+	 * (Re)start the render clock.
+	 *
+	 * This loop is the only clock, and it sends directly. A separate re-clocking sender on top
+	 * would double the per-frame work in one event loop and cost a third of the frame rate; the
+	 * keep-alive it exists to provide is already inherent here, because this loop runs whether or
+	 * not a browser is attached.
+	 */
+	private arm(): void {
+		if (this.timer) clearInterval(this.timer);
 		let last = performance.now();
-		this.frames = 0;
-		// This loop is the only clock, and it sends directly. A separate re-clocking sender on
-		// top would double the per-frame work in one event loop and cost a third of the frame
-		// rate; the keep-alive it exists to provide is already inherent here, because this loop
-		// runs whether or not a browser is attached.
 		this.timer = setInterval(() => {
 			const now = performance.now();
 			const dt = Math.min((now - last) / 1000, 0.05);
@@ -117,7 +147,7 @@ class Output {
 			this.director.update(Math.max(0, t), dt, {
 				playing: sounding,
 				hasShow: this.director.player.loaded !== null,
-				lounge: this.lounge,
+				lounge: this.lounge || this.loungeOnly,
 				rest: this.rest
 			});
 			this.sink?.send({
@@ -127,7 +157,7 @@ class Output {
 				presentAtMs: now
 			});
 			this.frames++;
-		}, 1000 / 60);
+		}, 1000 / this.fps);
 	}
 
 	/**
@@ -212,7 +242,11 @@ async function loadTrack(id: string): Promise<{ analysis: TrackAnalysis; show: S
  */
 queue.subscribe((state) => {
 	if (!output.running) return;
-	const id = currentItem(state)?.trackId ?? null;
+	const item = currentItem(state);
+	// Before the track-change early-outs: the flag can change on the row that is already
+	// playing, which is exactly what the override button does.
+	output.loungeOnly = item?.loungeOnly ?? false;
+	const id = item?.trackId ?? null;
 	if (!id || id === output.trackId) return;
 	void loadTrack(id).then((loaded) => {
 		if (!loaded || !output.running) return;
@@ -257,18 +291,31 @@ export const POST: RequestHandler = async (event) => {
 		return json(output.status);
 	}
 
-	const id = body.trackId;
-	if (!id || !isValidId(id)) error(400, 'valid trackId required');
 	if (!body.hosts?.length) error(400, 'at least one host required');
 
-	const loaded = await loadTrack(id);
-	if (!loaded) error(404, 'no analysis or show cached for this track');
+	/*
+	 * A track is optional.
+	 *
+	 * Connecting a board is about the room, not about a song: somebody arriving before the music
+	 * has started should get the resting scenes on their strips rather than a 400 telling them to
+	 * queue something first. A named track that has no show cached is still an error, because that
+	 * one is a request the server cannot honour rather than a room with nothing playing.
+	 */
+	const id = body.trackId ?? null;
+	if (id !== null && !isValidId(id)) error(400, 'trackId is not a valid id');
+	const loaded = id === null ? null : await loadTrack(id);
+	if (id !== null && !loaded) error(404, 'no analysis or show cached for this track');
 
-	// The stream may be started long after the settings were last written, and the subscription
-	// above only ever hears changes. This is where it catches up with what is already stored.
+	// The stream may be started long after the settings were last written, and the subscriptions
+	// above only ever hear changes. This is where it catches up with what is already stored.
 	output.apply(await settings.read());
-	output.load(loaded.analysis, loaded.show);
-	output.trackId = id;
+	output.loungeOnly = currentItem(await queue.ready())?.loungeOnly ?? false;
+	if (loaded && id !== null) {
+		output.load(loaded.analysis, loaded.show);
+		output.trackId = id;
+	} else {
+		output.clearShow();
+	}
 
 	const regions = roomRegions(buildGeometry(DEFAULT_ROOM));
 	const region = regions.find((r) => r.id === hardware.region) ?? regions[0];

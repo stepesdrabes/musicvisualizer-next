@@ -152,6 +152,21 @@ export type LinkState =
 export const OFFSET_MIN_MS = -100;
 export const OFFSET_MAX_MS = 250;
 
+/**
+ * How fast the server renders to the wire.
+ *
+ * 60 is what the show is judged at and what the effects' own time constants assume. The other
+ * two are for a fixture that cannot take it and one that can: WS2812 is 30 us per LED, so 1320
+ * pixels on a single data line cap near 25 Hz however fast this sends, and 120 is only reachable
+ * on a board with roughly one output per strip.
+ */
+export const OUTPUT_FPS_CHOICES = [30, 60, 120] as const;
+export const DEFAULT_OUTPUT_FPS = 60;
+
+export function isOutputFps(v: unknown): v is number {
+	return OUTPUT_FPS_CHOICES.includes(v as (typeof OUTPUT_FPS_CHOICES)[number]);
+}
+
 export interface HardwareStatus {
 	host: string;
 	/**

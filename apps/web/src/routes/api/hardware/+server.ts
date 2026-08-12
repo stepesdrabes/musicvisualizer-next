@@ -12,8 +12,10 @@ const HOST = /^[A-Za-z0-9._-]{1,253}$/;
 export const POST: RequestHandler = async (event) => {
 	if (!isLocal(event)) error(403, 'the hardware belongs to the machine running the show');
 
+	// No probe verb. Setting a host probes it, and while anything is watching the status stream
+	// the server probes on its own timer, so asking for one by hand only ever duplicated those.
 	const body = (await event.request.json()) as {
-		action: 'set' | 'probe';
+		action: 'set';
 		host?: string;
 		region?: string;
 	};
@@ -30,13 +32,6 @@ export const POST: RequestHandler = async (event) => {
 			hardware.setRegion(body.region);
 		}
 		return json(hardware.status);
-	}
-
-	if (body.action === 'probe') {
-		const host = (body.host ?? '').trim();
-		if (host && !HOST.test(host)) error(400, 'that does not look like a host or an address');
-		const identity = await hardware.probe(host || undefined);
-		return json({ identity, status: hardware.status });
 	}
 
 	error(400, 'unknown action');

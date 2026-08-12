@@ -2,6 +2,7 @@
 	import {
 		OFFSET_MAX_MS,
 		OFFSET_MIN_MS,
+		OUTPUT_FPS_CHOICES,
 		faultsIn,
 		lightsRoom,
 		type HardwareStatus
@@ -11,6 +12,7 @@
 	import Dialog from '$lib/ui/Dialog.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
+	import Segmented from '$lib/ui/Segmented.svelte';
 	import Slider from '$lib/ui/Slider.svelte';
 	import Spinner from '$lib/ui/Spinner.svelte';
 	import PicoBoard from './PicoBoard.svelte';
@@ -19,32 +21,34 @@
 	let {
 		open = false,
 		status,
-		canStream = false,
 		offsetMs = 0,
+		fps = 60,
 		onclose,
 		onhost,
-		onprobe,
+		onfps,
 		onoffset,
 		onoffsetdone,
 		onregion,
-		ontoggleOutput
+		onconnect,
+		ondisconnect
 	}: {
 		open?: boolean;
 		status: HardwareStatus;
-		/** A show has to be loaded before there is anything to send. */
-		canStream?: boolean;
 		/** How far ahead of the audio the strips run, milliseconds. */
 		offsetMs?: number;
+		/** Frames a second on the wire. */
+		fps?: number;
 		onclose: () => void;
 		onhost: (host: string) => void;
-		onprobe: (host: string) => void;
+		onfps: (fps: number) => void;
 		/** While the trim is being dragged. The running stream picks it up on its next sync. */
 		onoffset: (ms: number) => void;
 		/** On release, which is the only point worth writing to disk. */
 		onoffsetdone: (ms: number) => void;
 		/** Which part of the room this board is fed. Takes effect the next time output starts. */
 		onregion: (id: string) => void;
-		ontoggleOutput: () => void;
+		onconnect: (host: string) => void;
+		ondisconnect: () => void;
 	} = $props();
 
 	// The room does not change while the app is running, so the parts of it do not either.
@@ -66,14 +70,26 @@
 	const telemetry = $derived(status.telemetry);
 	const faults = $derived(telemetry ? faultsIn(telemetry) : []);
 	const dark = $derived(identity !== null && !lightsRoom(identity));
-	const dirty = $derived(draft.trim() !== status.host);
 	const region = $derived(REGIONS.find((r) => r.id === status.region) ?? REGIONS[0]);
 
-	function apply() {
+	const FPS_OPTIONS = OUTPUT_FPS_CHOICES.map((f) => ({ id: String(f), label: `${f}` }));
+
+	/**
+	 * Connect is one action, so it is one button.
+	 *
+	 * Committing an edited address used to be its own press, and testing it a second - but the
+	 * probe already runs on a timer for as long as this dialog is watching, so the only thing
+	 * either of them added was a decision about which to press first.
+	 *
+	 * The address goes with the press rather than being read back off the status: setting it is
+	 * a round trip through the server and an SSE frame, and starting output in between would
+	 * stream to whatever the previous host was.
+	 */
+	function connect() {
 		const host = draft.trim();
 		if (!host) return;
-		onhost(host);
 		touched = false;
+		onconnect(host);
 	}
 
 	const HEADLINE: Record<HardwareStatus['state'], string> = {
@@ -106,20 +122,17 @@
 				autocomplete="off"
 				bind:value={draft}
 				oninput={() => (touched = true)}
-				onkeydown={(e) => e.key === 'Enter' && apply()} />
+				onkeydown={(e) => e.key === 'Enter' && connect()} />
 		</div>
-		{#if dirty}
-			<Button variant="secondary" onclick={apply} disabled={!draft.trim()}>Use</Button>
-		{:else}
-			<Button variant="outline" onclick={() => onprobe(draft.trim())} disabled={!draft.trim()}>
-				Test
-			</Button>
-		{/if}
+		<!--
+			Enabled with nothing playing on purpose: a board joined before the music starts takes the
+			resting scenes, which is what the room is doing at that moment.
+		-->
 		<Button
 			variant={status.streaming ? 'danger' : 'primary'}
-			onclick={ontoggleOutput}
-			disabled={!status.streaming && (!canStream || !status.host)}>
-			{status.streaming ? 'Stop' : 'Send show'}
+			onclick={status.streaming ? ondisconnect : connect}
+			disabled={!status.streaming && !draft.trim()}>
+			{status.streaming ? 'Disconnect' : 'Connect'}
 		</Button>
 	</div>
 
@@ -144,6 +157,18 @@
 				oninput={onoffset}
 				onchange={onoffsetdone} />
 			<span class="ms mono">{offsetMs > 0 ? '+' : ''}{offsetMs} ms</span>
+		</div>
+		<div class="trim">
+			<span>Rate</span>
+			<Segmented
+				options={FPS_OPTIONS}
+				value={String(fps)}
+				ariaLabel="Frames a second on the wire"
+				onpick={(id) => onfps(Number(id))} />
+			<span class="ms subtle">
+				<!-- The cap is the strip's, not this program's: one data line is 30 us per LED. -->
+				{fps > 60 ? 'needs an output per strip' : fps < 60 ? 'below what the show was judged at' : 'fps'}
+			</span>
 		</div>
 	{/if}
 
