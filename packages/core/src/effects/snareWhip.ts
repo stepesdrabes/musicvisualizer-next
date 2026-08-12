@@ -20,7 +20,8 @@ export const snareWhip: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'snare'
 	},
 	params: [INTENSITY, param('crackBeats', 'Beats to cross', 0.25, 0.125, 1, 0.125)],
 	create(g) {

@@ -30,7 +30,12 @@ export const rollerChase: EffectDef = {
 	params: [
 		INTENSITY,
 		param('tail', 'Tail length', 0.16, 0.04, 0.4),
-		param('swell', 'Kick swell', 0.6)
+		param('swell', 'Kick swell', 0.6),
+		// The felt orbit, not the musical one: one bar is 1.4 s at 174 bpm and reads as a
+		// blur at 140, so the planner stretches the lap to whole bars until it runs at least
+		// ~2.2 s. Whole bars only - the heads still meet front-centre on a downbeat, just not
+		// on every one. Default 2 so an unplanned instance errs slow rather than frantic.
+		param('lapBars', 'Bars per lap', 2, 1, 4, 1)
 	],
 	create(g) {
 		const rings = ringsFor(g);
@@ -56,8 +61,11 @@ export const rollerChase: EffectDef = {
 				scratch.fill(0);
 
 				const n = ring.length;
-				const headA = Math.round(frac(frontPerim + f.barPhase) * n);
-				const headB = Math.round(frac(frontPerim - f.barPhase) * n);
+				// Off the absolute bar clock, so a seek reproduces the frame and the lap cannot
+				// drift against the grid however long the track runs.
+				const lap = frac((f.barIndex + f.barPhase) / Math.max(1, Math.round(p.lapBars)));
+				const headA = Math.round(frac(frontPerim + lap) * n);
+				const headB = Math.round(frac(frontPerim - lap) * n);
 
 				const bright = 1 - p.swell + p.swell * f.kickEnv;
 				const gain = (0.5 + p.intensity) * bright;

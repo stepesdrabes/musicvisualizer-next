@@ -17,7 +17,8 @@ export const splash: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'any'
 	},
 	params: [INTENSITY, param('size', 'Size', 0.35, 0.1, 1), param('decay', 'Decay beats', 0.55, 0.1, 2)],
 	create(g) {

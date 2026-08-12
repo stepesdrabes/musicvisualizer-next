@@ -31,7 +31,12 @@ export const sineRoll: EffectDef = {
 	},
 	params: [
 		INTENSITY,
-		param('perBeat', 'Beats per cycle', 4, 1, 16, 1),
+		// Named for what it is - a period, not a rate. It shared the key `perBeat` with the
+		// effects that count events per beat, and the planner's hat-density hook wrote a RATE
+		// into it: a sparse song got 1, which here means one cycle per beat, four times the
+		// designed speed. The planner keys its two mappings on the param name, so the period
+		// param must never be called `perBeat` again.
+		param('cycleBeats', 'Beats per cycle', 4, 1, 16, 1),
 		param('waves', 'Waves around room', 4, 1, 8, 1)
 	],
 	create(g) {
@@ -57,7 +62,7 @@ export const sineRoll: EffectDef = {
 				// whole elapsed length: at bar 120 a routine 1.0 to 1.25 is 7.5 revolutions in one
 				// frame. A grid-locked phase takes its speed from the grid, and that is the point
 				// of it.
-				const phase = (f.beatIndex + f.beatPhase) / Math.max(1, p.perBeat);
+				const phase = (f.beatIndex + f.beatPhase) / Math.max(1, p.cycleBeats);
 				const waves = Math.max(1, Math.round(p.waves));
 				const passageLevel = passage.update(f.energy, f.dt);
 				const tilt = lean.update(spectralTilt(f), f.dt);

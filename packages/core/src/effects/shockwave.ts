@@ -18,7 +18,8 @@ export const shockwave: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'kick'
 	},
 	params: [
 		INTENSITY,

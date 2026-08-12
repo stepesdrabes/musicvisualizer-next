@@ -172,7 +172,7 @@ export const AMBIENT_SCENES: readonly AmbientScene[] = [
 		needsMusic: true,
 		layers: {
 			bed: { effect: 'lavaBlobs', params: { intensity: 0.72, size: 0.65 } },
-			rhythm: { effect: 'sineRoll', opacity: 0.34, params: { intensity: 0.58, perBeat: 12, waves: 2 } }
+			rhythm: { effect: 'sineRoll', opacity: 0.34, params: { intensity: 0.58, cycleBeats: 12, waves: 2 } }
 		}
 	}
 ];

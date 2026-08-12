@@ -22,7 +22,8 @@ export const lightning: EffectDef = {
 		minBars: 1,
 		maxBars: 8,
 		peakReserved: false,
-		character: 'impact'
+		character: 'impact',
+		kit: 'any'
 	},
 	params: [INTENSITY, param('density', 'Strike density', 0.35)],
 	create(g) {

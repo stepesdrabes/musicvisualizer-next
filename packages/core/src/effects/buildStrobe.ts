@@ -1,4 +1,5 @@
 import type { EffectDef } from '../contracts/effect.ts';
+import { STROBE_MAX_HZ } from '../contracts/show.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { lerp } from '../dsl/math.ts';
@@ -54,7 +55,12 @@ export const buildStrobe: EffectDef = {
 				}
 
 				if (progress >= 0.03) {
-					const per = progress < 0.35 ? 2 : progress < 0.65 ? 1 : progress < 0.88 ? 0.5 : 0.25;
+					let per = progress < 0.35 ? 2 : progress < 0.65 ? 1 : progress < 0.88 ? 0.5 : 0.25;
+					// The ladder stops doubling where the next rung would cross the strobe
+					// ceiling: at 140 bpm the sixteenth rung is 9.3 Hz, which has fused into a
+					// texture, so the roll tops out at eighths and the drop still owns the step up.
+					const floor = 1 / (STROBE_MAX_HZ * Math.max(0.05, f.beatPeriod));
+					while (per < floor && per < 2) per *= 2;
 					const step = Math.floor((f.beatIndex + f.beatPhase) / per);
 					if (step !== lastStep) {
 						lastStep = step;

@@ -26,7 +26,8 @@ export const hatTicker: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'hat'
 	},
 	params: [INTENSITY, param('stepPx', 'Step size', 0.4), param('panJump', 'Follow the mix', 0.6, 0, 1, 0.05)],
 	create(g) {

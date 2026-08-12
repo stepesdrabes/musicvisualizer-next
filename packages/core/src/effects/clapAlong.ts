@@ -20,7 +20,8 @@ export const clapAlong: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'snare'
 	},
 	params: [INTENSITY],
 	create(g) {

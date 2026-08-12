@@ -4,7 +4,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
 import { fillSolid } from '../dsl/buffer.ts';
-import { Follower, PulseEnv } from '../dsl/env.ts';
+import { Follower, Presence, PulseEnv } from '../dsl/env.ts';
 import { spectralTilt } from '../dsl/spectrum.ts';
 import { INTENSITY, param } from './helpers.ts';
 
@@ -28,7 +28,8 @@ export const stageBlinders: EffectDef = {
 		// A slam is an event; the room is dark between them. Its old quiet score was the
 		// probe rewarding exactly that flash, which is why it declares none now.
 		carries: false,
-		character: 'impact'
+		character: 'impact',
+		kit: 'any'
 	},
 	params: [INTENSITY, param('everyBeat', 'Every beat', 0, 0, 1, 1)],
 	create(g) {
@@ -36,21 +37,28 @@ export const stageBlinders: EffectDef = {
 		// Which colour the filament cools toward. Slow: this is where the room settles between
 		// slams, not something that should chase the mix.
 		const tint = new Follower(0.08, 0.35);
+		// The 0.6 base below means a beat the kit sat out still slammed at 60%; this is what
+		// actually silences the blinders once the drums leave, not just softens them.
+		const kit = new Presence();
 
 		return {
 			reset() {
 				env.reset();
 				tint.reset();
+				kit.reset();
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
 				const at = tint.update(spectralTilt(f), f.dt);
+				const playing = kit.update(Math.max(f.kickEnv, f.snareEnv), f.dt, f.beatPeriod);
 
 				const everyBeat = p.everyBeat > 0.5 || sectionBase(f.section) === 'drop';
 				// A blinder answers the drums. Struck off the envelopes rather than the booleans:
 				// a beat the kit is not playing gets the softer slam it deserves.
-				if (everyBeat ? f.beat : f.downbeat) env.fire(clamp(0.6 + (f.kickEnv + f.snareEnv) * 0.4));
+				if ((everyBeat ? f.beat : f.downbeat) && playing > 0.08) {
+					env.fire(clamp(0.6 + (f.kickEnv + f.snareEnv) * 0.4) * playing);
+				}
 				const v = env.decay(f.dt, f.beatPeriod, 2.25);
 				if (v < 0.004) {
 					out.fill(0);

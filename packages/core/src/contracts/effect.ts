@@ -91,6 +91,17 @@ export interface EffectTaste {
 	 */
 	character?: 'flash' | 'impact';
 	/**
+	 * The drum stream this effect IS the answer to, declared only where that is the whole
+	 * gesture: an effect that spawns on `f.kick` renders black in a passage with no kicks,
+	 * and a grid pulse that reads as the kit keeps pounding through a sung verse the drums
+	 * sat out. The picker refuses both where the slot's stream is silent - dead layers and
+	 * lying ones are the same mistake from the room's side.
+	 *
+	 * `any` means kick or snare. Effects that merely season themselves with an envelope -
+	 * a bed with a kick bump in it - leave this absent and degrade gracefully.
+	 */
+	kit?: 'kick' | 'snare' | 'hat' | 'any';
+	/**
 	 * How much this moves over a quiet passage, as a share of its own mean level.
 	 *
 	 * Bytes of delivered movement, measured by substituting the effect into the quiet cues of a

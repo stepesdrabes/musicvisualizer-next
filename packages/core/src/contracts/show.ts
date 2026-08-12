@@ -2,7 +2,7 @@ import type { SectionKind } from './frame.ts';
 import type { LayerRole, ParamSpec, Params } from './effect.ts';
 import type { ShowPalette } from './palette.ts';
 
-export const SHOW_VERSION = 3;
+export const SHOW_VERSION = 4;
 
 export interface LayerSpec {
 	effect: string;
@@ -71,8 +71,8 @@ export interface HitRule {
  * because a bar is 1.4 s at 175 bpm and 3 s at 80: two bars of strobe is a flourish at one
  * tempo and an ordeal at the other, and how long it FEELS is what anyone in the room judges.
  *
- * This caps length only. There is still no ceiling on flash RATE, no strobe budget and no
- * minimum gap - see the note in `lint.ts`. Nothing downstream limits them any more.
+ * This caps length only. Flash RATE has its own ceiling in `strobePerBeat` below; there is
+ * still no minimum gap between flashes - see the note in `lint.ts`.
  */
 export const HIT_RULES: Record<Hit['kind'], HitRule> = {
 	// Black is the one gesture no envelope can soften, and an unintended black stage reads as
@@ -85,6 +85,33 @@ export const HIT_RULES: Record<Hit['kind'], HitRule> = {
 	slam: { maxBars: 1 },
 	bump: { maxBars: 1 }
 };
+
+/**
+ * The fastest a strobe may flash, in total flashes per second.
+ *
+ * Taste, not safety: past this the flashes fuse into a texture and stop reading as events -
+ * measured in the room at 9.4 Hz on a 140 bpm track, where the same gesture at 4.7 Hz still
+ * punctuates. Eight keeps the sixteenth-note strobe up to 120 bpm, which is where the genres
+ * that actually strobe in sixteenths sit, and drops everything faster to eighths. The strobe
+ * effect alternates wall pairs, so any one wall runs at half this.
+ */
+export const STROBE_MAX_HZ = 8;
+
+/**
+ * The fastest musical subdivision that fits under `STROBE_MAX_HZ` at this track's tempo.
+ *
+ * One function imported by the planner that writes strobe hits and the linter that checks
+ * them, because two implementations of the same ceiling is how they come to disagree - the
+ * lesson `hitSeconds` and `allowedFlashes` already carry. Read off the median bpm: the burst
+ * is judged over its whole length, not per drifting bar.
+ */
+export function strobePerBeat(tempo: { bpm: number }): number {
+	const beatHz = tempo.bpm / 60;
+	for (const per of [4, 2]) {
+		if (per * beatHz <= STROBE_MAX_HZ + 1e-9) return per;
+	}
+	return 1;
+}
 
 /** Song-specific effect authored for this track, admitted only after passing the gate. */
 export interface GeneratedEffect {

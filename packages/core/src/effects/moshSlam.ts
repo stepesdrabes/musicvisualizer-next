@@ -3,7 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { hash01 } from '../dsl/rng.ts';
 import { clamp, lerp } from '../dsl/math.ts';
-import { BeatHold, PulseEnv } from '../dsl/env.ts';
+import { BeatHold, Presence, PulseEnv } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -21,7 +21,10 @@ export const moshSlam: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		character: 'impact'
+		character: 'impact',
+		// 'kick', not 'any': a clap backbeat with the kick out is exactly the passage this
+		// used to pound through, and a unison white slam is a kick gesture, not a snare one.
+		kit: 'kick'
 	},
 	params: [INTENSITY, param('beatsPerSlam', 'Beats per slam', 2, 0.5, 4, 0.5)],
 	create(g) {
@@ -32,21 +35,26 @@ export const moshSlam: EffectDef = {
 		// The passage's own level, latched on the beat: `f.energy` is beat-resolution data the
 		// player interpolates per frame, so a brightness multiplied by it slides continuously.
 		const passage = new BeatHold(0.4);
+		// The chug grid keeps the timing; the kit grants permission to strike. Without this
+		// the slams pound straight through a sung verse or a suspension with the drums out.
+		const kit = new Presence();
 		let lastStep = -1;
 
 		return {
 			reset() {
 				env.reset();
 				passage.reset();
+				kit.reset();
 				lastStep = -1;
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift, motion } = ctx;
 
+				const playing = kit.update(f.kickEnv, f.dt, f.beatPeriod);
 				const step = Math.floor((f.beatIndex + f.beatPhase) / Math.max(0.5, p.beatsPerSlam));
 				if (step !== lastStep) {
 					lastStep = step;
-					env.fire(1);
+					if (playing > 0.08) env.fire(playing);
 				}
 				const v = env.decay(f.dt, f.beatPeriod, 1.05 / Math.max(0.05, motion));
 

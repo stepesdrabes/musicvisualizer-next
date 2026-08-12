@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS, HIT_RULES, LAYER_ROLES, PHRASE_BARS, barDurationAt } from '@mv/core';
+import { BUILT_IN_EFFECTS, HIT_RULES, LAYER_ROLES, PHRASE_BARS, barDurationAt, emptyContext } from '@mv/core';
 import { fixture } from './fixture.ts';
 import { composeShow } from './plan.ts';
 import { lintShow } from './lint.ts';
@@ -335,5 +335,171 @@ describe('degenerate input', () => {
 		const plain = composeShow(empty);
 		expect(plain.cues).toEqual([]);
 		expect(plain.hits).toEqual([]);
+	});
+});
+
+describe('planner-set params', () => {
+	// Force the pick by leaving one candidate in the role, so the assertion is about the
+	// params the planner writes rather than about which effect the seed happened to choose.
+	const withRhythm = (id: string) =>
+		BUILT_IN_EFFECTS.filter((e) => e.role !== 'rhythm' || e.id === id);
+	const rhythmCues = (s: ReturnType<typeof composeShow>, id: string) =>
+		s.cues.filter((c) => c.layers.rhythm?.effect === id);
+
+	it('writes a PERIOD into sineRoll, never the hat rate', () => {
+		// The fixture's hats run 2/beat, which is a dense track: one cycle per bar.
+		const dense = composeShow(analysis, { effects: withRhythm('sineRoll') });
+		const cues = rhythmCues(dense, 'sineRoll');
+		expect(cues.length).toBeGreaterThan(0);
+		for (const cue of cues) {
+			expect(cue.layers.rhythm!.params).toMatchObject({ cycleBeats: 4 });
+			expect(cue.layers.rhythm!.params!.perBeat).toBeUndefined();
+		}
+
+		// A sparse track slows the wave down, not up: this is the inversion that used to
+		// run sineRoll at four times its designed speed on every sparse song.
+		const quietTrack = fixture();
+		for (const bar of quietTrack.bars) bar.hats = 1;
+		const sparse = composeShow(quietTrack, { effects: withRhythm('sineRoll') });
+		for (const cue of rhythmCues(sparse, 'sineRoll')) {
+			expect(cue.layers.rhythm!.params).toMatchObject({ cycleBeats: 8 });
+		}
+	});
+
+	it('stretches the roller lap to whole bars until it runs at least 2.2 s', () => {
+		// 128 bpm: a bar is 1.875 s, so one lap per bar is a blur and the lap takes two.
+		const fast = composeShow(analysis, { effects: withRhythm('rollerChase') });
+		const fastCues = rhythmCues(fast, 'rollerChase');
+		expect(fastCues.length).toBeGreaterThan(0);
+		for (const cue of fastCues) {
+			expect(cue.layers.rhythm!.params).toMatchObject({ lapBars: 2 });
+		}
+
+		// 100 bpm: a bar is 2.4 s on its own, and the dnb roller identity keeps its one-bar lap.
+		const slow = composeShow(fixture(100), { effects: withRhythm('rollerChase') });
+		for (const cue of rhythmCues(slow, 'rollerChase')) {
+			expect(cue.layers.rhythm!.params).toMatchObject({ lapBars: 1 });
+		}
+	});
+
+	it('still writes the hat RATE into the effects that count events per beat', () => {
+		const stepped = composeShow(analysis, { effects: withRhythm('chase') });
+		const cues = rhythmCues(stepped, 'chase');
+		expect(cues.length).toBeGreaterThan(0);
+		for (const cue of cues) {
+			expect(cue.layers.rhythm!.params).toMatchObject({ perBeat: 2 });
+		}
+	});
+});
+
+describe('kit awareness', () => {
+	it('keeps kick effects out of the passages the kick sat out', () => {
+		// The groove keeps its clap backbeat (snares stay), only the kick leaves - the exact
+		// shape of the sung verse that used to get moshSlam pounding through it.
+		const track = fixture();
+		for (const bar of track.bars) if (bar.section === 'groove') bar.kicks = 0;
+		for (let seed = 1; seed < 40; seed += 3) {
+			const s = composeShow(track, { seed });
+			for (const cue of s.cues) {
+				if (track.bars[cue.bar]?.section !== 'groove') continue;
+				for (const role of LAYER_ROLES) {
+					const spec = cue.layers[role];
+					if (!spec) continue;
+					const def = effects.get(spec.effect)!;
+					expect(def.taste.kit, `${spec.effect} at bar ${cue.bar} (seed ${seed})`).not.toBe(
+						'kick'
+					);
+				}
+			}
+		}
+	});
+
+	it('demotes the arrival slam to a bump where the arrival bar has no kick', () => {
+		const track = fixture();
+		for (const bar of track.bars) if (bar.bar >= 40 && bar.bar < 72) bar.kicks = 0;
+		const s = composeShow(track);
+		const arrival = s.hits.find((h) => h.bar === 40);
+		expect(arrival?.kind).toBe('bump');
+		// The peak drop still kicks, so its slam stands.
+		expect(s.hits.some((h) => h.bar === 96 && h.kind === 'slam')).toBe(true);
+	});
+});
+
+describe('the peak earns its treatment', () => {
+	const house = () => ({ ...emptyContext(), genreFamily: 'house' as const });
+
+	it('a bloom family whose peak pounds gets slam treatment there', () => {
+		// The fixture's drops run a kick per beat: four-on-the-floor. A soft bloom on top of
+		// that is the rig missing the biggest moment of the night.
+		const s = composeShow(analysis, { context: house() });
+		expect(s.hits.some((h) => h.bar === 96 && h.kind === 'slam')).toBe(true);
+		// The strobe comes into the peak with the override...
+		expect(s.hits.some((h) => h.kind === 'strobe' && h.bar >= 94 && h.bar < 96)).toBe(true);
+		// ...and the peak keeps hitting past its arrival.
+		const inside = s.hits.filter((h) => h.kind === 'slam' && h.bar > 96 && h.bar < 120);
+		expect(inside.length).toBe(2);
+		for (const hit of inside) expect((hit.bar - 96) % 8).toBe(0);
+	});
+
+	it('a bloom family whose peak stays soft keeps the bloom', () => {
+		const gentle = fixture();
+		for (const bar of gentle.bars) bar.kicks = Math.min(bar.kicks, 1);
+		const s = composeShow(gentle, { context: house() });
+		expect(s.hits.some((h) => h.kind === 'strobe')).toBe(false);
+		expect(s.hits.filter((h) => h.kind === 'slam' && h.bar > 96 && h.bar < 120)).toEqual([]);
+	});
+});
+
+describe('the ring-out cue', () => {
+	it('a one-bar outro inherits the bed it winds down from rather than going dark', () => {
+		// The shape a ring-out carve leaves: the final drop runs to the second-to-last bar
+		// and a one-bar outro holds the decay. Every bed wants two bars, so without the
+		// inherit pass this cue lit nothing.
+		const track = fixture();
+		const drop = track.sections.find((s) => s.startBar === 96)!;
+		const outro = track.sections.at(-1)!;
+		drop.endBar = 127;
+		drop.lengthBars = 31;
+		outro.startBar = 127;
+		outro.lengthBars = 1;
+		for (const bar of track.bars) if (bar.bar >= 120 && bar.bar < 127) bar.section = 'drop';
+
+		const s = composeShow(track);
+		const last = s.cues.at(-1)!;
+		expect(last.section).toBe('outro');
+		expect(last.layers.bed).toBeDefined();
+		expect(last.layers.bed!.effect).toBe(s.cues.at(-2)!.layers.bed!.effect);
+	});
+});
+
+describe('the brief owns the doubt', () => {
+	it('says explicitly when the grid is untrusted and the room runs lounge', () => {
+		// Sections chopped to four bars across the whole track: the fragmentation that trips
+		// the trust gate. The brief is the authoring system's own voice, so the verdict has
+		// to be in it - a chip on a queue row is not the system saying so.
+		const chopped = fixture();
+		const bars = chopped.bars.length;
+		chopped.sections = Array.from({ length: bars / 4 }, (_, i) => ({
+			index: i,
+			kind: 'groove' as const,
+			startBar: i * 4,
+			endBar: (i + 1) * 4,
+			startTime: chopped.tempo.barTimes[i * 4],
+			endTime: chopped.tempo.barTimes[(i + 1) * 4],
+			lengthBars: 4,
+			meanEnergy: 62,
+			peakEnergy: 70,
+			energyRank: i + 1,
+			group: i,
+			repeatOf: null
+		}));
+		for (const bar of chopped.bars) bar.section = 'groove';
+
+		const doubted = composeShow(chopped);
+		expect(doubted.brief).toContain('The analyser was not sure of this track');
+		expect(doubted.brief).toContain('lounge scenes');
+
+		// A trusted grid keeps its brief clean.
+		expect(composeShow(analysis).brief).not.toContain('lounge scenes');
 	});
 });

@@ -56,6 +56,12 @@ Envelopes
     every stab, cymbal and word between beats, so this is for things that SHOULD only move on
     the beat - a colour the room settles into, a lobe position that should not wander. It is
     not the default answer to shimmer; Follower is.
+  new Presence(holdBeats = 4, releaseBeats = 4) -> .update(f.kickEnv, f.dt, f.beatPeriod) .reset()
+    Whether the instrument is currently PLAYING: 1.0 while hits keep arriving, held through a
+    pattern's own gaps, gone within a couple of bars once it leaves. Scale a grid-locked pulse
+    by this so it stops striking when the producer pulls the kick out - timing stays the
+    grid's, only the permission to strike follows the kit. Rises to the envelope's peak, so a
+    ghost note arms a ghost of a pulse.
 
 Buffers (out is length g.count*3, RGB interleaved, persistent across frames)
   fadeToBlack(buf, dt, tau) - never clear, always decay

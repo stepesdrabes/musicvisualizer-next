@@ -91,7 +91,7 @@ export function fixture(bpm = 128, drift = 0): TrackAnalysis {
 		duration: 128 * barLength,
 		sampleRate: 22050,
 		tempo: {
-			bpm: 128,
+			bpm,
 			confidence: 0.8,
 			firstBeat: 0,
 			beatPeriod,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BarRow, EffectDef, SectionSpan, Show, TrackAnalysis } from '@mv/core';
-import { BUILT_IN_EFFECTS } from '@mv/core';
+import { BUILT_IN_EFFECTS, strobePerBeat } from '@mv/core';
 import { lintShow, type LintResult } from './lint.ts';
 
 const effects = new Map<string, EffectDef>(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
@@ -268,20 +268,35 @@ describe('effect rules', () => {
 });
 
 describe('safety rules', () => {
-	it('does not limit the flash rate, the strobe budget or how often one fires', () => {
-		// Deliberate: this room is one person's, and a linter that refuses the biggest card in
-		// the deck is a linter people route around. Anyone fitting this in a public space owns
-		// that decision. How LONG one runs is a separate, musical question - see below.
+	it('caps the flash rate at the tempo ceiling, and at nothing else', () => {
+		// The ceiling is taste, not a public-space limiter: past ~8 Hz the flashes fuse into
+		// a texture and stop reading as events. There is still no minimum gap and no per-show
+		// strobe count beyond the flash budget - a linter that refuses the biggest card in
+		// the deck is a linter people route around.
 		const show = goodShow();
 		show.hits = [
-			{ bar: 40, kind: 'strobe', beats: 4, params: { perBeat: 8 }, note: 'as fast as it likes' },
-			{ bar: 44, kind: 'strobe', beats: 4, params: { perBeat: 8 }, note: 'and again, right behind' }
+			{ bar: 40, kind: 'strobe', beats: 4, params: { perBeat: 8 }, note: 'as fast as it likes' }
 		];
 		const found = rules(lintShow(show, { analysis, effects }));
-		expect(found).not.toContain('flash-rate');
+		expect(found).toContain('strobe-too-fast');
 		expect(found).not.toContain('flash-danger-band');
-		expect(found).not.toContain('strobe-budget');
 		expect(found).not.toContain('strobe-too-frequent');
+
+		// Eighths fit at 128 bpm (4.3 Hz); sixteenths would run 8.5 Hz and do not.
+		const fits = goodShow();
+		fits.hits = [{ bar: 40, kind: 'strobe', beats: 4, params: { perBeat: 2 }, note: 'eighths' }];
+		expect(rules(lintShow(fits, { analysis, effects }))).not.toContain('strobe-too-fast');
+	});
+
+	it('holds the planner and the linter to one subdivision table', () => {
+		// 120 bpm is the last tempo whose sixteenth fits under 8 Hz; everything faster
+		// strobes in eighths, and only an absurd grid falls to quarters.
+		expect(strobePerBeat({ bpm: 100 })).toBe(4);
+		expect(strobePerBeat({ bpm: 120 })).toBe(4);
+		expect(strobePerBeat({ bpm: 121 })).toBe(2);
+		expect(strobePerBeat({ bpm: 140 })).toBe(2);
+		expect(strobePerBeat({ bpm: 175 })).toBe(2);
+		expect(strobePerBeat({ bpm: 250 })).toBe(1);
 	});
 
 	it('warns about spending the blinder in the first 16 bars', () => {

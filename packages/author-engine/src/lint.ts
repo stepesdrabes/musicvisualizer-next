@@ -4,10 +4,12 @@ import {
 	HIT_RULES,
 	LAYER_ROLES,
 	PHRASE_BARS,
+	STROBE_MAX_HZ,
 	hitSeconds,
 	onPhraseGrid,
 	phraseOffset,
-	sectionBase
+	sectionBase,
+	strobePerBeat
 } from '@mv/core';
 
 export type Severity = 'error' | 'warning';
@@ -35,15 +37,16 @@ export interface LintContext {
 }
 
 /**
- * There is deliberately no flash-RATE ceiling, no strobe budget and no minimum gap between
- * strobes. A room this size is one person's, the strobe is half the point of the genre, and a
- * linter that refuses the biggest card in the deck is a linter people route around. Anyone
- * fitting this in a public space owns that decision, and these rules are the only thing between
- * a show and the room: there is no limiter downstream of them.
+ * There is deliberately no minimum gap between strobes and no safety limiter here. A room this
+ * size is one person's, the strobe is half the point of the genre, and a linter that refuses
+ * the biggest card in the deck is a linter people route around. Anyone fitting this in a public
+ * space owns that decision, and these rules are the only thing between a show and the room:
+ * there is no limiter downstream of them.
  *
- * How LONG a gesture holds the room is a separate question and is capped, in `HIT_RULES`. That
- * is taste rather than safety: a strobe that outlasts the phrase it points at has stopped
- * being punctuation whatever rate it runs at.
+ * How LONG a gesture holds the room is capped in `HIT_RULES`, and how FAST it flashes in
+ * `strobePerBeat`. Both are taste rather than safety: a strobe that outlasts the phrase it
+ * points at has stopped being punctuation, and one past ~8 Hz has fused into a texture -
+ * heard in the room as "the strobe is just noise now", not as a longer list of events.
  */
 const SETTLE_BARS = 16;
 /**
@@ -398,6 +401,21 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 				err(
 					'hit-too-long-in-seconds',
 					`${hit.kind} at bar ${hit.bar} runs ${seconds.toFixed(1)}s at ${Math.round(tempo.bpm)} bpm; past ${rule.maxSeconds}s it stops reading as punctuation`,
+					hit.bar
+				);
+			}
+		}
+
+		// Rate, through the same function the planner sizes it with. The subdivision is the
+		// author's, but past the ceiling the flashes fuse into a texture and stop reading as
+		// events - measured in the room at 9.4 Hz, where the same gesture at 4.7 still lands.
+		if (hit.kind === 'strobe') {
+			const perBeat = hit.params?.perBeat ?? 2;
+			const ceiling = strobePerBeat(tempo);
+			if (perBeat > ceiling) {
+				err(
+					'strobe-too-fast',
+					`strobe at bar ${hit.bar} flashes ${perBeat}/beat at ${Math.round(tempo.bpm)} bpm, ${((perBeat * tempo.bpm) / 60).toFixed(1)} Hz; past ${STROBE_MAX_HZ} Hz it reads as noise - ${ceiling}/beat is the fastest this tempo carries`,
 					hit.bar
 				);
 			}

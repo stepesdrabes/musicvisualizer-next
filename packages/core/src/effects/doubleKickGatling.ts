@@ -21,7 +21,8 @@ export const doubleKickGatling: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 1,
 		maxBars: 16,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'kick'
 	},
 	params: [INTENSITY],
 	create(g) {

@@ -186,3 +186,52 @@ export class BeatHold {
 		return this.shown;
 	}
 }
+
+/**
+ * Whether an instrument is CURRENTLY PLAYING, read off its hit envelope: 1.0 while hits keep
+ * arriving, holding through the gaps a pattern actually contains, and releasing only when the
+ * instrument has genuinely left.
+ *
+ * For the grid-locked pulse effects. A pulse on the beat grid is in the groove rather than
+ * reacting to it - that is its point - but it also keeps pounding through the bars where the
+ * producer pulled the kick out, and a room that slams over a suspension is a room that is not
+ * listening. Scaling each pulse by this restores the arrangement without costing the grid:
+ * timing stays the grid's, only the permission to strike follows the kit.
+ *
+ * The hold is in beats because gaps are musical: four-on-the-floor rests for one beat, a
+ * syncopated pattern for two or three, so a hold of a bar keeps every real pattern at full
+ * while an eight-bar suspension fades inside two. Rises to the envelope's own peak rather
+ * than to 1.0, so a lone ghost note arms a ghost of a pulse, not a full slam.
+ */
+export class Presence {
+	private level = 0;
+	private sinceHit = Infinity;
+	/** In beats. Constructor parameter properties would not survive type stripping. */
+	private readonly holdBeats: number;
+	private readonly releaseBeats: number;
+
+	constructor(holdBeats = 4, releaseBeats = 4) {
+		this.holdBeats = holdBeats;
+		this.releaseBeats = releaseBeats;
+	}
+
+	reset(): void {
+		this.level = 0;
+		this.sinceHit = Infinity;
+	}
+
+	/** `env` is the instrument's hit envelope, e.g. `f.kickEnv`. */
+	update(env: number, dt: number, beatPeriod: number): number {
+		if (env > this.level) {
+			this.level = env;
+			this.sinceHit = 0;
+		} else {
+			this.sinceHit += dt;
+			if (this.sinceHit > this.holdBeats * Math.max(1e-3, beatPeriod)) {
+				const tau = Math.max(1e-3, (this.releaseBeats * beatPeriod) / 3);
+				this.level *= Math.exp(-dt / tau);
+			}
+		}
+		return this.level;
+	}
+}

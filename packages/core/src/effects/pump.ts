@@ -26,7 +26,8 @@ export const pump: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 2,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		kit: 'kick'
 	},
 	params: [
 		INTENSITY,

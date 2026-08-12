@@ -32,6 +32,35 @@ export interface PickRequest {
 	prefer?: readonly string[];
 	/** Ignore the section filter: the once-per-track wildcard look reaches the whole catalog. */
 	anySection?: boolean;
+	/**
+	 * Hits per beat over the slot, per stream. With it, effects declaring `taste.kit` are
+	 * refused where their stream is silent: a kick effect in a kickless verse is either a
+	 * dead layer or a grid pulse lying about the arrangement. Absent skips the veto.
+	 */
+	drums?: { kick: number; snare: number; hat: number };
+}
+
+/**
+ * Below this many hits per beat the stream is not playing, whatever else the bar holds.
+ *
+ * A shade under the 0.25 the breakdown transient gate uses, because that one asks "is there
+ * enough kit to answer" and this one asks "is the stream absent" - a sparse half-time kick
+ * at one hit per bar (0.25/beat) is still a kick pattern and must keep its effects.
+ */
+const KIT_FLOOR = 0.2;
+
+function kitSilent(e: EffectDef, drums: PickRequest['drums']): boolean {
+	const kit = e.taste.kit;
+	if (!kit || !drums) return false;
+	const density =
+		kit === 'kick'
+			? drums.kick
+			: kit === 'snare'
+				? drums.snare
+				: kit === 'hat'
+					? drums.hat
+					: Math.max(drums.kick, drums.snare);
+	return density < KIT_FLOOR;
 }
 
 /**
@@ -101,18 +130,25 @@ export class EffectPicker {
 			const held = this.byGroup.get(groupKey);
 			const def = held ? this.effects.find((e) => e.id === held) : undefined;
 			// Only when it still fits: a reprise that runs half as long as the original cannot
-			// hold an effect that wanted the full length.
-			if (def && req.lengthBars >= def.taste.minBars && req.lengthBars <= def.taste.maxBars) {
+			// hold an effect that wanted the full length - and a reprise whose kit has left
+			// cannot hold the kit effect the full version opened with.
+			if (
+				def &&
+				req.lengthBars >= def.taste.minBars &&
+				req.lengthBars <= def.taste.maxBars &&
+				!kitSilent(def, req.drums)
+			) {
 				this.used.set(def.id, (this.used.get(def.id) ?? 0) + 1);
 				this.lastInRole.set(req.role, def.id);
 				return def;
 			}
 		}
 
-		const eligible = this.effects.filter((e) => {
+		const fits = (e: EffectDef, kitAware: boolean): boolean => {
 			if (e.role !== req.role) return false;
 			if (this.vetoCharacter && e.taste.character) return false;
 			if (req.mustCarry && e.taste.carries === false) return false;
+			if (kitAware && kitSilent(e, req.drums)) return false;
 			// Either vocabulary: an effect written for choruses says 'chorus'; the rest of the
 			// catalog speaks the club kinds and serves a chorus as the drop-class passage it is.
 			if (
@@ -128,7 +164,12 @@ export class EffectPicker {
 				if ((this.used.get(e.id) ?? 0) > 0) return false;
 			}
 			return true;
-		});
+		};
+		// The kit veto yields before it empties a pool: a role whose every candidate answers
+		// the kit is better served by the least-wrong of them than by nothing, the same lesson
+		// `carries` taught as a hard requirement.
+		let eligible = this.effects.filter((e) => fits(e, true));
+		if (eligible.length === 0) eligible = this.effects.filter((e) => fits(e, false));
 		if (eligible.length === 0) return null;
 
 		// The quiet preference as a rank within THIS pool, not a position on an absolute

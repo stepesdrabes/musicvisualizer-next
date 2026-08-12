@@ -27,7 +27,8 @@ export const kickCannon: EffectDef = {
 		peakReserved: false,
 		// Bursts with darkness between them, however loud the burst.
 		carries: false,
-		character: 'impact'
+		character: 'impact',
+		kit: 'kick'
 	},
 	params: [INTENSITY],
 	create(g) {
