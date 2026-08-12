@@ -1,10 +1,12 @@
 import {
 	DEFAULT_ROOM,
+	RoomDirector,
+	SLOT,
 	compileGenerated,
 	EffectRegistry,
-	Mixer,
-	ShowPlayer,
 	buildGeometry,
+	sample,
+	type AmbientSettings,
 	type Geometry,
 	type Show,
 	type ShowFrame,
@@ -22,7 +24,17 @@ export interface Readout {
 	energy: number;
 	bpm: number;
 	cueBar: number;
-	headroom: number;
+	/** True once the room has handed over to the ambient scenes. */
+	resting: boolean;
+	scene: string;
+	/**
+	 * The colours the room has actually landed on, as CSS.
+	 *
+	 * Sampled off the live palette rather than reported as hue numbers, because in lounge that
+	 * palette is a cue's and was never built from hues at all - there is nothing to report.
+	 */
+	roomBase: string;
+	roomAccent: string;
 }
 
 /**
@@ -34,13 +46,19 @@ export interface Readout {
 export class Viz {
 	readonly geometry: Geometry = buildGeometry(DEFAULT_ROOM);
 	readonly registry = new EffectRegistry();
-	readonly mixer = new Mixer(this.geometry);
-	readonly player = new ShowPlayer(this.mixer, this.registry);
+	readonly director = new RoomDirector(this.geometry, this.registry);
 	readonly spec = DEFAULT_ROOM;
 
 	roomRenderer: RoomRenderer | null = null;
 	analysis: TrackAnalysis | null = null;
 	show: Show | null = null;
+
+	/**
+	 * What the room is being asked to be. Plain fields rather than `$state` for the same reason
+	 * nothing else in here is reactive: they are read once a frame on the hot path.
+	 */
+	lounge = false;
+	rest = true;
 
 	onReadout: ((r: Readout) => void) | null = null;
 	/**
@@ -66,6 +84,7 @@ export class Viz {
 	private fpsFrames = 0;
 	private fps = 0;
 	private readoutAcc = 0;
+	private readonly rgb: [number, number, number] = [0, 0, 0];
 
 	get duration(): number {
 		return this.buffer?.duration ?? this.analysis?.duration ?? 0;
@@ -79,6 +98,32 @@ export class Viz {
 
 	get isPlaying(): boolean {
 		return this.playing;
+	}
+
+	/** The show's own player, for the cue readout. The room may or may not be showing it. */
+	get player() {
+		return this.director.player;
+	}
+
+	set ambient(s: AmbientSettings) {
+		this.director.ambientSettings = s;
+	}
+
+	/** The cover's dominant hue, for a room following a track that has no show yet. */
+	set artHue(h: number | null) {
+		this.director.ambient.artHue = h;
+	}
+
+	/** Skip to the next ambient scene. */
+	nextScene(): void {
+		this.director.ambient.next();
+	}
+
+	/** One slot of the room's live palette, as CSS. Allocation-free apart from the string. */
+	private swatch(slot: number): string {
+		const [r, g, b] = sample(this.director.ambient.colour.palette, slot, 1, this.rgb);
+		const byte = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
+		return `rgb(${byte(r)} ${byte(g)} ${byte(b)})`;
 	}
 
 	async loadAudio(bytes: ArrayBuffer): Promise<void> {
@@ -107,7 +152,7 @@ export class Viz {
 			if (compiled.def) this.registry.add(compiled.def);
 			else console.warn(`generated effect "${gen.id}" rejected`, compiled.failures);
 		}
-		this.player.load(analysis, show);
+		this.director.load(analysis, show);
 	}
 
 	/** Drop the current show without dropping the audio, for a track that has none yet. */
@@ -115,7 +160,7 @@ export class Viz {
 		this.analysis = null;
 		this.show = null;
 		this.registry.clearGenerated();
-		this.player.clear();
+		this.director.clearShow();
 	}
 
 	setVolume(v: number): void {
@@ -194,9 +239,13 @@ export class Viz {
 	}
 
 	private frame(dt: number): void {
-		const frame: ShowFrame = this.player.update(Math.max(0, this.heardPosition), dt);
-		this.mixer.render(frame);
-		this.roomRenderer?.render(this.mixer.bytes, dt);
+		const frame: ShowFrame = this.director.update(this.heardPosition, dt, {
+			playing: this.playing,
+			hasShow: this.show !== null,
+			lounge: this.lounge,
+			rest: this.rest
+		});
+		this.roomRenderer?.render(this.director.bytes, dt);
 		this.publishReadout(dt, frame);
 	}
 
@@ -239,7 +288,10 @@ export class Viz {
 			energy: f.energy,
 			bpm: f.bpm,
 			cueBar: this.player.currentCue?.bar ?? -1,
-			headroom: this.mixer.meanHeadroom
+			resting: this.director.resting,
+			scene: this.director.sceneName,
+			roomBase: this.swatch(SLOT.base),
+			roomAccent: this.swatch(SLOT.accent)
 		});
 	}
 }

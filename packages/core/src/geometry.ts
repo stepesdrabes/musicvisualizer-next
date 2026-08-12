@@ -1,4 +1,4 @@
-import type { Geometry, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
+import type { Geometry, LedSpan, RoomRegion, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
 
 /** 5x4 m, wall strips at the wall/ceiling junction, one ceiling beam, 60 LED/m. */
 export const DEFAULT_ROOM: RoomSpec = {
@@ -192,4 +192,89 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 		extent,
 		perimeterLength
 	};
+}
+
+/**
+ * How far either side of a corner that corner reaches, in metres.
+ *
+ * A fixture standing in a corner is lit by, and belongs to, the light near it. A metre each way
+ * is roughly what reads as "this corner" rather than "this wall", and at 60 LED/m it is 120
+ * pixels, which is enough of a sample for a percentile to mean something.
+ */
+const CORNER_REACH_M = 1;
+
+/**
+ * Cut `count` LEDs out of a ring of `ringLen` starting at `ringStart`, centred on `centre`.
+ *
+ * The ring wraps and the frame does not, so this returns two spans when the cut straddles the
+ * seam. Wrapping is modulo the ring rather than modulo the whole frame: the perimeter is the
+ * ring, and anything off it (the beam) sits after the perimeter in the buffer and must not be
+ * walked into by a corner that ran off the end of a wall.
+ */
+function ringSpans(ringStart: number, ringLen: number, centre: number, count: number): LedSpan[] {
+	const len = Math.min(count, ringLen);
+	const from = (((centre - Math.floor(len / 2)) % ringLen) + ringLen) % ringLen;
+	if (from + len <= ringLen) return [{ firstLed: ringStart + from, ledCount: len }];
+	const head = ringLen - from;
+	return [
+		{ firstLed: ringStart + from, ledCount: head },
+		{ firstLed: ringStart, ledCount: len - head }
+	];
+}
+
+/**
+ * Two walls named for a corner, in the order a person says them.
+ *
+ * The ring is walked N, E, S, W, so taking the pair in walk order yields "ES" and "WN", which
+ * read as mistakes. Compass names put the latitude first. Walls named anything else fall back
+ * to walk order rather than inventing one.
+ */
+function cornerLabel(a: StripSpec, b: StripSpec): string {
+	const short = (s: StripSpec) => s.name.split(' ').pop() ?? s.name;
+	const [p, q] = [short(a), short(b)];
+	return q === 'N' || q === 'S' ? `${q}${p}` : `${p}${q}`;
+}
+
+function region(id: string, name: string, spans: LedSpan[]): RoomRegion {
+	return { id, name, spans, count: spans.reduce((n, s) => n + s.ledCount, 0) };
+}
+
+/**
+ * The parts of the room a single device can be pointed at.
+ *
+ * A device fed the whole frame shows the whole room, which for anything that reduces the frame
+ * to one value means it shows the room's average and nothing about where light is. Fed one
+ * corner instead, the same device is somewhere: a sweep crossing the room arrives at it, and a
+ * beat that moves a hundredth of the whole fixture moves a sixth of this one.
+ */
+export function roomRegions(g: Geometry): RoomRegion[] {
+	const out: RoomRegion[] = [region('all', 'Whole room', [{ firstLed: 0, ledCount: g.count }])];
+
+	for (const s of g.strips) {
+		out.push(region(`strip-${s.id}`, s.name, [{ firstLed: s.offset, ledCount: s.count }]));
+	}
+
+	const ring = g.strips.filter((s) => s.inPerimeter);
+	if (ring.length < 2) return out;
+
+	const ringStart = ring[0].offset;
+	const ringLen = ring.reduce((n, s) => n + s.count, 0);
+	const reach = Math.max(1, Math.round(CORNER_REACH_M / g.pitch));
+
+	for (let i = 0; i < ring.length; i++) {
+		const a = ring[i];
+		const b = ring[(i + 1) % ring.length];
+		// The junction is the first LED of the next wall, which for the pair that closes the
+		// ring is the first LED of the whole perimeter.
+		const centre = b.offset - ringStart;
+		out.push(
+			region(
+				`corner-${a.id}-${b.id}`,
+				`${cornerLabel(a, b)} corner`,
+				ringSpans(ringStart, ringLen, centre, reach * 2)
+			)
+		);
+	}
+
+	return out;
 }

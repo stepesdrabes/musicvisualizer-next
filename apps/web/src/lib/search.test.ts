@@ -12,6 +12,7 @@ function entry(over: Partial<LibraryEntry>): LibraryEntry {
 		source: '',
 		analysed: true,
 		authored: 'engine',
+		genreFamily: null,
 		updatedAt: 0,
 		...over
 	};

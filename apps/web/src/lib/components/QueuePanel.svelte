@@ -23,7 +23,8 @@
 		onsearch,
 		onautopilot,
 		onradio,
-		onsuggestion
+		onsuggestion,
+		onshuffle
 	}: {
 		items?: QueueItem[];
 		currentKey?: string | null;
@@ -40,6 +41,7 @@
 		onautopilot: (on: boolean) => void;
 		onradio: (item: QueueItem) => void;
 		onsuggestion: (song: SearchResult) => void;
+		onshuffle: () => void;
 	} = $props();
 
 	let dragKey = $state<string | null>(null);
@@ -142,6 +144,9 @@
 				</button>
 
 				<div class="right">
+					{#if item.genre}
+						<span class="chip genre" title="How the room lights this">{item.genre}</span>
+					{/if}
 					{#if item.authored === 'claude' || item.authored === 'deepseek'}
 						<Badge
 							variant="live"
@@ -203,7 +208,12 @@
 		     whatever the eye was already reading. Here it is simply what follows the set list. -->
 		{#if suggestions.length > 0}
 			<section class="suggested">
-				<p class="divider">More like this</p>
+				<p class="divider">
+					More like this
+					<button class="shuffle" title="Offer a different four" onclick={onshuffle}>
+						<Icon name="shuffle" size={13} />
+					</button>
+				</p>
 				{#each suggestions as song (song.id)}
 					<button class="pick" onclick={() => onsuggestion(song)} title="Add to the queue">
 						<span class="art small">
@@ -274,8 +284,8 @@
 		color: var(--foreground);
 	}
 	.pilot.on {
-		background: color-mix(in srgb, var(--accent) 18%, transparent);
-		color: var(--accent);
+		background: color-mix(in srgb, var(--live) 18%, transparent);
+		color: var(--live);
 	}
 
 	.list {
@@ -406,6 +416,10 @@
 		font-size: 10.5px;
 		line-height: 15px;
 	}
+	/* Hidden on hover with the clock, since the row's tools take that corner. */
+	.row:hover .genre {
+		display: none;
+	}
 
 	.right {
 		display: flex;
@@ -430,10 +444,26 @@
 	}
 
 	.divider {
+		display: flex;
+		align-items: center;
+		gap: 8px;
 		padding: 12px 10px 6px;
 		font-size: 12px;
 		font-weight: 500;
 		color: var(--subtle-foreground);
+	}
+	.shuffle {
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		margin-left: auto;
+		border-radius: var(--radius-sm);
+		color: var(--subtle-foreground);
+	}
+	.shuffle:hover {
+		background: var(--muted);
+		color: var(--foreground);
 	}
 
 	.empty {

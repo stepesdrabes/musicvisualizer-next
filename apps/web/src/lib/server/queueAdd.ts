@@ -15,7 +15,8 @@ import type { NewItem } from '$lib/queueModel.ts';
  * Built field by field rather than spread: `auto` marks a row the radio chose, and a body that
  * could set it would let anyone dress their own pick up as one. `authored` is left out for a
  * sharper reason - a row claiming to be authored starts `ready`, so nothing is ever fetched
- * for it, and the deck reaches a track with no audio and no show.
+ * for it, and the deck reaches a track with no audio and no show. `genre` is not a request's
+ * to make either: it is what the enrichment heard, not what the sender says it is.
  */
 export function fromRequest(item: NewItem, addedBy?: string): NewItem {
 	return {
@@ -49,7 +50,9 @@ export async function enrichFromLibrary(items: NewItem[]): Promise<NewItem[]> {
 			uploader: item.uploader ?? hit?.uploader,
 			thumbnail: item.thumbnail ?? hit?.thumbnail,
 			duration: item.duration ?? hit?.duration ?? 0,
-			authored: cached?.authored ?? 'none'
+			authored: cached?.authored ?? 'none',
+			// A track played before already knows its family; a new one learns it at ingest.
+			genre: hit?.genreFamily ?? undefined
 		};
 	});
 }

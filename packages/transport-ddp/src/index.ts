@@ -35,6 +35,19 @@ export function createDdpSink(opts: DdpOptions): LedSink {
 
 	const type = opts.rgbw ? TYPE_RGBW32 : TYPE_RGB24;
 
+	/**
+	 * The last target belonging to each device, keyed by where it lives.
+	 *
+	 * One host and port is one device however the fixture is cut up: a region that wraps the
+	 * perimeter reaches a single board as two targets, because the ring wraps and the frame does
+	 * not. PUSH means "present what you have", so a device receiving it twice in a frame presents
+	 * once with only part of the frame written and tears. Only the final packet to each device
+	 * carries it.
+	 */
+	const deviceKey = (t: DdpTarget) => `${t.host}:${t.port ?? DDP_PORT}`;
+	const lastForDevice = new Map<string, number>();
+	opts.targets.forEach((t, i) => lastForDevice.set(deviceKey(t), i));
+
 	return {
 		kind: 'ddp',
 
@@ -56,15 +69,16 @@ export function createDdpSink(opts: DdpOptions): LedSink {
 				return;
 			}
 
-			for (const target of opts.targets) {
+			for (const [index, target] of opts.targets.entries()) {
 				const byteStart = target.firstLed * 3;
 				const byteLen = target.ledCount * 3;
 				const deviceStart = (target.deviceFirstLed ?? 0) * 3;
 				const port = target.port ?? DDP_PORT;
+				const closesDevice = lastForDevice.get(deviceKey(target)) === index;
 
 				for (let sent = 0; sent < byteLen; sent += MAX_DATA) {
 					const len = Math.min(MAX_DATA, byteLen - sent);
-					const isLast = sent + len >= byteLen;
+					const isLast = sent + len >= byteLen && closesDevice;
 
 					// A fresh buffer per packet, not a reused one: dgram.send is asynchronous and
 					// does not copy, so a shared buffer gets overwritten by the next iteration

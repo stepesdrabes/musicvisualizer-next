@@ -1,4 +1,4 @@
-export type { Geometry, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
+export type { Geometry, LedSpan, RoomRegion, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
 export type { SectionKind, ShowFrame, Band as BandType } from './contracts/frame.ts';
 export {
 	BAND_EDGES_HZ,
@@ -52,9 +52,19 @@ export type {
 export { HIT_RULES, SHOW_VERSION } from './contracts/show.ts';
 export type { LedFrame, LedSink, LedSinkStats } from './contracts/sink.ts';
 
-export { DEFAULT_ROOM, buildGeometry } from './geometry.ts';
+export { DEFAULT_ROOM, buildGeometry, roomRegions } from './geometry.ts';
 export { hsv2rgb, rampHueFor, trueHue } from './color/hsv.ts';
-export { addSample, blendPalettes, makePalette, sample, setSample, swapped } from './color/palette.ts';
+export {
+	addSample,
+	blendPalettes,
+	lerpHue,
+	makePalette,
+	sample,
+	setSample,
+	swapped,
+	wrapHue,
+	writePalette
+} from './color/palette.ts';
 export {
 	BARS_PER_PHRASE,
 	PHRASE_BARS,
@@ -68,8 +78,13 @@ export {
 	phraseOffset
 } from './grid.ts';
 export { Rng, hash01 } from './dsl/rng.ts';
-export { Layer, Mixer } from './mixer.ts';
+export { DEFAULT_OPACITY, Layer, Mixer } from './mixer.ts';
 export { ShowPlayer } from './player.ts';
+export { RoomDirector, type DirectorState } from './director.ts';
+// The scene list, the idle clock and the colour engine are how the director does its job rather
+// than something anyone outside asks it for, so they stay inside the package.
+export { DEFAULT_AMBIENT, DWELL_MAX, DWELL_MIN, type AmbientSettings } from './ambient/player.ts';
+export type { ColourSettings, ColourSource } from './ambient/colour.ts';
 export { BUILT_IN_EFFECTS, EffectRegistry } from './effects/index.ts';
 export { quietFrames, runGate, scriptFrames, type GateResult } from './effects/gate.ts';
 export { measureEffect, type EffectCharacter } from './effects/probe.ts';
@@ -81,7 +96,6 @@ export {
 } from './effects/sandbox.ts';
 export {
 	BrightnessSlew,
-	FlashLimiter,
 	MeanLevel,
 	blend,
 	compressHighlights,

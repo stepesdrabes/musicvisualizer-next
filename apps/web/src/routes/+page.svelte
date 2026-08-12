@@ -4,6 +4,7 @@
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
 	import { installHint, readShell } from '$lib/shell.svelte.ts';
+	import { DEFAULT_AMBIENT, type AmbientSettings } from '@mv/core';
 	import { indexOfKey } from '$lib/queueModel.ts';
 	import type { Candidate } from '$lib/search.svelte.ts';
 	import type {
@@ -13,12 +14,14 @@
 		LoadState,
 		SearchResult,
 		Settings,
+		SettingsPatch,
 		Step,
 		TrackMeta
 	} from '$lib/types.ts';
 	import Backdrop from '$components/Backdrop.svelte';
 	import HardwareModal from '$components/HardwareModal.svelte';
 	import Inspector from '$components/Inspector.svelte';
+	import LoungeModal from '$components/LoungeModal.svelte';
 	import PlayerBar from '$components/PlayerBar.svelte';
 	import QueuePanel from '$components/QueuePanel.svelte';
 	import RoomModal from '$components/RoomModal.svelte';
@@ -41,7 +44,10 @@
 		energy: 0,
 		bpm: 0,
 		cueBar: -1,
-		headroom: 1
+		resting: false,
+		scene: '',
+		roomBase: 'transparent',
+		roomAccent: 'transparent'
 	});
 
 	let analysis = $state<TrackAnalysis | null>(null);
@@ -58,13 +64,19 @@
 		hasDeepseekKey: false,
 		authorBackend: 'claude',
 		outputOffsetMs: 0,
-		autopilot: false
+		autopilot: false,
+		lounge: false,
+		rest: true,
+		ambient: { ...DEFAULT_AMBIENT }
 	});
 
 	let suggestions = $state<SearchResult[]>([]);
+	/** Where the rail's window into them starts. */
+	let shown = $state(0);
 	let searchOpen = $state(false);
 	let searchSeed = $state('');
 	let hardwareOpen = $state(false);
+	let loungeOpen = $state(false);
 
 	// Read once: the shell injects it before any of this runs and never changes it.
 	const shell = readShell();
@@ -145,7 +157,7 @@
 	}
 
 	/** Persisted, because which model to spend is a decision that outlives one track. */
-	async function patchSettings(patch: Partial<Settings & { deepseekApiKey: string }>) {
+	async function patchSettings(patch: SettingsPatch) {
 		const res = await fetch('/api/settings', {
 			method: 'PUT',
 			headers: { 'content-type': 'application/json' },
@@ -170,13 +182,18 @@
 	 * Refreshed whenever the set list changes, because the point of the blend is that it drifts
 	 * with the night rather than orbiting whatever seeded it first.
 	 */
+	// More are fetched than the rail shows, so offering a different four is a step through what
+	// was already asked for rather than another round trip.
+	const SUGGESTION_ROWS = 4;
+
 	async function refreshSuggestions() {
 		try {
-			const res = await fetch('/api/radio?limit=4');
+			const res = await fetch('/api/radio?limit=16');
 			suggestions = res.ok ? ((await res.json()) as { results: SearchResult[] }).results : [];
 		} catch {
 			suggestions = [];
 		}
+		shown = 0;
 	}
 
 	function toggleAutopilot(on: boolean) {
@@ -202,10 +219,27 @@
 		note(`queued ${results.length} like ${label}`);
 	}
 
+	/** Four at a time, wrapping, so the button always has somewhere to go. */
+	const suggestionWindow = $derived(
+		suggestions.length === 0
+			? []
+			: Array.from(
+					{ length: Math.min(SUGGESTION_ROWS, suggestions.length) },
+					(_, i) => suggestions[(shown + i) % suggestions.length]
+				)
+	);
+
+	function shuffleSuggestions() {
+		if (suggestions.length === 0) return;
+		shown = (shown + SUGGESTION_ROWS) % suggestions.length;
+	}
+
 	async function addSuggestion(song: SearchResult) {
 		await queue.add([toNewItem(song)]);
 		note(`queued ${song.title}`);
-		void refreshSuggestions();
+		// Dropped from the list rather than refetched, so the other three do not move under the
+		// hand that was about to pick one of them.
+		suggestions = suggestions.filter((s) => s.id !== song.id);
 	}
 
 	function toNewItem(song: SearchResult) {
@@ -229,6 +263,37 @@
 	function saveOffset(ms: number) {
 		moveOffset(ms);
 		void patchSettings({ outputOffsetMs: ms });
+	}
+
+	function toggleLounge(on: boolean) {
+		settings = { ...settings, lounge: on };
+		void patchSettings({ lounge: on });
+		note(on ? 'calm scenes are lighting the room' : 'back to the show');
+	}
+
+	function toggleRest(on: boolean) {
+		settings = { ...settings, rest: on };
+		void patchSettings({ rest: on });
+	}
+
+	/**
+	 * Dragging a colour. The room takes it on its next frame; the disk waits for the release, the
+	 * same way the hardware trim does.
+	 */
+	function moveAmbient(next: AmbientSettings) {
+		settings = { ...settings, ambient: next };
+	}
+
+	function saveAmbient(next: AmbientSettings) {
+		moveAmbient(next);
+		void patchSettings({
+			ambientColour: next.source,
+			ambientHue: next.hue,
+			ambientSat: next.sat,
+			ambientDrift: next.drift,
+			ambientBrightness: next.brightness,
+			ambientDwell: next.dwell
+		});
 	}
 
 	$effect(() => {
@@ -263,6 +328,22 @@
 
 	$effect(() => {
 		viz?.setVolume(volume);
+	});
+
+	// What the room is asked to be. The renderer holds these as plain fields rather than reactive
+	// ones, so this effect is the whole of the wiring: whenever the stored settings change, they
+	// are pushed once and then read every frame from there.
+	$effect(() => {
+		const v = viz;
+		if (!v) return;
+		v.lounge = settings.lounge;
+		v.rest = settings.rest;
+		v.ambient = settings.ambient;
+	});
+
+	// The cover, for a room following a track the engine has not composed a show for yet.
+	$effect(() => {
+		if (viz) viz.artHue = meta?.artHue ?? null;
 	});
 
 	// Keep the hardware clock aligned with the audio that is actually playing. Half a second
@@ -672,6 +753,8 @@
 			leftOpen = !leftOpen;
 		} else if (e.key === ']') {
 			rightOpen = !rightOpen;
+		} else if (e.key.toLowerCase() === 'l') {
+			toggleLounge(!settings.lounge);
 		}
 	}
 </script>
@@ -707,13 +790,22 @@
 				onclear={() => void queue.clear(true)}
 				onsearch={() => openSearch('')}
 				autopilot={settings.autopilot}
-				{suggestions}
+				suggestions={suggestionWindow}
+				onshuffle={shuffleSuggestions}
 				onautopilot={toggleAutopilot}
 				onradio={(item) => void startRadio(item.trackId ?? '', item.title)}
 				onsuggestion={(song) => void addSuggestion(song)} />
 		{/if}
 
-		<Stage {viz} {readout} {load} {steps} hasShow={!!show} queued={queue.items.length} />
+		<Stage
+			{viz}
+			{readout}
+			{load}
+			{steps}
+			hasShow={!!show}
+			queued={queue.items.length}
+			lounge={settings.lounge}
+			onlounge={() => (loungeOpen = true)} />
 
 		{#if rightOpen}
 			<Inspector
@@ -772,6 +864,22 @@
 
 <RoomModal />
 
+<LoungeModal
+	open={loungeOpen}
+	lounge={settings.lounge}
+	rest={settings.rest}
+	ambient={settings.ambient}
+	resting={readout.resting}
+	scene={readout.scene}
+	roomBase={readout.roomBase}
+	roomAccent={readout.roomAccent}
+	onclose={() => (loungeOpen = false)}
+	onlounge={toggleLounge}
+	onrest={toggleRest}
+	onambient={moveAmbient}
+	onambientdone={saveAmbient}
+	onnextscene={() => viz?.nextScene()} />
+
 <HardwareModal
 	open={hardwareOpen}
 	status={hardware.status}
@@ -779,6 +887,7 @@
 	onclose={() => (hardwareOpen = false)}
 	offsetMs={settings.outputOffsetMs}
 	onhost={(h) => void hardware.setHost(h)}
+	onregion={(r) => void hardware.setRegion(r)}
 	onprobe={(h) => void hardware.probe(h)}
 	onoffset={moveOffset}
 	onoffsetdone={saveOffset}

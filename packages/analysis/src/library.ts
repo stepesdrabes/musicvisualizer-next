@@ -1,6 +1,7 @@
 import { open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { GenreFamily } from '@mv/core';
 import { CACHE_DIR } from './paths.ts';
 import type { TrackMeta } from './ingest.ts';
 
@@ -32,8 +33,25 @@ export interface LibraryEntry extends TrackMeta {
 	/** An analysis exists, so this track loads without touching the network. */
 	analysed: boolean;
 	authored: 'none' | 'engine' | 'claude' | 'deepseek';
+	/** The lighting family, once something has listened to the track. Null until enriched. */
+	genreFamily: GenreFamily | null;
 	/** When the track was last ingested or authored, for ordering by recency. */
 	updatedAt: number;
+}
+
+/**
+ * The family the enrichment settled on.
+ *
+ * From the context rather than the analysis: the analysis is around 400 kB and does not carry
+ * a genre at all, while the context is a few kB and is the only place it lives.
+ */
+async function readGenre(path: string): Promise<GenreFamily | null> {
+	try {
+		const raw = await readFile(path, 'utf8');
+		return (JSON.parse(raw) as { genreFamily?: GenreFamily | null }).genreFamily ?? null;
+	} catch {
+		return null;
+	}
 }
 
 interface ShowStamp {
@@ -105,11 +123,15 @@ export async function readLibrary(): Promise<LibraryEntry[]> {
 				}
 			}
 
-			const show = await readShowStamp(join(CACHE_DIR, `${id}.show.json`));
+			const [show, genreFamily] = await Promise.all([
+				readShowStamp(join(CACHE_DIR, `${id}.show.json`)),
+				readGenre(join(CACHE_DIR, `${id}.context.json`))
+			]);
 			return {
 				...meta,
 				analysed,
 				authored: show?.authored ?? 'none',
+				genreFamily,
 				updatedAt: Math.max(metaStat.mtimeMs, show?.updatedAt ?? 0)
 			};
 		})

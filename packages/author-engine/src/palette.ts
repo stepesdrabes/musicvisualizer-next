@@ -1,5 +1,5 @@
 import type { ShowPalette, TrackAnalysis } from '@mv/core';
-import { Rng, rampHueFor } from '@mv/core';
+import { Rng, rampHueFor, wrapHue } from '@mv/core';
 import type { GenreProfile } from './genre.ts';
 
 /**
@@ -144,12 +144,3 @@ function hueName(h: number): string {
 	return 'red';
 }
 
-/** Shortest way round the wheel, so a midpoint stays saturated instead of passing through grey. */
-export function lerpHue(from: number, to: number, u: number): number {
-	const d = (((to - from) % 360) + 540) % 360 - 180;
-	return wrapHue(from + d * u);
-}
-
-function wrapHue(h: number): number {
-	return ((h % 360) + 360) % 360;
-}

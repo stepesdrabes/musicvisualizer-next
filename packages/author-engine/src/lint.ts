@@ -38,7 +38,8 @@ export interface LintContext {
  * There is deliberately no flash-RATE ceiling, no strobe budget and no minimum gap between
  * strobes. A room this size is one person's, the strobe is half the point of the genre, and a
  * linter that refuses the biggest card in the deck is a linter people route around. Anyone
- * fitting this in a public space owns that decision; `FlashLimiter` is the safety side of it.
+ * fitting this in a public space owns that decision, and these rules are the only thing between
+ * a show and the room: there is no limiter downstream of them.
  *
  * How LONG a gesture holds the room is a separate question and is capped, in `HIT_RULES`. That
  * is taste rather than safety: a strobe that outlasts the phrase it points at has stopped

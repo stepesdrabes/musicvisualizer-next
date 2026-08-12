@@ -19,10 +19,11 @@ import {
 	SHOW_VERSION,
 	Rng,
 	hitSeconds,
+	lerpHue,
 	sectionBase
 } from '@mv/core';
 import { allowedFlashes, profileFor, type GenreProfile } from './genre.ts';
-import { choosePalette, lerpHue } from './palette.ts';
+import { choosePalette } from './palette.ts';
 import { EffectPicker } from './select.ts';
 
 export interface EngineOptions {

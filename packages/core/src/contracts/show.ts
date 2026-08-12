@@ -72,7 +72,7 @@ export interface HitRule {
  * tempo and an ordeal at the other, and how long it FEELS is what anyone in the room judges.
  *
  * This caps length only. There is still no ceiling on flash RATE, no strobe budget and no
- * minimum gap - see the note in `lint.ts`, and `FlashLimiter` for the safety side of it.
+ * minimum gap - see the note in `lint.ts`. Nothing downstream limits them any more.
  */
 export const HIT_RULES: Record<Hit['kind'], HitRule> = {
 	// Black is the one gesture no envelope can soften, and an unintended black stage reads as

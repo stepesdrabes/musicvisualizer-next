@@ -12,7 +12,9 @@
 		load,
 		steps,
 		hasShow,
-		queued = 0
+		queued = 0,
+		lounge = false,
+		onlounge
 	}: {
 		viz: Viz | null;
 		readout: Readout;
@@ -20,6 +22,8 @@
 		steps: Step[];
 		hasShow: boolean;
 		queued?: number;
+		lounge?: boolean;
+		onlounge: () => void;
 	} = $props();
 
 	/**
@@ -84,6 +88,24 @@
 			{/each}
 		</div>
 
+		<span class="spacer"></span>
+
+		<!--
+			Over the room rather than in the player bar, because it is about the room rather than about
+			the track: what it says while the room is resting is the name of the look on the walls.
+		-->
+		<button
+			class="lounge"
+			class:on={lounge || readout.resting}
+			onclick={onlounge}
+			title={lounge
+				? 'Calm scenes are lighting the room'
+				: readout.resting
+					? 'The room is resting'
+					: 'Lounge, and how the room rests'}>
+			<Icon name="lounge" size={14} />
+			<span>{readout.resting && readout.scene ? readout.scene : 'Lounge'}</span>
+		</button>
 	</div>
 
 	<div class="overlay bottom">
@@ -91,11 +113,6 @@
 			{viz ? `${viz.geometry.count} px · ${viz.spec.width}x${viz.spec.depth} m` : ''}
 		</span>
 		<span class="spacer"></span>
-		{#if readout.headroom < 0.995}
-			<span class="mono warn" title="Photosensitivity limiter is reducing output">
-				flash limit {(readout.headroom * 100).toFixed(0)}%
-			</span>
-		{/if}
 		<span class="mono subtle">{readout.fps} fps</span>
 	</div>
 
@@ -115,6 +132,10 @@
 				<h1>Track ready</h1>
 			{:else if queued > 0}
 				<h1>Preparing the queue</h1>
+			{:else if readout.resting}
+				<Icon name="lounge" size={26} />
+				<h1>The room is resting</h1>
+				<p>{readout.scene}. Search for a track and it will hand over.</p>
 			{:else}
 				<Icon name="radio" size={26} />
 				<h1>The room is dark</h1>
@@ -196,8 +217,39 @@
 		background: #ffffff17;
 		color: var(--foreground);
 	}
-	.warn {
-		color: var(--warn);
+
+	/* The same floating tray as the view presets, as one pill rather than a row of them. */
+	.lounge {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		height: 32px;
+		padding: 0 12px;
+		border-radius: var(--radius-md);
+		background: #0d0d10cc;
+		backdrop-filter: blur(10px);
+		border: 1px solid #ffffff14;
+		font-size: 12.5px;
+		font-weight: 500;
+		color: var(--muted-foreground);
+		transition:
+			background-color 0.25s ease,
+			border-color 0.25s ease,
+			color 0.25s ease;
+	}
+	.lounge:hover {
+		color: var(--foreground);
+		border-color: #ffffff2b;
+	}
+	/*
+	 * Lit for what the room is doing rather than for what the switch says, so the accent means the
+	 * same thing here as everywhere else: the walls are being driven by something other than the
+	 * track on the scrubber.
+	 */
+	.lounge.on {
+		background: color-mix(in srgb, var(--live) 20%, #0d0d10cc);
+		border-color: color-mix(in srgb, var(--live) 45%, transparent);
+		color: var(--live);
 	}
 
 	.empty {

@@ -3,6 +3,7 @@
 	import {
 		asDirectLink,
 		filterLibrary,
+		indexLibrary,
 		libraryToCandidate,
 		resultToCandidate,
 		suggestionToCandidate,
@@ -39,11 +40,12 @@
 	const libraryHits = $derived(link ? [] : filterLibrary(library, query));
 	/** Nothing has been typed yet, so the palette is somewhere to browse rather than to search. */
 	const idle = $derived(!link && query.trim().length < 2);
+	const known = $derived(indexLibrary(library));
 	const candidates = $derived<Candidate[]>([
 		...(link ? [link] : []),
 		...libraryHits.map(libraryToCandidate),
-		...results.map(resultToCandidate),
-		...(idle ? suggestions.map(suggestionToCandidate) : [])
+		...results.map((r) => resultToCandidate(r, known)),
+		...(idle ? suggestions.map((s) => suggestionToCandidate(s, known)) : [])
 	]);
 
 	// The first row of each group, so the heading can be drawn in the flat list.
@@ -189,12 +191,22 @@
 					<span class="sub truncate muted">{subtitleFor(candidate)}</span>
 				</span>
 
-				{#if candidate.authored === 'claude'}
-					<Badge variant="live" title="Claude designed this show">
+				{#if candidate.genre}
+					<Badge variant="muted" title="How the room lights this">{candidate.genre}</Badge>
+				{/if}
+
+				{#if candidate.authored === 'claude' || candidate.authored === 'deepseek'}
+					<Badge
+						variant="live"
+						title="{candidate.authored === 'claude' ? 'Claude' : 'DeepSeek'} designed this show">
 						<Icon name="sparkles" size={11} />
 					</Badge>
-				{:else if candidate.origin === 'library'}
-					<Badge variant="outline">Ready</Badge>
+				{/if}
+
+				<!-- On a catalogue hit too, not only a library row: the whole point is knowing that
+				     this one costs nothing before picking it. -->
+				{#if candidate.cached}
+					<Badge variant="outline" title="Already downloaded and analysed">Ready</Badge>
 				{/if}
 
 				{#if candidate.duration > 0}

@@ -56,7 +56,7 @@
 
 		const draw = () => {
 			raf = requestAnimationFrame(draw);
-			const bytes = viz.mixer.bytes;
+			const bytes = viz.director.bytes;
 			const data = image.data;
 
 			for (let s = 0; s < strips.length; s++) {

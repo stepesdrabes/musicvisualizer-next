@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import {
 	DEFAULT_ROOM,
 	EffectRegistry,
-	Mixer,
-	ShowPlayer,
+	RoomDirector,
 	buildGeometry,
 	compileGenerated,
+	roomRegions,
 	type LedSink,
+	type RoomRegion,
 	type Show,
 	type TrackAnalysis
 } from '@mv/core';
@@ -16,8 +17,19 @@ import { createDdpSink, type DdpTarget } from '@mv/transport-ddp';
 import { currentItem } from '$lib/queueModel.ts';
 import { queue } from '$lib/server/queueStore.ts';
 import { hardware } from '$lib/server/hardware.ts';
+import { settings, type PublicSettings } from '$lib/server/settings.ts';
 import { isLocal } from '$lib/server/access.ts';
 import type { RequestHandler } from './$types';
+
+/**
+ * How long a sync may be missing before the room stops believing the music is playing.
+ *
+ * A browser posts one every 500 ms while it has the tab open. Closing the tab therefore looks
+ * exactly like a track that never ends, and the room used to hold that last cue for as long as the
+ * process lived. Two missed syncs is a tab that has gone, and a room that has gone with it should
+ * rest rather than freeze.
+ */
+const SYNC_STALE_MS = 3000;
 
 /**
  * Hardware output runs its own copy of the show, server-side.
@@ -31,8 +43,7 @@ import type { RequestHandler } from './$types';
 class Output {
 	private geometry = buildGeometry(DEFAULT_ROOM);
 	private registry = new EffectRegistry();
-	private mixer = new Mixer(this.geometry);
-	private player = new ShowPlayer(this.mixer, this.registry);
+	private director = new RoomDirector(this.geometry, this.registry);
 	private sink: LedSink | null = null;
 	private timer: NodeJS.Timeout | null = null;
 
@@ -41,6 +52,8 @@ class Output {
 	private playing = false;
 	private offsetMs = 0;
 	private frames = 0;
+	private lounge = false;
+	private rest = true;
 
 	targets: DdpTarget[] = [];
 
@@ -48,14 +61,27 @@ class Output {
 		return this.timer !== null;
 	}
 
+	/** What a browser is telling us, or nothing at all if it has stopped telling us anything. */
+	private get sounding(): boolean {
+		return this.playing && performance.now() - this.syncedAt < SYNC_STALE_MS;
+	}
+
 	get status() {
 		return {
 			running: this.running,
-			playing: this.playing,
+			playing: this.sounding,
 			position: this.position,
 			frames: this.frames,
+			resting: this.director.resting,
+			scene: this.director.sceneName,
 			targets: this.targets.map((t) => `${t.host}:${t.port ?? 4048}`)
 		};
+	}
+
+	apply(s: PublicSettings): void {
+		this.lounge = s.lounge;
+		this.rest = s.rest;
+		this.director.ambientSettings = s.ambient;
 	}
 
 	load(analysis: TrackAnalysis, show: Show): void {
@@ -64,7 +90,7 @@ class Output {
 			const compiled = compileGenerated(gen, this.geometry);
 			if (compiled.def) this.registry.add(compiled.def);
 		}
-		this.player.load(analysis, show);
+		this.director.load(analysis, show);
 	}
 
 	async start(targets: DdpTarget[], offsetMs: number): Promise<void> {
@@ -84,13 +110,18 @@ class Output {
 			const now = performance.now();
 			const dt = Math.min((now - last) / 1000, 0.05);
 			last = now;
-			const t = this.playing
+			const sounding = this.sounding;
+			const t = sounding
 				? this.position + (now - this.syncedAt) / 1000 + this.offsetMs / 1000
 				: this.position;
-			const frame = this.player.update(Math.max(0, t), dt);
-			this.mixer.render(frame);
+			this.director.update(Math.max(0, t), dt, {
+				playing: sounding,
+				hasShow: this.director.player.loaded !== null,
+				lounge: this.lounge,
+				rest: this.rest
+			});
 			this.sink?.send({
-				rgb: this.mixer.bytes,
+				rgb: this.director.bytes,
 				dt,
 				frameId: this.frames,
 				presentAtMs: now
@@ -124,6 +155,42 @@ class Output {
 
 const output = new Output();
 
+/**
+ * Cut a region up between however many boards are driving it.
+ *
+ * Two kinds of cut meet here and neither is optional. A region can already be several runs of
+ * the frame, because the perimeter is a ring and a corner can straddle its seam; and however
+ * many runs that is, several boards split the total between them. So this walks the region's
+ * pixels once and hands each board a contiguous stretch of its own buffer, which is why
+ * `deviceFirstLed` is tracked per host rather than assumed to be zero.
+ *
+ * Several boards at all because WS2812 is 30 us per LED, so 1320 on one data line caps at
+ * 25 Hz and 60 fps needs roughly one output per strip.
+ */
+function targetsFor(region: RoomRegion, hosts: string[]): DdpTarget[] {
+	const per = Math.ceil(region.count / hosts.length);
+	const targets: DdpTarget[] = [];
+	let taken = 0;
+
+	for (const span of region.spans) {
+		let offset = 0;
+		while (offset < span.ledCount) {
+			const host = Math.min(Math.floor(taken / per), hosts.length - 1);
+			// Whichever runs out first: this span, or this host's share of the region.
+			const room = Math.min(span.ledCount - offset, per * (host + 1) - taken);
+			targets.push({
+				host: hosts[host],
+				firstLed: span.firstLed + offset,
+				ledCount: room,
+				deviceFirstLed: taken - host * per
+			});
+			offset += room;
+			taken += room;
+		}
+	}
+	return targets;
+}
+
 /** Load a track's analysis and show, or explain why it cannot be loaded. */
 async function loadTrack(id: string): Promise<{ analysis: TrackAnalysis; show: Show } | null> {
 	try {
@@ -155,6 +222,15 @@ queue.subscribe((state) => {
 		output.sync(0, false);
 	});
 });
+
+/**
+ * Lounge and the resting colour reach the strips without a browser relaying them.
+ *
+ * They are settings rather than queue state, and settings are fetched once at mount, so a change
+ * made in one tab would otherwise never arrive here at all - and with no tab open there would be
+ * nothing to relay it.
+ */
+settings.subscribe((s) => output.apply(s));
 
 export const GET: RequestHandler = async () => json(output.status);
 
@@ -188,21 +264,16 @@ export const POST: RequestHandler = async (event) => {
 	const loaded = await loadTrack(id);
 	if (!loaded) error(404, 'no analysis or show cached for this track');
 
+	// The stream may be started long after the settings were last written, and the subscription
+	// above only ever hears changes. This is where it catches up with what is already stored.
+	output.apply(await settings.read());
 	output.load(loaded.analysis, loaded.show);
 	output.trackId = id;
 
-	// One target per host, splitting the fixture evenly. WS2812 is 30 us per LED, so 1320 on
-	// one data line caps at 25 Hz; several controllers is how 60 fps is actually reached.
-	const total = buildGeometry(DEFAULT_ROOM).count;
-	const per = Math.ceil(total / body.hosts.length);
-	const targets: DdpTarget[] = body.hosts.map((host, i) => ({
-		host,
-		firstLed: i * per,
-		ledCount: Math.min(per, total - i * per),
-		deviceFirstLed: 0
-	}));
+	const regions = roomRegions(buildGeometry(DEFAULT_ROOM));
+	const region = regions.find((r) => r.id === hardware.region) ?? regions[0];
 
-	await output.start(targets, body.offsetMs ?? 0);
+	await output.start(targetsFor(region, body.hosts), body.offsetMs ?? 0);
 	// The first host is the one the readout is about: the board only reports to whoever sends
 	// it DDP, so on a split fixture each would need its own listener and its own port.
 	hardware.setHost(body.hosts[0]);

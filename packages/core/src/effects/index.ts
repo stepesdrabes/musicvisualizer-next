@@ -13,6 +13,7 @@ import { blinderWall } from './blinderWall.ts';
 import { breathe } from './breathe.ts';
 import { buildStrobe } from './buildStrobe.ts';
 import { cascade } from './cascade.ts';
+import { caustics } from './caustics.ts';
 import { chase } from './chase.ts';
 import { chorusBloom } from './chorusBloom.ts';
 import { chromaBurst } from './chromaBurst.ts';
@@ -23,6 +24,7 @@ import { crownSpill } from './crownSpill.ts';
 import { confetti } from './confetti.ts';
 import { discoBall } from './discoBall.ts';
 import { doubleKickGatling } from './doubleKickGatling.ts';
+import { dusk } from './dusk.ts';
 import { emberStorm } from './emberStorm.ts';
 import { embers } from './embers.ts';
 import { feedbackSwell } from './feedbackSwell.ts';
@@ -34,11 +36,13 @@ import { harmonicRibbon } from './harmonicRibbon.ts';
 import { hatTicker } from './hatTicker.ts';
 import { harmonicHaze } from './harmonicHaze.ts';
 import { headbang } from './headbang.ts';
+import { hearth } from './hearth.ts';
 import { heartbeat } from './heartbeat.ts';
 import { hueCarousel } from './hueCarousel.ts';
 import { iridescence } from './iridescence.ts';
 import { kickCannon } from './kickCannon.ts';
 import { kickTunnel } from './kickTunnel.ts';
+import { lanterns } from './lanterns.ts';
 import { laidbackWave } from './laidbackWave.ts';
 import { lavaBlobs } from './lavaBlobs.ts';
 import { lightning } from './lightning.ts';
@@ -51,6 +55,7 @@ import { pixelRain } from './pixelRain.ts';
 import { pump } from './pump.ts';
 import { pyroBursts } from './pyroBursts.ts';
 import { rainbowRain } from './rainbowRain.ts';
+import { ripple } from './ripple.ts';
 import { riser } from './riser.ts';
 import { rollerChase } from './rollerChase.ts';
 import { shockwave } from './shockwave.ts';
@@ -94,6 +99,9 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	spectrumBed,
 	harmonicHaze,
 	phraseArc,
+	hearth,
+	caustics,
+	dusk,
 	// rhythm
 	sweep,
 	chase,
@@ -138,6 +146,8 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	flexStrobe,
 	buildStrobe,
 	discoBall,
+	lanterns,
+	ripple,
 	emberStorm,
 	harmonicRibbon,
 	bandBloom,

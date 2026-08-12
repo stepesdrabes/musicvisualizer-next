@@ -1,3 +1,5 @@
+import type { AmbientSettings, ColourSource } from '@mv/core';
+
 /** Mirrors @mv/analysis TrackMeta. Duplicated because SvelteKit blocks server imports on
     the client, even for types. */
 export interface TrackMeta {
@@ -22,10 +24,11 @@ export interface TrackMeta {
  */
 export type Authored = 'none' | 'engine' | 'claude' | 'deepseek';
 
-/** Mirrors @mv/analysis LibraryEntry. */
+/** Mirrors @mv/analysis LibraryEntry. The family is one of GenreFamily, or null until enriched. */
 export interface LibraryEntry extends TrackMeta {
 	analysed: boolean;
 	authored: Authored;
+	genreFamily: string | null;
 	updatedAt: number;
 }
 
@@ -69,6 +72,37 @@ export interface Settings {
 	outputOffsetMs: number;
 	/** Whether the radio keeps the queue from running out. */
 	autopilot: boolean;
+	/** Calm scenes instead of the authored show, while a track is playing. */
+	lounge: boolean;
+	/** Whether the room drifts into ambient when nothing is playing, rather than freezing. */
+	rest: boolean;
+	/**
+	 * How the resting room looks. `AmbientSettings` is a `core` type rather than a mirror: it is
+	 * the shape the renderer is driven with, and the browser runs its own copy of the renderer.
+	 */
+	ambient: AmbientSettings;
+}
+
+/**
+ * What `PUT /api/settings` accepts, which is flat where `Settings` is nested.
+ *
+ * Mirrors the route's own whitelist by hand, like everything else across this boundary. It is flat
+ * because a patch names the fields it is changing, and a nested object would mean sending the whole
+ * ambient block to move one slider.
+ */
+export interface SettingsPatch {
+	deepseekApiKey?: string;
+	authorBackend?: AuthorBackend;
+	outputOffsetMs?: number;
+	autopilot?: boolean;
+	lounge?: boolean;
+	rest?: boolean;
+	ambientColour?: ColourSource;
+	ambientHue?: number;
+	ambientSat?: number;
+	ambientBrightness?: number;
+	ambientDrift?: number;
+	ambientDwell?: number;
 }
 
 /** One line in the authoring activity feed. */

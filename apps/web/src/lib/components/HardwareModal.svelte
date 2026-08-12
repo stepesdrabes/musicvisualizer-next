@@ -6,6 +6,7 @@
 		lightsRoom,
 		type HardwareStatus
 	} from '$lib/hardware.ts';
+	import { DEFAULT_ROOM, buildGeometry, roomRegions } from '@mv/core';
 	import { uptime } from '$lib/hardware.svelte.ts';
 	import Dialog from '$lib/ui/Dialog.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -25,6 +26,7 @@
 		onprobe,
 		onoffset,
 		onoffsetdone,
+		onregion,
 		ontoggleOutput
 	}: {
 		open?: boolean;
@@ -40,8 +42,13 @@
 		onoffset: (ms: number) => void;
 		/** On release, which is the only point worth writing to disk. */
 		onoffsetdone: (ms: number) => void;
+		/** Which part of the room this board is fed. Takes effect the next time output starts. */
+		onregion: (id: string) => void;
 		ontoggleOutput: () => void;
 	} = $props();
+
+	// The room does not change while the app is running, so the parts of it do not either.
+	const REGIONS = roomRegions(buildGeometry(DEFAULT_ROOM));
 
 	let draft = $state('');
 	let touched = $state(false);
@@ -60,6 +67,7 @@
 	const faults = $derived(telemetry ? faultsIn(telemetry) : []);
 	const dark = $derived(identity !== null && !lightsRoom(identity));
 	const dirty = $derived(draft.trim() !== status.host);
+	const region = $derived(REGIONS.find((r) => r.id === status.region) ?? REGIONS[0]);
 
 	function apply() {
 		const host = draft.trim();
@@ -116,6 +124,15 @@
 	</div>
 
 	{#if status.host}
+		<div class="trim">
+			<span>Shows</span>
+			<select value={status.region} onchange={(e) => onregion(e.currentTarget.value)}>
+				{#each REGIONS as r (r.id)}
+					<option value={r.id}>{r.name}</option>
+				{/each}
+			</select>
+			<span class="ms mono">{region.count} px</span>
+		</div>
 		<div class="trim">
 			<span>Lead</span>
 			<Slider
@@ -313,6 +330,21 @@
 		font-family: var(--mono);
 	}
 	.field input:focus {
+		outline: none;
+		border-color: var(--ring);
+	}
+
+	.trim select {
+		flex: 1;
+		min-width: 0;
+		padding: 5px 9px;
+		background: var(--card-raised);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		color: var(--foreground);
+		font: inherit;
+	}
+	.trim select:focus {
 		outline: none;
 		border-color: var(--ring);
 	}

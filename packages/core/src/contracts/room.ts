@@ -15,6 +15,27 @@ export interface StripSpec {
 	inPerimeter: boolean;
 }
 
+/** A contiguous run of the global frame. */
+export interface LedSpan {
+	firstLed: number;
+	ledCount: number;
+}
+
+/**
+ * A named part of the room a single device can be pointed at.
+ *
+ * More than one span because the perimeter is a ring and the frame is not: a region straddling
+ * the seam between the last wall and the first is two runs of the buffer and one place in the
+ * room. Every consumer has to handle that, so it is in the shape rather than in a caller.
+ */
+export interface RoomRegion {
+	id: string;
+	name: string;
+	spans: readonly LedSpan[];
+	/** Total LEDs across every span. */
+	count: number;
+}
+
 export interface RoomSpec {
 	name: string;
 	width: number;

@@ -146,7 +146,8 @@ class IngestRunner {
 				uploader: result.meta.uploader,
 				thumbnail: result.meta.thumbnail,
 				duration: result.meta.duration ?? result.analysis.duration,
-				authored
+				authored,
+				genre: result.context?.genreFamily ?? undefined
 			});
 			if (item.auto) autopilot.noteSuccess();
 		} catch (e) {

@@ -18,18 +18,35 @@ pub struct Summary {
 	/// Channel ratios with the largest pinned at full scale, so hue and saturation are exactly
 	/// as they arrived on the wire and only [`Summary::level`] moves.
 	pub rgb: [u16; 3],
-	/// Perceived brightness, full scale being a room at 255.
+	/// Perceived brightness, full scale being a room at 255. Zero does not mean the room is
+	/// dark: see [`Summary::lit`].
 	pub level: u16,
 }
 
 impl Summary {
 	pub const DARK: Self = Self { rgb: [0; 3], level: 0 };
 
-	/// How white the colour is: the smallest channel, which with the largest pinned at full
-	/// scale is `1 - saturation`. Full scale means the room is showing no hue at all.
-	pub fn achroma(&self) -> u16 {
-		self.rgb[0].min(self.rgb[1]).min(self.rgb[2])
+	/// Whether the frame carried any light at all, which is not the same question as whether
+	/// [`Summary::level`] is above zero.
+	///
+	/// The percentile needs a tenth of the pixels lit before it can report anything, so an
+	/// effect covering less of the room than that reads as a level of zero while the room is
+	/// plainly still lit. A fixture that blacked out on those frames would be blinking at a
+	/// threshold rather than at the show, so the two cases have to be told apart. Ratios are
+	/// pinned with the largest channel at full scale, so this is zero only for a black frame.
+	pub fn lit(&self) -> bool {
+		self.rgb[0].max(self.rgb[1]).max(self.rgb[2]) > 0
 	}
+}
+
+/// How white a set of ratios is: the smallest channel, which with the largest pinned at full
+/// scale is `1 - saturation`. Full scale means no hue at all.
+///
+/// A free function rather than a method on [`Summary`] because an output following the colour
+/// over time asks this of what it is showing rather than of what just arrived, and the answer
+/// only means anything under the pinning convention this module defines.
+pub fn achroma(rgb: &[u16; 3]) -> u16 {
+	rgb[0].min(rgb[1]).min(rgb[2])
 }
 
 /// Summarise the frame that is about to be presented.
@@ -74,8 +91,11 @@ pub fn of(rgb: &[u8]) -> Summary {
 		}
 	}
 
+	// Only a frame with no light anywhere is dark. A frame the percentile could not reach still
+	// has a colour, and reporting it with a level of zero is what lets a fixture hold its floor
+	// through a sparse effect instead of blacking out at a threshold.
 	let top = sum[0].max(sum[1]).max(sum[2]);
-	if top == 0 || level == 0 {
+	if top == 0 {
 		return Summary::DARK;
 	}
 

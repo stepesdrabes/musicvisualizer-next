@@ -12,8 +12,35 @@ interface Key {
 
 const RGB_SCRATCH: [number, number, number] = [0, 0, 0];
 
+/** Refilled per call, ascending. Same reason as `RGB_SCRATCH`, one level up. */
+const KEYS: Key[] = [
+	SLOT.deep,
+	SLOT.base,
+	SLOT.glow,
+	SLOT.white,
+	SLOT.third,
+	SLOT.accent,
+	SLOT.accentDeep
+].map((u) => ({ u, h: 0, s: 0, v: 0 }));
+
+function set(key: Key, h: number, s: number, v: number): void {
+	key.h = h;
+	key.s = s;
+	key.v = v;
+}
+
 /** Lay a show's three hues onto the named slots and fill 16 anchors between them. */
 export function makePalette(p: ShowPalette): Palette {
+	return writePalette(new Float32Array(PALETTE_ANCHORS * 3), p);
+}
+
+/**
+ * The same, into a buffer that already exists.
+ *
+ * A show's palettes are baked once at load, so allocating there costs nothing. A palette that
+ * drifts is rebuilt while the room is running, and that one belongs on the frame path's terms.
+ */
+export function writePalette(out: Palette, p: ShowPalette): Palette {
 	const sat = clamp(p.sat ?? 0.94, 0, 1);
 	const shade = clamp(p.shade ?? 0.08, 0, 0.4);
 	const whiteS = clamp(p.white ?? 0.06, 0, 0.5);
@@ -21,17 +48,14 @@ export function makePalette(p: ShowPalette): Palette {
 	const accent = frac(p.accent / 360);
 	const third = frac((p.third ?? p.accent) / 360);
 
-	const keys: Key[] = [
-		{ u: SLOT.deep, h: base, s: sat, v: shade },
-		{ u: SLOT.base, h: base, s: sat, v: 1 },
-		{ u: SLOT.glow, h: base, s: sat * 0.72, v: 1 },
-		{ u: SLOT.white, h: base, s: whiteS, v: 1 },
-		{ u: SLOT.third, h: third, s: sat, v: 0.95 },
-		{ u: SLOT.accent, h: accent, s: sat, v: 1 },
-		{ u: SLOT.accentDeep, h: accent, s: sat, v: shade * 1.6 }
-	];
-
-	const out = new Float32Array(PALETTE_ANCHORS * 3);
+	const keys = KEYS;
+	set(keys[0], base, sat, shade);
+	set(keys[1], base, sat, 1);
+	set(keys[2], base, sat * 0.72, 1);
+	set(keys[3], base, whiteS, 1);
+	set(keys[4], third, sat, 0.95);
+	set(keys[5], accent, sat, 1);
+	set(keys[6], accent, sat, shade * 1.6);
 
 	for (let i = 0; i < PALETTE_ANCHORS; i++) {
 		const u = i / PALETTE_ANCHORS;
@@ -64,6 +88,17 @@ export function makePalette(p: ShowPalette): Palette {
 	}
 
 	return out;
+}
+
+/** Degrees, folded into 0..360. */
+export function wrapHue(h: number): number {
+	return ((h % 360) + 360) % 360;
+}
+
+/** Shortest way round the wheel, so a midpoint stays saturated instead of passing through grey. */
+export function lerpHue(from: number, to: number, u: number): number {
+	const d = ((((to - from) % 360) + 540) % 360) - 180;
+	return wrapHue(from + d * u);
 }
 
 /** Swap base and accent. The one colour event a disciplined show usually gets. */

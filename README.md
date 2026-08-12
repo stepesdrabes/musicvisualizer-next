@@ -105,7 +105,7 @@ packages/transport-ddp  DDP over UDP              -> core
 packages/author-ai    Agent SDK, tools, backends  -> core, analysis, author-engine
 packages/author-engine  deterministic show generation + the linter  -> core
 packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
-packages/core         contracts, geometry, colour, DSL, 73 effects, mixer, player
+packages/core         contracts, geometry, colour, DSL, 78 effects, mixer, player, director
 ```
 
 The layering is enforced by separate `package.json` files rather than by convention: `core`
@@ -312,8 +312,10 @@ Everything else is greyscale, because the LEDs have to be the only saturated thi
   track downloads and analyses, and a mark on the ones Claude has designed rather than the
   engine. Any row will start a radio off itself, and the dial in the header hands the whole
   queue to one.
-- **Stage** is the 3D room, with view presets. Nothing else floats over it: the diffuser and
-  bloom are fixed at the settings the room is meant to be judged at.
+- **Stage** is the 3D room, with view presets on one side and the lounge pill on the other, which
+  names the look on the walls while the room is resting and lights when it actually has handed over
+  rather than when the switch was thrown. The diffuser and bloom are fixed at the settings the room
+  is meant to be judged at.
 - **Player bar** is Spotify-shaped: art, title, prev/play/next, and a scrubber. The scrubber is
   the timeline: sections are drawn as coloured segments and what has not played yet is veiled
   rather than covered, so the arrangement stays readable ahead of the playhead. Hits are ticks
@@ -330,7 +332,51 @@ Everything else is greyscale, because the LEDs have to be the only saturated thi
   how the stream is actually arriving, and the lead trim. See `FIRMWARE.md`.
 
 Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s. Cmd-K opens the palette,
-`[` and `]` collapse the two rails.
+`[` and `]` collapse the two rails, `L` switches to lounge.
+
+## The room when nothing is playing
+
+A room that holds its last cue after the music stops is a room that has failed rather than one that
+is resting, and an empty queue used to leave it dark altogether. So there is a second thing that can
+light it, and one dissolve between the two.
+
+Stop the music and the show is held still - the clock stops but `dt` keeps arriving, so without that
+every phase accumulator carries on and the room lurches while its music sits still - and after two
+and a half seconds, which is longer than any gap between two tracks, it dissolves over five into a
+scene. Press play and the show is back in one and a half, because by then the music is already
+sounding. **Lounge** is the same scenes over a track that is playing: they read the spectrum, they
+change on section boundaries rather than on a timer, and a chorus blooms brighter than a verse
+without ever reaching what a drop is allowed. The authored show is still there and switching back
+costs a second and a half.
+
+A scene is a bed and one texture, which is the shape of a quiet cue and for the same reason. Most of
+them pair effects the catalog already had - the calm half of it has never had anything to ask for it
+outside an intro - and five were written for this: a hearth, caustics off water and the single slow
+ripple that crosses it, a dusk laid across the room rather than up it because every LED in this
+fixture is at the same height, and lamps that wander the walls and settle.
+
+Colour follows the record by default: its own palette, eased onto over fourteen seconds, held
+through the gap to the next one so a room does not report a fetch by swinging colour and back. That
+is the default rather than a fixed hue because the rest of this program exists to light the record
+that is playing, and it costs nothing to prefer - a track with no show yet falls back to the cover's
+hue, and one with neither falls back to the colour you picked. The other two are that picked hue,
+and a drift slow enough that you only notice it having happened.
+
+A hue picked on a wheel is in textbook degrees and the room runs on FastLED's ramp, so it goes
+through `rampHueFor` before it can be a palette hue; a show's palette is already in ramp degrees and
+must not. The slider's own track is drawn in the colours the strips will actually make rather than
+in what CSS thinks a hue is.
+
+Two things about the handover are not obvious. It needs a second mixer, because there is one buffer
+per layer role and installing an effect zeroes it, so a show and a scene cannot share a stack. And
+the two are mixed in light rather than in the authoring domain: that domain is gamma-encoded, so
+halving both looks halfway across leaves a fifth of the light, and measured across a handover between
+two looks that light different walls the room dropped to 60% of its own brightness in the middle of a
+dissolve meant to be invisible.
+
+It runs server-side too. The hardware follows a sync from the browser, and a sync that stops arriving
+for three seconds is a tab that has closed - so the room rests then as well, rather than freezing on
+whatever was on the walls when somebody shut the laptop.
 
 ## The desktop app
 
@@ -391,7 +437,7 @@ wins over the stored one.
 
 ```sh
 npm run dev            # the app
-npm test               # 503 tests
+npm test               # 617 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 

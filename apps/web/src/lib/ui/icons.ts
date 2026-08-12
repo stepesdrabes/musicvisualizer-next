@@ -11,6 +11,7 @@ import ChevronDown from 'lucide-svelte/icons/chevron-down';
 import ChevronLeft from 'lucide-svelte/icons/chevron-left';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
 import ChevronUp from 'lucide-svelte/icons/chevron-up';
+import Lamp from 'lucide-svelte/icons/lamp';
 import Link from 'lucide-svelte/icons/link';
 import ListMusic from 'lucide-svelte/icons/list-music';
 import ListPlus from 'lucide-svelte/icons/list-plus';
@@ -24,6 +25,7 @@ import QrCode from 'lucide-svelte/icons/qr-code';
 import Radio from 'lucide-svelte/icons/radio';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
 import Search from 'lucide-svelte/icons/search';
+import Shuffle from 'lucide-svelte/icons/shuffle';
 import SkipBack from 'lucide-svelte/icons/skip-back';
 import SkipForward from 'lucide-svelte/icons/skip-forward';
 import Sparkles from 'lucide-svelte/icons/sparkles';
@@ -43,6 +45,7 @@ export const GLYPHS = {
 	chevronLeft: ChevronLeft,
 	chevronRight: ChevronRight,
 	chevronUp: ChevronUp,
+	lounge: Lamp,
 	link: Link,
 	listMusic: ListMusic,
 	music: Music,
@@ -56,6 +59,7 @@ export const GLYPHS = {
 	radio: Radio,
 	retry: RotateCcw,
 	search: Search,
+	shuffle: Shuffle,
 	skipBack: SkipBack,
 	skipForward: SkipForward,
 	sparkles: Sparkles,

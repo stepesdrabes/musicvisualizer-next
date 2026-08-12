@@ -12,6 +12,15 @@ export interface Candidate {
 	thumbnail: string;
 	duration: number;
 	authored: Authored;
+	/** Already analysed in the cache, so picking it costs no download. */
+	cached: boolean;
+	/** The lighting family, once something has listened to it. */
+	genre: string | null;
+}
+
+/** Cached tracks by id, so a search result can say whether it is one without a second request. */
+export function indexLibrary(entries: LibraryEntry[]): Map<string, LibraryEntry> {
+	return new Map(entries.map((e) => [e.id, e]));
 }
 
 const URL_LIKE = /^(https?:\/\/|\/|~\/|[A-Za-z]:\\)/;
@@ -46,7 +55,9 @@ export function asDirectLink(query: string): Candidate | null {
 		album: null,
 		thumbnail: id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : '',
 		duration: 0,
-		authored: 'none'
+		authored: 'none',
+		cached: false,
+		genre: null
 	};
 }
 
@@ -62,16 +73,32 @@ export function libraryToCandidate(entry: LibraryEntry): Candidate {
 		album: null,
 		thumbnail: entry.thumbnail,
 		duration: entry.duration ?? 0,
-		authored: entry.authored
+		authored: entry.authored,
+		cached: entry.analysed,
+		genre: entry.genreFamily
 	};
 }
 
 /** The same row, offered because of what is queued rather than because it was searched for. */
-export function suggestionToCandidate(result: SearchResult): Candidate {
-	return { ...resultToCandidate(result), origin: 'radio' };
+export function suggestionToCandidate(
+	result: SearchResult,
+	known?: Map<string, LibraryEntry>
+): Candidate {
+	return { ...resultToCandidate(result, known), origin: 'radio' };
 }
 
-export function resultToCandidate(result: SearchResult): Candidate {
+/**
+ * A search hit, told whether it is already in the cache.
+ *
+ * The catalogue does not know what this machine has played, and a track that is already
+ * downloaded and analysed is a different proposition from one that costs a minute of work, so
+ * the row has to say which it is.
+ */
+export function resultToCandidate(
+	result: SearchResult,
+	known?: Map<string, LibraryEntry>
+): Candidate {
+	const hit = known?.get(result.id);
 	return {
 		origin: 'song',
 		id: result.id,
@@ -81,7 +108,9 @@ export function resultToCandidate(result: SearchResult): Candidate {
 		album: result.album,
 		thumbnail: result.thumbnail,
 		duration: result.duration,
-		authored: 'none'
+		authored: hit?.authored ?? 'none',
+		cached: hit?.analysed ?? false,
+		genre: hit?.genreFamily ?? null
 	};
 }
 

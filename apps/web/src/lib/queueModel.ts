@@ -36,6 +36,8 @@ export interface QueueItem {
 	/** Why it failed, or which stage it is in. Empty when there is nothing to say. */
 	message: string;
 	authored: Authored;
+	/** The lighting family, once the track has been enriched. Absent until then. */
+	genre?: string;
 	/** Reserved for guests adding from their own device. Absent means the host added it. */
 	addedBy?: string;
 	/** Set only by the radio topping the queue up, so a row nobody chose can say so. */
@@ -61,6 +63,7 @@ export interface NewItem {
 	thumbnail?: string;
 	duration?: number;
 	authored?: Authored;
+	genre?: string;
 	addedBy?: string;
 	auto?: true;
 }
@@ -165,6 +168,7 @@ function makeItem(input: NewItem, key: string, now: number): QueueItem {
 		status: input.trackId && input.authored && input.authored !== 'none' ? 'ready' : 'pending',
 		message: '',
 		authored: input.authored ?? 'none',
+		genre: input.genre,
 		addedBy: input.addedBy,
 		auto: input.auto,
 		addedAt: now

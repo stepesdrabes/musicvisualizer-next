@@ -154,6 +154,11 @@ export const OFFSET_MAX_MS = 250;
 
 export interface HardwareStatus {
 	host: string;
+	/**
+	 * Which part of the room this board is fed, as a `RoomRegion` id. `all` is the whole
+	 * fixture, which is the only sensible default and the only one that was possible before.
+	 */
+	region: string;
 	state: LinkState;
 	streaming: boolean;
 	identity: DeviceIdentity | null;

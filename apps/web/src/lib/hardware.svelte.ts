@@ -2,6 +2,7 @@ import type { HardwareStatus } from './hardware.ts';
 
 const IDLE: HardwareStatus = {
 	host: '',
+	region: 'all',
 	state: 'unconfigured',
 	streaming: false,
 	identity: null,
@@ -48,6 +49,11 @@ export class HardwareClient {
 
 	probe(host?: string): Promise<Response> {
 		return this.post({ action: 'probe', host });
+	}
+
+	/** Which part of the room the board is fed. Read by output the next time it starts. */
+	setRegion(region: string): Promise<Response> {
+		return this.post({ action: 'set', host: this.status.host, region });
 	}
 }
 

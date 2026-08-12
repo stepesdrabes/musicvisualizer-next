@@ -142,50 +142,6 @@ export class BrightnessSlew {
 	}
 }
 
-/**
- * WCAG 2.3.1 general-flash limiter over a 1 s sliding window.
- *
- * 3 Hz rather than the 4 Hz allowed for live venues, and the ceiling eases down fast /
- * up slow so a burst is cut short rather than chopped mid-flash.
- */
-export class FlashLimiter {
-	reduceMotion = false;
-	private ceiling = 1;
-	private times: number[] = [];
-	private wasBright = false;
-
-	get headroom(): number {
-		return this.ceiling;
-	}
-
-	apply(buf: Float32Array, t: number, dt: number): void {
-		let sum = 0;
-		for (let i = 0; i < buf.length; i += 3) {
-			sum += Math.max(buf[i], buf[i + 1], buf[i + 2]);
-		}
-		const mean = sum / (buf.length / 3);
-		const bright = mean > 0.5;
-
-		if (bright && !this.wasBright) this.times.push(t);
-		this.wasBright = bright;
-
-		while (this.times.length > 0 && t - this.times[0] > 1) this.times.shift();
-
-		const limit = this.reduceMotion ? 1.5 : 3;
-		const wanted = this.times.length > limit ? clamp(limit / this.times.length, 0.25, 1) : 1;
-		const tau = wanted < this.ceiling ? 0.05 : 0.6;
-		this.ceiling += (wanted - this.ceiling) * alphaFor(dt, tau);
-
-		if (this.ceiling < 0.999) for (let i = 0; i < buf.length; i++) buf[i] *= this.ceiling;
-	}
-
-	reset(): void {
-		this.ceiling = 1;
-		this.times.length = 0;
-		this.wasBright = false;
-	}
-}
-
 // 8-entry bit-reversal sequence, static across frames. Temporal dither reads as sparkle
 // in peripheral vision, which is worse than the banding it fixes.
 // In code units, not fractions of full scale, and added after the scale to 0..255. Folding

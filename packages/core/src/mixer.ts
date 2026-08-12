@@ -14,7 +14,6 @@ import { SLOT } from './contracts/palette.ts';
 import { makePalette, sample } from './color/palette.ts';
 import {
 	BrightnessSlew,
-	FlashLimiter,
 	MeanLevel,
 	blend,
 	compressHighlights,
@@ -31,7 +30,7 @@ const DEFAULT_BLEND: Record<LayerRole, BlendMode> = {
 
 // Opacity budget per role. Without it the four additive layers reliably sum past white
 // and the palette stops being readable at exactly the loudest moment.
-const DEFAULT_OPACITY: Record<LayerRole, number> = {
+export const DEFAULT_OPACITY: Record<LayerRole, number> = {
 	bed: 0.45,
 	rhythm: 0.8,
 	transient: 0.95,
@@ -49,15 +48,40 @@ export class Layer {
 	readonly buf: Float32Array;
 	readonly role: LayerRole;
 
+	/**
+	 * The effect being faded out, and what it was rendering with.
+	 *
+	 * A cue change is a hard cut and always has been: the desk fades the palette and the level, the
+	 * look itself arrives on the downbeat. That is right for a show and wrong for a room at rest,
+	 * where nothing is arriving and a cut is the only thing anyone would notice. So the outgoing
+	 * effect is kept alive for `fade` seconds when a caller asks for one, and both are rendered and
+	 * lerped. `setEffect` with no fade is the old behaviour exactly, down to the byte.
+	 */
+	private prevEffect: Effect | null = null;
+	private prevParams: Params = {};
+	private readonly prevBuf: Float32Array;
+	private fade = 0;
+	private fadeLength = 0;
+
 	constructor(role: LayerRole, count: number) {
 		this.role = role;
 		this.buf = new Float32Array(count * 3);
+		this.prevBuf = new Float32Array(count * 3);
 		this.opacity = DEFAULT_OPACITY[role];
 		this.blendMode = DEFAULT_BLEND[role];
 	}
 
-	setEffect(def: EffectDef | null, g: Geometry): void {
+	setEffect(def: EffectDef | null, g: Geometry, fadeSeconds = 0): void {
 		if (def === this.def) return;
+		if (fadeSeconds > 0 && this.effect) {
+			this.prevEffect = this.effect;
+			this.prevParams = this.params;
+			this.prevBuf.set(this.buf);
+			this.fade = fadeSeconds;
+			this.fadeLength = fadeSeconds;
+		} else {
+			this.dropOutgoing();
+		}
 		this.def = def;
 		this.effect = def ? def.create(g) : null;
 		this.buf.fill(0);
@@ -65,9 +89,63 @@ export class Layer {
 		if (def) for (const p of def.params) this.params[p.key] = p.default;
 	}
 
+	/**
+	 * Render, and hand back whichever buffer holds the result.
+	 *
+	 * With nothing handing over that is the effect's own buffer, untouched, which is what keeps the
+	 * no-fade path byte-identical. Mid-handover it is `scratch`, because the two effects have to be
+	 * mixed before the blend mode rather than after it: only `add` distributes over a crossfade, and
+	 * a bed blends `over`.
+	 *
+	 * The mix is in light rather than in the authoring domain, which is not linear in it: a plain
+	 * lerp halves both effects at the midpoint, and half an authoring value is a fifth of the light,
+	 * so two looks that light different walls hand over through a visible dip. Squaring, mixing and
+	 * taking the root back preserves the light where they are disjoint and changes nothing where
+	 * they agree.
+	 *
+	 * The outgoing effect keeps its own buffer, so a trail on its way out decays against its own
+	 * history rather than against its replacement's.
+	 */
+	render(ctx: RenderCtx, scratch: Float32Array): Float32Array {
+		ctx.p = this.params;
+		this.effect?.render(this.buf, ctx);
+		if (this.fade <= 0) return this.buf;
+
+		this.fade = Math.max(0, this.fade - ctx.f.dt);
+		const out = this.fadeLength > 0 ? this.fade / this.fadeLength : 0;
+		if (out <= 0) {
+			this.dropOutgoing();
+			return this.buf;
+		}
+
+		ctx.p = this.prevParams;
+		this.prevEffect?.render(this.prevBuf, ctx);
+		const incoming = 1 - out;
+		for (let i = 0; i < scratch.length; i++) {
+			const a = this.buf[i];
+			const b = this.prevBuf[i];
+			scratch[i] = Math.sqrt(incoming * a * a + out * b * b);
+		}
+		return scratch;
+	}
+
+	/** Whether this contributes anything: an outgoing effect counts even with nothing incoming. */
+	get busy(): boolean {
+		return this.effect !== null || this.prevEffect !== null;
+	}
+
 	reset(): void {
 		this.effect?.reset();
 		this.buf.fill(0);
+		this.dropOutgoing();
+	}
+
+	private dropOutgoing(): void {
+		this.prevEffect = null;
+		this.prevParams = {};
+		this.prevBuf.fill(0);
+		this.fade = 0;
+		this.fadeLength = 0;
 	}
 }
 
@@ -98,10 +176,10 @@ export class Mixer {
 	 */
 	floor = 0;
 
-	readonly flashLimiter: FlashLimiter;
 	private readonly meanLevel = new MeanLevel();
 	private readonly slew: BrightnessSlew;
 	private readonly floorRgb: [number, number, number] = [0, 0, 0];
+	private readonly layerScratch: Float32Array;
 	private readonly ctx: RenderCtx;
 	readonly geometry: Geometry;
 
@@ -110,8 +188,8 @@ export class Mixer {
 		const n = geometry.count;
 		this.frame = new Float32Array(n * 3);
 		this.bytes = new Uint8Array(n * 3);
+		this.layerScratch = new Float32Array(n * 3);
 		this.slew = new BrightnessSlew(n * 3);
-		this.flashLimiter = new FlashLimiter();
 
 		this.layers = Object.fromEntries(
 			LAYER_ROLES.map((role) => [role, new Layer(role, n)])
@@ -127,11 +205,19 @@ export class Mixer {
 		};
 	}
 
-	get meanHeadroom(): number {
-		return this.flashLimiter.headroom;
+	render(f: ShowFrame): void {
+		this.compose(f);
+		this.finish(f);
 	}
 
-	render(f: ShowFrame): void {
+	/**
+	 * The layers, the cue's ceiling and the house floor, into `frame`.
+	 *
+	 * Split from `finish` so two of these can be crossfaded as one picture before the output chain
+	 * runs. Everything up to here is in the authoring domain, where light adds linearly and a
+	 * crossfade means what it says; everything after it is one-per-room and must happen once.
+	 */
+	compose(f: ShowFrame): void {
 		const ctx = this.ctx;
 		ctx.f = f;
 		ctx.hueShift = this.hueShift;
@@ -141,11 +227,10 @@ export class Mixer {
 
 		for (const role of LAYER_ROLES) {
 			const layer = this.layers[role];
-			if (!layer.enabled || !layer.effect) continue;
-			ctx.p = layer.params;
+			if (!layer.enabled || !layer.busy) continue;
 			ctx.palette = this.palette;
-			layer.effect.render(layer.buf, ctx);
-			blend(this.frame, layer.buf, layer.blendMode, layer.opacity);
+			const out = layer.render(ctx, this.layerScratch);
+			blend(this.frame, out, layer.blendMode, layer.opacity);
 		}
 
 		// Exposure headroom above 1.0 on purpose: the 3D preview tone-maps HDR values into
@@ -169,10 +254,20 @@ export class Mixer {
 				}
 			}
 		}
+	}
 
+	/**
+	 * Slew, auto-expose, compress and quantize `frame` into `bytes`.
+	 *
+	 * `alive` freezes auto-exposure. It defaults to the same question the mixer has always asked -
+	 * is anything playing loudly enough to be worth exposing for - and is a parameter so a caller
+	 * that knows better can say so. A room at rest is not a silent passage of a track: its level is
+	 * chosen rather than measured, and an exposure that pulls it back toward the target is undoing
+	 * that decision.
+	 */
+	finish(f: ShowFrame, alive = f.energy > 0.02): void {
 		this.slew.apply(this.frame, f.dt);
-		this.flashLimiter.apply(this.frame, f.t, f.dt);
-		this.meanLevel.apply(this.frame, f.dt, f.energy > 0.02);
+		this.meanLevel.apply(this.frame, f.dt, alive);
 		compressHighlights(this.frame);
 		quantize(this.frame, this.bytes);
 	}
@@ -183,6 +278,5 @@ export class Mixer {
 		this.bytes.fill(0);
 		this.meanLevel.reset();
 		this.slew.reset();
-		this.flashLimiter.reset();
 	}
 }

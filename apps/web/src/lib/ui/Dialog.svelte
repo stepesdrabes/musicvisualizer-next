@@ -5,11 +5,21 @@
 		open = false,
 		onclose,
 		labelledBy,
+		veil = 'full',
+		width,
 		children
 	}: {
 		open?: boolean;
 		onclose: () => void;
 		labelledBy?: string;
+		/**
+		 * How far the room behind is dimmed.
+		 *
+		 * `light` is for a dialog whose controls are about the room: a 60% scrim over the one thing
+		 * you are judging makes a colour decision impossible.
+		 */
+		veil?: 'full' | 'light';
+		width?: string;
 		children: Snippet;
 	} = $props();
 
@@ -54,13 +64,14 @@
 	inside the queue rail centres itself on the rail and is clipped by it.
 -->
 {#if open}
-	<div class="backdrop" onclick={onclose} role="presentation"></div>
+	<div class="backdrop" class:light={veil === 'light'} onclick={onclose} role="presentation"></div>
 	<div
 		class="panel"
 		bind:this={panel}
 		role="dialog"
 		aria-modal="true"
-		aria-labelledby={labelledBy}>
+		aria-labelledby={labelledBy}
+		style:width>
 		{@render children()}
 	</div>
 {/if}
@@ -73,6 +84,10 @@
 		backdrop-filter: blur(3px);
 		z-index: 60;
 		animation: fade 0.14s ease-out;
+	}
+	.backdrop.light {
+		background: #0505073d;
+		backdrop-filter: none;
 	}
 	.panel {
 		position: fixed;

@@ -137,12 +137,65 @@ None of this is DSP the board invented. It is arithmetic on the bytes the strips
 got, so a wrong colour or a pulse on the offbeat is a wrong colour or a pulse on the offbeat.
 
 **A frame lighting less than a tenth of the room reads as a level of exactly zero.** The 90th
-percentile needs 132 of 1320 pixels lit before it can report anything at all, so an effect
-lighting a narrow band or a sparse scatter falls off that cliff rather than reading as a dim
-room, and one hovering near a tenth of the room crosses it repeatedly. It is the reason a sparse
-effect can look darker on the lamp than it does on screen, and a source of blinking that is in
-the reduction rather than in the show. The fix, if it matters, is a higher percentile, and it
-costs the measured table above.
+percentile needs a tenth of the pixels it is given before it can report anything at all, so an
+effect lighting a narrow band or a sparse scatter falls off that cliff rather than reading as a
+dim room. That cliff scales with the feed: on the whole 1320 it takes 132 lit pixels, on a
+120-pixel corner it takes 12. The reduction reports those frames as lit with a level of zero
+rather than as dark, so the fixture can hold its floor through them instead of blinking at a
+threshold, and only a frame with no light anywhere is dark.
+
+## How the lamp answers
+
+Straight through, the numbers above make a mirror: the lamp shows the average of the same room
+the walls are showing, only blurrier. Two fixtures saying the same thing is one fixture and a
+redundancy. What a corner lamp can do that 1080 pixels in a line at 2.4 m cannot is volume, fill
+below the perimeter, and a clean warm white, so its job is room tone rather than accent, and the
+response is shaped for that.
+
+**The level is two envelopes, not one.** A passage component over about two seconds carries
+which section the track is in, and a beat component with an instant rise and a 100 ms fall
+carries which beat. `BEAT_DEPTH` decides how much of the range above the floor the second one
+owns. A fixture asked to be both is good at neither: split them and the hit reads as a shimmer
+over a steady wash instead of the whole lamp blinking.
+
+**What that is worth depends on the feed, far more than on the constant.** A percentile over the
+whole 1320 barely moves per beat, because one kick lights a small share of a big room, so the
+beat is worth about 4 points of output no matter what `BEAT_DEPTH` is set to and the lamp is a
+section light. Fed one corner instead, the same beat swamps the local percentile and is worth
+about 20. **Pointing the board at a corner is what makes it responsive; the constants only
+decide how much of that survives.**
+
+That is a host-side setting, not a rebuild: the board summarises whatever it is sent, and the
+board panel has a **Shows** row listing the parts of the room. `Whole room` is every pixel, each
+wall and the beam are themselves, and each corner is a metre either way around the junction, 120
+pixels at 60 LED/m. It takes effect the next time output starts, the same as the address does,
+because re-pointing a running stream would step the room mid-track.
+
+One of the four corners straddles the seam where the last wall meets the first, so it is two runs
+of the frame and one place in the room. That reaches the board as two DDP targets, and only the
+last packet to a device carries PUSH: a board seeing PUSH twice in a frame would present once
+with half the frame written and tear.
+
+**It has a floor.** The one thing that makes a light distracting is going fully dark and coming
+back: a fixture breathing between an eighth and full reads as alive, and the same fixture between
+nothing and full reads as a fault. It matters more here than on the walls, because a corner
+fixture sits in peripheral vision whenever the room is what is being looked at, and the periphery
+is markedly more flicker-sensitive than the fovea. It costs range - against the measured table a
+room running 0.28 at an intro and 0.90 at a drop arrives as 37% and 91%, so 3.2:1 becomes 2.5:1 -
+and that cost is why it is not higher. A genuinely black frame still goes black, so a blackout in
+the show is still a blackout in the room.
+
+None of that is the auto-exposure the section above refuses to do. The floor measures nothing and
+divides by nothing; it is a constant of the fixture in the same way `MAX_DUTY` is, and the mirror
+image of it.
+
+**Colour moves over about half a second**, in both directions and far slower than either level
+envelope, because position may carry colour freely and time may not. One trap is built into that:
+a dark frame carries no hue, and letting its zeroed ratios into the filter would drag colour
+toward black and make it climb back the moment light returned, which is a desaturation flash on
+every gap in the show. So colour is held through a blackout, and snapped rather than eased on the
+way out of one, since there is nothing to be smooth against across a gap and easing would spend
+half a second on the wrong hue.
 
 ## The lamp
 

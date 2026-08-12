@@ -1,9 +1,12 @@
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CACHE_DIR } from '@mv/analysis';
+import { DEFAULT_AMBIENT, type AmbientSettings, type ColourSource } from '@mv/core';
 import { CLAUDE, deepseek, type AuthorProvider, type BackendId } from '@mv/author-ai';
 
 const SETTINGS_FILE = join(CACHE_DIR, 'settings.json');
+
+type Listener = (settings: PublicSettings) => void;
 
 interface SettingsFile {
 	/**
@@ -32,6 +35,20 @@ interface SettingsFile {
 	 * boundary as the hardware.
 	 */
 	autopilot?: boolean;
+	/** Calm scenes instead of the authored show, while a track is playing. */
+	lounge?: boolean;
+	/** Whether the room drifts into ambient when nothing is playing, rather than freezing. */
+	rest?: boolean;
+	/** Where the resting room's colour comes from. */
+	ambientColour?: ColourSource;
+	/** Textbook HSV degrees, 0-359, as picked on the wheel. */
+	ambientHue?: number;
+	ambientSat?: number;
+	ambientBrightness?: number;
+	/** Degrees a minute, in `drift`. */
+	ambientDrift?: number;
+	/** Seconds a scene holds when nothing is playing. */
+	ambientDwell?: number;
 }
 
 export interface PublicSettings {
@@ -40,10 +57,14 @@ export interface PublicSettings {
 	authorBackend: BackendId;
 	outputOffsetMs: number;
 	autopilot: boolean;
+	lounge: boolean;
+	rest: boolean;
+	ambient: AmbientSettings;
 }
 
 class Settings {
 	private cached: SettingsFile | null = null;
+	private readonly listeners = new Set<Listener>();
 
 	private async load(): Promise<SettingsFile> {
 		if (this.cached) return this.cached;
@@ -61,13 +82,35 @@ class Settings {
 			hasDeepseekKey: typeof file.deepseekApiKey === 'string' && file.deepseekApiKey.length > 0,
 			authorBackend: file.authorBackend ?? 'claude',
 			outputOffsetMs: file.outputOffsetMs ?? 0,
-			autopilot: file.autopilot ?? false
+			autopilot: file.autopilot ?? false,
+			lounge: file.lounge ?? false,
+			// On by default. A room that holds its last cue forever after the music stops is the
+			// behaviour this replaced, not a preference anyone would choose from scratch.
+			rest: file.rest ?? true,
+			ambient: {
+				source: file.ambientColour ?? DEFAULT_AMBIENT.source,
+				hue: file.ambientHue ?? DEFAULT_AMBIENT.hue,
+				sat: file.ambientSat ?? DEFAULT_AMBIENT.sat,
+				drift: file.ambientDrift ?? DEFAULT_AMBIENT.drift,
+				brightness: file.ambientBrightness ?? DEFAULT_AMBIENT.brightness,
+				dwell: file.ambientDwell ?? DEFAULT_AMBIENT.dwell
+			}
 		};
 	}
 
 	/** Read on the hot path, where the caller only wants the one answer. */
 	async autopilotOn(): Promise<boolean> {
 		return (await this.load()).autopilot ?? false;
+	}
+
+	/**
+	 * Told when anything changes, so the server's own renderer follows a switch without a browser
+	 * having to relay it. The hardware keeps running with no tab open, and so must the decision
+	 * about what it is running.
+	 */
+	subscribe(listener: Listener): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
 	}
 
 	async update(patch: Partial<SettingsFile>): Promise<PublicSettings> {
@@ -81,7 +124,10 @@ class Settings {
 		const tmp = `${SETTINGS_FILE}.${process.pid}.tmp`;
 		await writeFile(tmp, JSON.stringify(next, null, '\t'), { mode: 0o600 });
 		await rename(tmp, SETTINGS_FILE);
-		return this.read();
+
+		const published = await this.read();
+		for (const listener of this.listeners) listener(published);
+		return published;
 	}
 
 	/**

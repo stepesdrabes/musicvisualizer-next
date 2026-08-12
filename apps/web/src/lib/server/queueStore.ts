@@ -1,7 +1,7 @@
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { CACHE_DIR } from '@mv/analysis';
+import { CACHE_DIR, readLibrary } from '@mv/analysis';
 import {
 	EMPTY_QUEUE,
 	addItems,
@@ -48,12 +48,21 @@ class QueueStore {
 		try {
 			const raw = JSON.parse(await readFile(QUEUE_FILE, 'utf8')) as QueueState;
 			if (!Array.isArray(raw.items)) throw new Error('not a queue');
-			// Anything that was mid-flight when the process died is not mid-flight now.
-			const items = raw.items.map((i) =>
-				i.status === 'ready' || i.status === 'error'
-					? i
-					: { ...i, status: 'pending' as const, message: '' }
+			// A row written before the genre was carried has one in the cache already, and a set
+			// list where only the newest rows say what they are reads as a bug rather than as a
+			// field that arrived late.
+			const genres = new Map(
+				(await readLibrary()).map((e) => [e.id, e.genreFamily ?? undefined])
 			);
+			const items = raw.items.map((i) => {
+				const genre = i.genre ?? (i.trackId ? genres.get(i.trackId) : undefined);
+				// Anything that was mid-flight when the process died is not mid-flight now.
+				const revived =
+					i.status === 'ready' || i.status === 'error'
+						? i
+						: { ...i, status: 'pending' as const, message: '' };
+				return genre === revived.genre ? revived : { ...revived, genre };
+			});
 			this.state = { items, currentKey: raw.currentKey ?? null, revision: raw.revision ?? 0 };
 		} catch {
 			// No queue yet, or one this version cannot read. An empty queue is a fine start.

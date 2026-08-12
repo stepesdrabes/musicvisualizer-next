@@ -82,5 +82,36 @@ it('addresses each target into its own device buffer', async () => {
 	expect(received.length).toBe(2);
 	expect(received.map((p) => p.readUInt32BE(4))).toEqual([0, 0]);
 	expect(received.map((p) => p.readUInt16BE(8))).toEqual([900, 720]);
-	expect(received.every((p) => (p[0] & 0x01) === 1)).toBe(true);
+});
+
+/**
+ * A region that wraps the perimeter is two runs of the frame and one place in the room, so it
+ * reaches one board as two targets. That board must still present once.
+ */
+it('pushes once per device, however many targets it is cut into', async () => {
+	const sink = createDdpSink({
+		targets: [
+			{ host: '127.0.0.1', port, firstLed: 1020, ledCount: 60, deviceFirstLed: 0 },
+			{ host: '127.0.0.1', port, firstLed: 0, ledCount: 60, deviceFirstLed: 60 }
+		]
+	});
+	await sink.open();
+
+	received.length = 0;
+	const rgb = frame();
+	sink.send({ rgb, dt: 1 / 60, frameId: 2, presentAtMs: 0 });
+	await new Promise((r) => setTimeout(r, 120));
+	await sink.close();
+
+	expect(received.length).toBe(2);
+	expect(received.map((p) => (p[0] & 0x01) === 1)).toEqual([false, true]);
+
+	// Both halves land where the device expects them, back to back, in ring order.
+	expect(received.map((p) => p.readUInt32BE(4))).toEqual([0, 180]);
+	const payload = Buffer.concat(received.map((p) => p.subarray(10)));
+	const expected = Buffer.concat([
+		Buffer.from(rgb.subarray(1020 * 3, 1080 * 3)),
+		Buffer.from(rgb.subarray(0, 60 * 3))
+	]);
+	expect(payload.equals(expected)).toBe(true);
 });

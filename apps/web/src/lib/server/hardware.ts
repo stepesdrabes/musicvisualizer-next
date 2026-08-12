@@ -30,6 +30,7 @@ type Listener = (status: HardwareStatus) => void;
  */
 class Hardware {
 	private host = '';
+	private regionId = 'all';
 	private streaming = false;
 	private identity: DeviceIdentity | null = null;
 	private telemetry: DeviceTelemetry | null = null;
@@ -42,9 +43,14 @@ class Hardware {
 	private probing = false;
 	private watchers = 0;
 
+	get region(): string {
+		return this.regionId;
+	}
+
 	get status(): HardwareStatus {
 		return {
 			host: this.host,
+			region: this.regionId,
 			state: this.state,
 			streaming: this.streaming,
 			identity: this.identity,
@@ -92,6 +98,17 @@ class Hardware {
 		this.message = '';
 		this.publish();
 		if (next) void this.probe();
+	}
+
+	/**
+	 * Point at a part of the room. Takes effect the next time output starts, the same as the
+	 * address does: re-pointing a running stream mid-track would step the room, and the show is
+	 * the thing being judged.
+	 */
+	setRegion(id: string): void {
+		if (id === this.regionId) return;
+		this.regionId = id;
+		this.publish();
 	}
 
 	setStreaming(on: boolean): void {
