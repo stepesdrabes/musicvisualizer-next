@@ -91,14 +91,34 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	const flashes = allowedFlashes(analysis, opts.context);
 	// vocalGlow answers "the voice", which post-revert means the mid band: on a track with
 	// no singing that is a glow named after something absent. The vocal column is nonzero
-	// only where synced lyrics put words, which makes it the honest gate.
-	const sung = analysis.bars.some((b) => (b.vocal ?? 0) > 0.05);
+	// only where synced lyrics put words - but LRCLIB has no sync coverage for much of the
+	// owner's corpus (Czech rap most of all), so an empty column means "unknown", not
+	// "instrumental". Only an explicit instrumental flag forbids the glow; unknown allows
+	// it, because most of what a music player plays is sung and the mid band is an honest
+	// approximation of a voice that is really there.
+	const lyricsKnown = (opts.context?.lyrics?.length ?? 0) > 0;
+	const sung = lyricsKnown
+		? analysis.bars.some((b) => (b.vocal ?? 0) > 0.05)
+		: !opts.context?.instrumental;
 	const picker = new EffectPicker(
 		sung ? effects : effects.filter((e) => e.id !== 'vocalGlow'),
 		rng,
 		{ vetoCharacter: flashes === 0 }
 	);
 	const palette = choosePalette(analysis, rng, opts.artHue, profile);
+	// A signature is the family's vocabulary, not every sentence. Listed plainly, the
+	// preference put impulseSpin in 30 of 34 house shows and the owner's word for it was
+	// OVERUSED - and merit alone kept it at 80% with the preference gone, because a
+	// mid-energy kick-driven rhythm is near-eligible in every pool. So each show draws a
+	// seed-stable half of the list, and the UNDRAWN half is avoided at full weight for
+	// the night: a signature look is either this show's vocabulary or it rests, which is
+	// what makes the fiftieth listen contain shows that never reach for it at all. The
+	// family's own avoid list is not sampled - a foreign gesture is foreign every night.
+	const signatures = profile.signatures.filter(() => rng.float() < 0.5);
+	const avoid = [
+		...profile.avoid,
+		...profile.signatures.filter((s) => !signatures.includes(s))
+	];
 
 	const peakSpan = analysis.sections.find((s) => s.energyRank === 1) ?? null;
 
@@ -160,11 +180,13 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		// ended up lit by stage blinders.
 		const bare =
 			slot.section === 'intro' || slot.section === 'outro' || slot.section === 'breakdown';
-		// The peak section's floor has to hold the room too: its other layers are the
-		// spikiest things in the catalog, and a sub-driven bed under them measured 18% of
-		// the room lit on the biggest bars of the night.
-		const carrier = bare || slot.span === peakSpan;
-		add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: profile.signatures }));
+		// Every drop-class floor has to hold the room, not only the peak's: the other
+		// layers there are the spikiest things in the catalog - slams and kick rings with
+		// darkness between events - and a texture bed under them measured whole dark bars
+		// the first time the seed reshuffled that way. The peak-only version of this rule
+		// was the same lesson learned half-way.
+		const carrier = bare || slot.span === peakSpan || sectionBase(slot.section) === 'drop';
+		add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid }));
 		switch (sectionBase(slot.section)) {
 			case 'void':
 				break;
@@ -178,7 +200,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// This used to be unfiltered, because requiring it once left most of these cues
 				// with no accent at all: only a single accent in the catalog qualified. There are
 				// now enough that the rule can be what it should always have been.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: profile.signatures }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid }));
 				break;
 
 			case 'breakdown':
@@ -187,31 +209,31 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// actually produced was a passage lit by one slow bed and nothing else, half the
 				// time. Taking the drums out is what makes a breakdown; taking the light out makes
 				// it look broken.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: profile.signatures }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid }));
 				// The kit, where the passage still has one. A breakdown with a beat under it is
 				// common in this repertoire and the room should be answering it; a genuinely
 				// stripped one has no onsets to answer and gets nothing, which is the difference
 				// the coin toss was reaching for and could not see.
 				if (profile.transientEvery > 0 && kickDensity(analysis, slot) > 0.25) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				}
 				break;
 
 			case 'build':
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				// A build is the one place an accent belongs before the drop rather than in it, and
 				// without one the two effects written for exactly this moment were unreachable.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				break;
 
 			case 'groove':
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				// The drum layer runs at the genre's cadence, never in every cue. Firing a light
 				// at every hit is the documented failure of audio-to-light mapping: it reads as
 				// mechanical however well timed it is, and leaving it out is what makes it land
 				// on return. A ballad leaves it out entirely; punk and funk barely rest it.
 				if (profile.transientEvery > 0 && grooveIndex % profile.transientEvery === profile.transientEvery - 1) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				}
 				grooveIndex++;
 				break;
@@ -221,16 +243,16 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// chorus whose VISIBLE layers look nothing like the first says the room is not
 				// listening, and without the group the novelty penalty actively pushes the
 				// repeat away from what the first one used.
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, group: slot.index === 0 ? slot.span.group : undefined, prefer: profile.signatures }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid }));
 				if (profile.transientEvery > 0) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				}
 				// The first appearance of material that returns holds its accent back, so the
 				// return ADDS something: escalation by vocabulary rather than by brightness,
 				// which prompt.ts warns is the cliche. The peak section and material that never
 				// returns get the full stack from the start.
 				if (!(slot.dropIndex === 0 && !slot.finalOfGroup && slot.span !== peakSpan)) {
-					add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: profile.signatures }));
+					add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
 				}
 				break;
 		}
@@ -241,11 +263,16 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		}
 
 		const intensity = intensityFor(slot, spread, profile);
+		// The one palette move sanctioned beyond the swap: the analyser heard the last chorus
+		// lift a key, and the whole identity rotates a step with it - same three hues, all
+		// moved together, so it reads as the song going up rather than the show changing.
+		const lifted =
+			analysis.bars[slot.span.startBar]?.events.includes('key_change') ?? false;
 		cues.push({
 			bar: slot.bar,
 			section: slot.section,
 			layers,
-			palette: paletteFor(slot, palette, intensity),
+			palette: paletteFor(slot, palette, intensity, lifted),
 			intensity,
 			motion: motionFor(slot, profile),
 			fadeBeats: fadeFor(slot, profile),
@@ -256,7 +283,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	carryThePeak(cues, peakCue);
 	stripBuilds(cues);
 	shapeApproaches(cues, profile);
-	plantWildcard(cues, slots, picker);
+	plantWildcard(cues, slots, picker, analysis);
 	inheritWhereEmpty(cues);
 
 	return {
@@ -456,6 +483,10 @@ function fadeFor(slot: Slot, profile?: GenreProfile): number {
 	if (slot.index > 0) return 4;
 	if (slot.section === 'intro' || slot.section === 'outro') return 8;
 	if (slot.from === 'drop' || slot.from === 'chorus') return 2;
+	// A quiet section dissolving into anything short of a drop reads abrupt at two bars:
+	// both sides are near-still, the eye has nothing else to watch, and the change IS the
+	// event. Three bars makes it weather. Two listening notes, both at exactly this seam.
+	if (slot.from === 'intro' || slot.from === 'breakdown' || slot.from === 'outro') return 12;
 	return 8;
 }
 
@@ -467,11 +498,18 @@ function fadeFor(slot: Slot, profile?: GenreProfile): number {
  * from section to section stops being an identity, and the base/accent swap at a drop only
  * reads as an event because nothing else about the colour has moved all night.
  */
-function paletteFor(slot: Slot, show: ShowPalette, intensity = 0.7): CuePalette | undefined {
+function paletteFor(
+	slot: Slot,
+	show: ShowPalette,
+	intensity = 0.7,
+	lifted = false
+): CuePalette | undefined {
 	const sat = show.sat ?? 0.94;
 	const shade = show.shade ?? 0.14;
 	const { base, accent } = show;
 	const third = show.third ?? accent;
+	/** A key change moves every hue the same step, so the identity rises without breaking. */
+	const lift = (h: number) => (h + 18) % 360;
 	// The Hunt effect: perceived colorfulness falls with luminance, so a dim cue rendered at
 	// reduced saturation reads grey rather than hushed. The quiet sections therefore get MORE
 	// chroma as the intensity drops, never less - stage practice's saturated "night", not a
@@ -491,9 +529,19 @@ function paletteFor(slot: Slot, show: ShowPalette, intensity = 0.7): CuePalette 
 			// A chorus owns the song's signature colour: the base stays put all song and the
 			// room simply blooms in it - saturation up, whites up, no inversion. The FINAL
 			// chorus is the one allowed the drop's inversion, which is how it outranks every
-			// earlier one without being a byte brighter.
+			// earlier one without being a byte brighter - and when the track lifts a key into
+			// it, the swapped identity rotates a step upward with the song.
 			return slot.finalOfGroup
-				? 'swap'
+				? lifted
+					? {
+							base: lift(accent),
+							accent: lift(base),
+							third: lift(third),
+							sat: Math.min(1, sat * 1.08),
+							shade: shade * 0.8,
+							white: 0.16
+						}
+					: 'swap'
 				: { base, accent, third, sat: Math.min(1, sat * 1.06), shade: shade * 0.85, white: 0.14 };
 
 		case 'intro':
@@ -713,7 +761,7 @@ function shapeApproaches(cues: Cue[], profile: GenreProfile): void {
  * opacity-bounded, and planting it mid-passage keeps it away from every structural moment
  * the show is already spending real cards on.
  */
-function plantWildcard(cues: Cue[], slots: Slot[], picker: EffectPicker): void {
+function plantWildcard(cues: Cue[], slots: Slot[], picker: EffectPicker, analysis: TrackAnalysis): void {
 	const steady = slots.filter(
 		(s) => sectionBase(s.section) === 'groove' && s.of >= 3 && !s.peak && s.index > 0
 	);
@@ -725,12 +773,18 @@ function plantWildcard(cues: Cue[], slots: Slot[], picker: EffectPicker): void {
 		else if (s.span.lengthBars === host.span.lengthBars && s.index === Math.floor(s.of / 2)) host = s;
 	}
 
+	// The wildcard's freedom is from the SECTION vocabulary and nothing else. It still may
+	// not be a flash or a blow - a strobe as the one surprise in a rap verse reads as a
+	// fault, not a stranger - and it still may not answer a kit stream the passage does not
+	// have, which is the same honesty every ordinary pick obeys.
 	const def = picker.pick({
 		role: 'accent',
 		section: host.section,
 		lengthBars: host.endBar - host.bar,
 		energy: host.energy,
-		anySection: true
+		anySection: true,
+		noCharacter: true,
+		drums: drumDensity(analysis, host.bar, host.endBar)
 	});
 	if (!def) return;
 	const cue = cues.find((c) => c.bar === host.bar);
@@ -760,8 +814,24 @@ function planHits(
 	allowance: number,
 	peakTreatment: GenreProfile['peak'] = profile.peak
 ): Hit[] {
-	/** The peak slot may carry the aggression override; everything else is the genre's. */
-	const treatFor = (slot: Slot) => (slot.peak ? peakTreatment : profile.peak);
+	/**
+	 * The aggression override, per slot: a bloom-family drop that measurably pounds takes
+	 * slam treatment for its punctuation, exactly as the peak already did. The peak's
+	 * version fixed Galantis; a listening note then missed the strobe on the FIRST drop of
+	 * a house track whose every drop is four-on-the-floor - same evidence, same answer,
+	 * light the record that is playing. Swell families stay swells everywhere.
+	 */
+	const treatFor = (slot: Slot) => {
+		if (slot.peak) return peakTreatment;
+		if (
+			profile.peak === 'bloom' &&
+			sectionBase(slot.section) === 'drop' &&
+			kickDensity(analysis, slot) >= 0.8
+		) {
+			return 'slam';
+		}
+		return profile.peak;
+	};
 	const hits: Hit[] = [];
 	const { tempo } = analysis;
 	const beatsPerBar = tempo.beatsPerBar;
@@ -971,20 +1041,35 @@ function planHits(
 	// tagging them all along with nothing reading the tag. Outside a drop downbeat, which has a
 	// slam of its own, one is worth a bump: it is the one moment the room can answer something
 	// the track did rather than something the grid predicted.
+	//
+	// Budgeted, because crashes are tagged on ~6% of all bars and answering every clear one
+	// put eight bumps on a four-minute rap track: the one moment the room answers the track
+	// became the thing the room always does. The loudest few, spaced at least two phrases
+	// apart, scaled by how densely the genre already punctuates.
 	const dropStarts = new Set(
 		analysis.sections.filter((s) => sectionBase(s.kind) === 'drop').map((s) => s.startBar)
 	);
-	for (const row of analysis.bars) {
-		// A swell genre marks nothing with hits, crashes included: the family already said
-		// its arrivals rise rather than strike.
-		if (profile.peak === 'swell') break;
-		if (!row.events.includes('crash') || dropStarts.has(row.bar)) continue;
-		if (row.bar < SETTLE_BARS) continue;
-		// Last in, so the bigger cards are already placed: a crash landing under a slam or a
-		// blackout is answered by those, and planning a hit that can never fire is a lie about
-		// what the show does.
-		if (!clear(row.bar, row.bar + 1)) continue;
-		hits.push({ bar: row.bar, kind: 'bump', beats: bars(1), note: 'answering the crash' });
+	if (profile.peak !== 'swell' && profile.bumpEvery > 0) {
+		const crashCap = Math.max(1, 5 - profile.bumpEvery);
+		const candidates = analysis.bars
+			.filter(
+				(row) =>
+					row.events.includes('crash') && !dropStarts.has(row.bar) && row.bar >= SETTLE_BARS
+			)
+			.sort((a, b) => b.air - a.air || a.bar - b.bar);
+		let placed = 0;
+		const taken: number[] = [];
+		for (const row of candidates) {
+			if (placed >= crashCap) break;
+			// Last in, so the bigger cards are already placed: a crash landing under a slam or
+			// a blackout is answered by those, and planning a hit that can never fire is a lie
+			// about what the show does.
+			if (!clear(row.bar, row.bar + 1)) continue;
+			if (taken.some((b) => Math.abs(b - row.bar) < 2 * PHRASE_BARS)) continue;
+			hits.push({ bar: row.bar, kind: 'bump', beats: bars(1), note: 'answering the crash' });
+			taken.push(row.bar);
+			placed++;
+		}
 	}
 
 	return hits.sort((a, b) => a.bar - b.bar || a.kind.localeCompare(b.kind));

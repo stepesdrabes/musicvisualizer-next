@@ -33,6 +33,19 @@ export interface PickRequest {
 	/** Ignore the section filter: the once-per-track wildcard look reaches the whole catalog. */
 	anySection?: boolean;
 	/**
+	 * Refuse flash/impact-character effects for this pick alone, whatever the show's budget.
+	 *
+	 * The wildcard's freedom is FROM the section vocabulary, not from the gesture rules: a
+	 * strobe planted as the one surprise in a rap verse is how "surprise" reads as fault.
+	 */
+	noCharacter?: boolean;
+	/**
+	 * Effects that are not this family's vocabulary, dispreferred by a weight in the same
+	 * band as `prefer`. Never a filter: a pool of avoided effects still lights the room,
+	 * and the mismatch costs less than a dead layer would.
+	 */
+	avoid?: readonly string[];
+	/**
 	 * Hits per beat over the slot, per stream. With it, effects declaring `taste.kit` are
 	 * refused where their stream is silent: a kick effect in a kickless verse is either a
 	 * dead layer or a grid pulse lying about the arrangement. Absent skips the veto.
@@ -146,7 +159,7 @@ export class EffectPicker {
 
 		const fits = (e: EffectDef, kitAware: boolean): boolean => {
 			if (e.role !== req.role) return false;
-			if (this.vetoCharacter && e.taste.character) return false;
+			if ((this.vetoCharacter || req.noCharacter) && e.taste.character) return false;
 			if (req.mustCarry && e.taste.carries === false) return false;
 			if (kitAware && kitSilent(e, req.drums)) return false;
 			// Either vocabulary: an effect written for choruses says 'chorus'; the rest of the
@@ -197,7 +210,12 @@ export class EffectPicker {
 				// A tie-breaker, deliberately under one energy band and half a use of novelty.
 				// At 3 it was a mandate: within a family, every show reached for the same
 				// signatures and two-thirds of any two shows' vocabularies were identical.
-				(req.prefer?.includes(e.id) ? 1.1 : 0) +
+				(req.prefer?.includes(e.id) ? 1.1 : 0) -
+				// A foreign gesture costs one use of novelty: the same force that stops a repeat
+				// stops a mismatch. Above the 1.4 jitter, so it reliably loses ties - at 1.2 it
+				// did not, and moshSlam still opened rap choruses - and still no filter: an
+				// avoided effect stays reachable when the natives are spent or two bands wrong.
+				(req.avoid?.includes(e.id) ? 2.4 : 0) +
 				// Only where it is the whole show. In a groove or a drop there is a kit, a
 				// transient layer and a master doing the reacting, and a bed that fights them is
 				// noise rather than information.

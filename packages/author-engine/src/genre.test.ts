@@ -99,4 +99,54 @@ describe('genre-shaped shows', () => {
 			}
 		}
 	});
+
+	it('every avoided effect resolves, is never also a signature, and is never a master', () => {
+		// The same law as signatures: a stale id in an avoid row is a weight against nothing,
+		// invisible until someone renames an effect and the family quietly stops avoiding it.
+		const byId = new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
+		for (const family of ['techno', 'house', 'edm', 'trance', 'bass', 'pop', 'rock', 'metal', 'punk', 'hiphop', 'rnb', 'ballad', 'ambient', 'latin', 'disco'] as const) {
+			const profile = profileFor(contextFor(family));
+			for (const id of profile.avoid) {
+				const def = byId.get(id);
+				expect(def, `${family} avoids ${id}, which is not in the catalog`).toBeDefined();
+				expect(def!.role, `${family} avoids the master ${id}, which pick() never sees`).not.toBe('master');
+				expect(
+					profile.signatures.includes(id),
+					`${family} both prefers and avoids ${id}`
+				).toBe(false);
+			}
+		}
+	});
+
+	it('a signature seasons the family, it does not define every show', () => {
+		// The drift this guards: with the preference applied every show, impulseSpin sat in
+		// 30 of 34 house shows and the owner called it overused. The per-show sampling
+		// should leave a meaningful share of shows without any given signature, while the
+		// effect stays reachable. Deterministic seeds, so the band is stable.
+		let withSpin = 0;
+		const runs = 60;
+		for (let seed = 1; seed <= runs; seed++) {
+			const show = composeShow(fixture(), { seed: seed * 131, context: contextFor('house') });
+			const used = new Set(
+				show.cues.flatMap((c) => Object.values(c.layers).map((l) => l!.effect))
+			);
+			if (used.has('impulseSpin')) withSpin++;
+		}
+		expect(withSpin / runs).toBeLessThan(0.75);
+		expect(withSpin / runs).toBeGreaterThan(0.05);
+	});
+
+	it('the wildcard is never a flash or an impact', () => {
+		// Its freedom is from the section vocabulary, not from the gesture rules: a strobe as
+		// the one surprise in a rap verse reads as a fault. Seeds vary which effect wins, so
+		// assert over many.
+		const byId = new Map(BUILT_IN_EFFECTS.map((e) => [e.id, e]));
+		for (let seed = 1; seed <= 40; seed++) {
+			const show = composeShow(fixture(), { seed, context: contextFor('hiphop') });
+			const wild = show.cues.find((c) => c.note?.includes('one stranger'));
+			if (!wild?.layers.accent) continue;
+			const def = byId.get(wild.layers.accent.effect);
+			expect(def?.taste.character, `seed ${seed} planted ${def?.id}`).toBeUndefined();
+		}
+	});
 });
