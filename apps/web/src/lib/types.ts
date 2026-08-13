@@ -149,3 +149,24 @@ export type AuthorEvent =
 	| { type: 'brief'; brief: string }
 	| { type: 'analysis'; analysis: unknown; reason: string }
 	| { type: 'note'; text: string };
+
+/** Mirrors $lib/server/judge MomentNote. Duplicated so the client does not import the server. */
+export interface MomentNote {
+	t: number;
+	bar: number | null;
+	text: string;
+}
+
+/** Mirrors $lib/server/judge Judgement. */
+export interface Judgement {
+	trackId: string;
+	title: string;
+	rating: number | null;
+	tags: string[];
+	notes: MomentNote[];
+	comment: string;
+	analysisHash: string | null;
+	showSeed: number | null;
+	authoredBy: string | null;
+	updatedAt: number;
+}

@@ -24,8 +24,11 @@ import Plus from 'lucide-svelte/icons/plus';
 import QrCode from 'lucide-svelte/icons/qr-code';
 import Radio from 'lucide-svelte/icons/radio';
 import RotateCcw from 'lucide-svelte/icons/rotate-ccw';
+import Scale from 'lucide-svelte/icons/scale';
 import Search from 'lucide-svelte/icons/search';
 import Shuffle from 'lucide-svelte/icons/shuffle';
+import Star from 'lucide-svelte/icons/star';
+import MapPin from 'lucide-svelte/icons/map-pin';
 import SkipBack from 'lucide-svelte/icons/skip-back';
 import SkipForward from 'lucide-svelte/icons/skip-forward';
 import Sparkles from 'lucide-svelte/icons/sparkles';
@@ -58,8 +61,11 @@ export const GLYPHS = {
 	qr: QrCode,
 	radio: Radio,
 	retry: RotateCcw,
+	scale: Scale,
 	search: Search,
 	shuffle: Shuffle,
+	star: Star,
+	pin: MapPin,
 	skipBack: SkipBack,
 	skipForward: SkipForward,
 	sparkles: Sparkles,

@@ -12,6 +12,7 @@
 	import type {
 		AuthorEffort,
 		AuthorEvent,
+		Judgement,
 		LibraryEntry,
 		LoadState,
 		SearchResult,
@@ -23,6 +24,7 @@
 	import Backdrop from '$components/Backdrop.svelte';
 	import HardwareModal from '$components/HardwareModal.svelte';
 	import Inspector from '$components/Inspector.svelte';
+	import JudgePanel from '$components/JudgePanel.svelte';
 	import LibraryModal from '$components/LibraryModal.svelte';
 	import LoungeModal from '$components/LoungeModal.svelte';
 	import Menu from '$lib/ui/Menu.svelte';
@@ -96,6 +98,10 @@
 	let hardwareOpen = $state(false);
 	let libraryOpen = $state(false);
 	let loungeOpen = $state(false);
+	let judgeOpen = $state(false);
+	/** By track id. Loaded once when the panel first opens; writes go through saveJudgement. */
+	let judgements = $state<Record<string, Judgement>>({});
+	let judgementsLoaded = false;
 
 	// Read once: the shell injects it before any of this runs and never changes it.
 	const shell = readShell();
@@ -270,6 +276,37 @@
 	 */
 	function fromLibrary(entry: LibraryEntry, how: 'queue' | 'now') {
 		return pick(libraryToCandidate(entry), how);
+	}
+
+	async function toggleJudge(open: boolean) {
+		judgeOpen = open;
+		if (!open || judgementsLoaded) return;
+		const res = await fetch('/api/judge');
+		if (!res.ok) return;
+		const data = (await res.json()) as { judgements: Judgement[] };
+		judgements = Object.fromEntries(data.judgements.map((j) => [j.trackId, j]));
+		judgementsLoaded = true;
+	}
+
+	async function saveJudgement(j: Judgement) {
+		judgements = { ...judgements, [j.trackId]: j };
+		await fetch('/api/judge', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ judgement: j })
+		});
+	}
+
+	/**
+	 * The next analysed library track without a verdict, oldest first, so working the corpus
+	 * front to back visits every track once and the order is stable across sessions.
+	 */
+	function nextUnjudged() {
+		const candidates = library
+			.filter((e) => e.analysed && !judgements[e.id])
+			.sort((a, b) => a.updatedAt - b.updatedAt);
+		const target = candidates.find((e) => e.id !== trackId) ?? candidates[0];
+		if (target) void fromLibrary(target, 'now');
 	}
 
 	async function forget(entry: LibraryEntry) {
@@ -829,7 +866,7 @@
 			return;
 		}
 		if (searchOpen) return;
-		if (e.target instanceof HTMLInputElement) return;
+		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
 		if (e.code === 'Space') {
 			e.preventDefault();
@@ -844,6 +881,8 @@
 			rightOpen = !rightOpen;
 		} else if (e.key.toLowerCase() === 'l') {
 			toggleLounge(!settings.lounge);
+		} else if (e.key.toLowerCase() === 'j') {
+			void toggleJudge(!judgeOpen);
 		}
 	}
 </script>
@@ -899,7 +938,23 @@
 			lounge={settings.lounge}
 			onlounge={() => (loungeOpen = true)} />
 
-		{#if rightOpen}
+		{#if judgeOpen}
+			<JudgePanel
+				{trackId}
+				title={meta?.title ?? ''}
+				analysisHash={analysis?.hash ?? null}
+				showSeed={show?.seed ?? null}
+				authoredBy={show?.authoredBy ?? null}
+				position={readout.position}
+				bar={readout.bar}
+				judgement={trackId ? (judgements[trackId] ?? null) : null}
+				judged={Object.keys(judgements).length}
+				total={library.filter((e) => e.analysed).length}
+				onsave={(j) => void saveJudgement(j)}
+				onnext={nextUnjudged}
+				onseek={(t) => viz?.seek(t)}
+				onclose={() => (judgeOpen = false)} />
+		{:else if rightOpen}
 			<Inspector
 				{analysis}
 				{context}
