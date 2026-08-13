@@ -29,7 +29,7 @@ export const phraseArc: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 2.84
+		quiet: 3.68
 	},
 	params: [INTENSITY, param('bars', 'Bar lift', 0.45), param('sweep', 'How far it travels', 0.6)],
 	create(g) {

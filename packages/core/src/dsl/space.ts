@@ -139,6 +139,18 @@ export function stampOnStrip(
 }
 
 /**
+ * Where the stereo image sits across the room's width, as a 0..1 x-coordinate.
+ *
+ * A bias, never a position: pan is a property of the mix, not of the room, so hard left
+ * reaches only `reach` of the way to the wall - an effect that maps it straight onto a
+ * wall gets a rig that lurches whenever a synth pad happens to be wide. Multiply the
+ * result's excursion by `f.panWidth` where a mono passage should sit centred.
+ */
+export function panU(pan: number, reach = 0.35): number {
+	return 0.5 + clamp(pan, -1, 1) * reach;
+}
+
+/**
  * Ways of laying a 1-D pattern across the room. Any pattern crossed with any projection
  * is a distinct look, which is where most of the variety in this system comes from.
  */

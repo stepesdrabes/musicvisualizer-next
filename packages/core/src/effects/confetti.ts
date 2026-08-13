@@ -25,7 +25,7 @@ export const confetti: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 3.12,
+		quiet: 3.65,
 		// Bursts of particles, and nothing at all between them.
 		carries: false
 	},

@@ -38,16 +38,23 @@ export const strobe: EffectDef = {
 					return;
 				}
 
-				const step = Math.floor((f.beatIndex + f.beatPhase) * Math.round(p.perBeat));
+				const rate = Math.round(p.perBeat);
+				const beats = f.beatIndex + f.beatPhase;
+				const step = Math.floor(beats * rate);
 				const onA = step % 2 === 0;
-				// Duty cycle under a half so each flash is a distinct event, not a flicker.
-				const phase = (f.beatIndex + f.beatPhase) * Math.round(p.perBeat) - step;
-				const lit = phase < 0.4 ? 1 : 0;
+				// Each flash detonates and DECAYS instead of holding a square: the same number
+				// of events reads sharper at the attack and calmer in the tail, which is the
+				// difference between a strobe and a fault. The train also front-loads the
+				// beat - the downbeat flash owns it, the off-flashes sit a step behind - so
+				// the burst keeps the grid's hierarchy instead of flattening it.
+				const flashPhase = beats * rate - step;
+				const v = Math.pow(Math.max(0, 1 - flashPhase / 0.55), 1.6);
+				const train = 1 - 0.35 * f.beatPhase;
 
 				for (let i = 0; i < g.count; i++) {
 					const inA = groupA.has(g.strip[i]);
-					const v = lit && inA === onA ? p.intensity : 0;
-					setSample(out, i, palette, SLOT.white + ctx.hueShift, v);
+					const level = inA === onA ? p.intensity * v * train : 0;
+					setSample(out, i, palette, SLOT.white + ctx.hueShift, level);
 				}
 			}
 		};

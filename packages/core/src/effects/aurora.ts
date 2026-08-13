@@ -26,7 +26,7 @@ export const aurora: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 4.53,
+		quiet: 5.24,
 		// Curtains with dark between them: 36% of its light in a tenth of the pixels. Lovely
 		// under something, and a quiet cue lit by this alone shows as bands with gaps.
 		carries: false

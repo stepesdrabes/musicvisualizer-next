@@ -39,7 +39,8 @@ export const hearth: EffectDef = {
 		sections: ['intro', 'breakdown', 'void', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 3.38
 	},
 	params: [INTENSITY, param('flicker', 'Flicker', 0.5), param('settle', 'How still it sits', 0.5)],
 	create(g) {

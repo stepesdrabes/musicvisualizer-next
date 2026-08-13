@@ -27,7 +27,7 @@ export const vocalGlow: EffectDef = {
 		minBars: 4,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 4.68,
+		quiet: 5.14,
 		// A spotlight on the front wall by design: 28% of the room lit and nearly half its
 		// output in the brightest tenth of the pixels. Beautiful over a bed, and the reason a
 		// quiet cue carrying it and nothing else showed as one lit wall in a dark room.

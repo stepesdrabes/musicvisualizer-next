@@ -90,6 +90,9 @@ Space
   computeU(out, g, projection, angle) with projection one of
     'perimeter' 'radial' 'height' 'sweep' 'pinwheel' 'local' 'index' 'dist'
   paint(dst, g, u, src, srcLen, add) - lay a 1-D pattern across the room via any projection
+  panU(f.pan, reach=0.35) - the stereo image as a 0..1 x-coordinate. A bias, never a
+    position: hard left reaches only a third of the way out, and the excursion should be
+    scaled by f.panWidth so a mono passage sits centred.
 
 Geometry (g)
   g.count · g.strips[] (id, name, offset, count, start, end, normal, inPerimeter)

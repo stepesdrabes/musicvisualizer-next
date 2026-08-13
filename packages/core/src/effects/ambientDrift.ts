@@ -35,7 +35,7 @@ export const ambientDrift: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 2.29
+		quiet: 2.89
 	},
 	params: [INTENSITY, param('period', 'Period', 0.5), param('listen', 'How much it hears', 0.45)],
 	create(g) {

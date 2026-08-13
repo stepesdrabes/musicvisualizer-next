@@ -28,7 +28,7 @@ export const lavaBlobs: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 2.40,
+		quiet: 3.09,
 		// Blobs, by construction: 37% of its light in a tenth of the pixels, and where the
 		// blobs are not is unlit room.
 		carries: false

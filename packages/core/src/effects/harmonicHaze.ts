@@ -29,7 +29,7 @@ export const harmonicHaze: EffectDef = {
 		minBars: 2,
 		maxBars: 64,
 		peakReserved: false,
-		quiet: 3.15
+		quiet: 3.9
 	},
 	params: [INTENSITY, param('grain', 'Cell size', 0.5), param('drift', 'Drift speed', 0.5)],
 	create(g) {

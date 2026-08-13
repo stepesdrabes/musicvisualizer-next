@@ -28,7 +28,7 @@ export const emberStorm: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 16.54,
+		quiet: 15.61,
 		// Sparks. 19% of the room, three quarters of its light in a tenth of the pixels.
 		carries: false
 	},

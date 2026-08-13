@@ -29,7 +29,8 @@ export const caustics: EffectDef = {
 		sections: ['intro', 'groove', 'breakdown', 'void', 'outro'],
 		minBars: 2,
 		maxBars: 64,
-		peakReserved: false
+		peakReserved: false,
+		quiet: 3.57
 	},
 	params: [INTENSITY, param('flow', 'Flow', 0.45), param('listen', 'How much it hears', 0.4)],
 	create(g) {

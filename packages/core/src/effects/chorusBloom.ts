@@ -35,7 +35,7 @@ export const chorusBloom: EffectDef = {
 		minBars: 2,
 		maxBars: 32,
 		peakReserved: false,
-		quiet: 4.15
+		quiet: 4.8
 	},
 	params: [INTENSITY],
 	create(g) {

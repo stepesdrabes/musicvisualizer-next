@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { STROBE_MAX_HZ } from '../contracts/show.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
-import { lerp } from '../dsl/math.ts';
+import { clamp, lerp } from '../dsl/math.ts';
 import { fillSolid } from '../dsl/buffer.ts';
 import { BeatHold, PulseEnv } from '../dsl/env.ts';
 import { bandBetween } from '../dsl/spectrum.ts';
@@ -46,16 +46,21 @@ export const buildStrobe: EffectDef = {
 			render(out, ctx) {
 				const { f, p, palette, hueShift } = ctx;
 
-				const progress = f.buildProgress;
+				// Only the back half of the build. Firing from the first bar meant a sixteen-bar
+				// riser flashed for half a minute, which two listening notes called out on two
+				// different tracks: the roll is the END of a build, and the front half belongs
+				// to the layers that climb. The ladder is remapped onto the firing span so it
+				// still enters at half notes and doubles all the way in.
+				const progress = clamp((f.buildProgress - 0.45) / 0.55);
 				const top = air.update(bandBetween(f, 0.65, 1), f.beat, f.dt, f.beatPeriod);
 				const v = env.decay(f.dt, f.beatPeriod, 0.54);
-				if (progress < 0.03 && v < 0.01) {
+				if (progress <= 0 && v < 0.01) {
 					out.fill(0);
 					return;
 				}
 
-				if (progress >= 0.03) {
-					let per = progress < 0.35 ? 2 : progress < 0.65 ? 1 : progress < 0.88 ? 0.5 : 0.25;
+				if (progress > 0) {
+					let per = progress < 0.3 ? 2 : progress < 0.6 ? 1 : progress < 0.85 ? 0.5 : 0.25;
 					// The ladder stops doubling where the next rung would cross the strobe
 					// ceiling: at 140 bpm the sixteenth rung is 9.3 Hz, which has fused into a
 					// texture, so the roll tops out at eighths and the drop still owns the step up.
