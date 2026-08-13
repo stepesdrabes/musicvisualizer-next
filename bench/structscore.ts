@@ -61,6 +61,12 @@ const LABEL_VARIANTS: Record<string, LabelTuning> = {
 const labelName = flag('labels', 'current');
 const labels = LABEL_VARIANTS[labelName];
 if (!labels) throw new Error(`unknown label variant ${labelName}`);
+/**
+ * Label sections from the MusicFM head instead of the rules, using the precomputed
+ * corpus embeddings (bench/convert-embeddings.py). This is the P6 end-to-end gate:
+ * the same posteriors production computes, through the same analyzeTrack path.
+ */
+const useHead = argv.includes('--head');
 
 const ROOT = join(import.meta.dirname, 'corpus');
 const BEATS = join(ROOT, '.beats');
@@ -181,10 +187,38 @@ const kindCell = (k: string) => {
 	return cell;
 };
 
+let head: import('../packages/analysis/src/musicfm.ts').MusicFmHead | null = null;
+let missingEmb = 0;
+if (useHead) {
+	const { MusicFmHead } = await import('../packages/analysis/src/musicfm.ts');
+	head = await MusicFmHead.create();
+	if (!head) throw new Error('--head: no exported head in models/ (run bench/export-musicfm.py)');
+}
+
+async function posteriorsFor(
+	track: RefTrack
+): Promise<import('../packages/analysis/src/headLabels.ts').SectionPosteriors | undefined> {
+	if (!head) return undefined;
+	const bin = join(ROOT, '.musicfm', 'bin', `${dataset}-${track.id}.bin`);
+	if (!existsSync(bin)) {
+		missingEmb++;
+		return undefined;
+	}
+	const raw = await readFile(bin);
+	const data = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+	const frames = Math.floor(data.length / 1024);
+	return {
+		fps: 25 / 3,
+		kinds: head.kinds,
+		data: await head.label({ frames, data })
+	};
+}
+
 for (const track of tracks) {
 	try {
 		const tracked = await beatsFor(track);
 		const decoded = await decodeAudio(track.audio);
+		const sectionPosteriors = await posteriorsFor(track);
 		const analysis = analyzeTrack({
 			mono: decoded.mono,
 			sampleRate: decoded.sampleRate,
@@ -192,6 +226,7 @@ for (const track of tracks) {
 			hash: 'bench',
 			trackId: 'file-000000000000',
 			title: track.id,
+			sectionPosteriors,
 			beats: tracked.beats,
 			downbeats: tracked.downbeats,
 			tuning,
@@ -230,11 +265,13 @@ for (const track of tracks) {
 	}
 }
 if (model) await (model as BeatThis).close();
+await head?.close();
+if (missingEmb > 0) console.error(`  ${missingEmb} tracks had no stored embedding (rules used)`);
 
 const pct = (v: number) => ((100 * v) / Math.max(1, frames)).toFixed(1);
 console.log(
 	[
-		`${variantName}/${labelName}`.padEnd(16),
+		`${variantName}/${labelName}${useHead ? '/head' : ''}`.padEnd(16),
 		dataset.padEnd(9),
 		`n=${done}`,
 		`F0.5=${(f05 / Math.max(1, done)).toFixed(3)}`,

@@ -1,5 +1,6 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ANALYSIS_VERSION } from '@mv/core';
 import {
 	CACHE_DIR,
 	decodeAudio,
@@ -20,6 +21,11 @@ import { analyzeTrack } from '../packages/analysis/src/analyze.ts';
  * track. The model is loaded once for the whole corpus, which is most of the per-track cost.
  */
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
+/**
+ * Skip tracks whose analysis already carries the current version, so an interrupted
+ * corpus regeneration resumes where it stopped instead of starting over.
+ */
+const skipCurrent = process.argv.includes('--skip-current');
 
 const metas = (await readdir(CACHE_DIR)).filter((f) => f.endsWith('.meta.json'));
 const model = await BeatThis.create();
@@ -32,6 +38,16 @@ for (const f of metas) {
 		title: string;
 	};
 	if (only && meta.id !== only) continue;
+	if (skipCurrent) {
+		try {
+			const existing = JSON.parse(await readFile(analysisPath(meta.id), 'utf8')) as {
+				version: number;
+			};
+			if (existing.version === ANALYSIS_VERSION) continue;
+		} catch {
+			// Nothing there yet; analyse it.
+		}
+	}
 	const files = await readdir(CACHE_DIR);
 	const audio = files.find((x) => x.startsWith(`${meta.id}.`) && !x.includes('.json') && !x.endsWith('.pcm'));
 	if (!audio) continue;
