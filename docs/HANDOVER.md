@@ -18,8 +18,11 @@ coverage over the 114-track corpus, full suite green):
   night, crash-answer budget, per-slot bloom->slam aggression, quiet-to-quiet 3-bar fades,
   wildcard honesty, key-change palette lift, trust gate with a ten-section floor.
 - Judge mode in the app (J / N; verdicts pinned to analysisHash+seed in `<cache>/judge/`).
-- New effects through the full gate; the owner deleted recoil and timedSweep on sight.
-  91 effects. Every drop-class bed must carry (generalised from the peak-only rule after a
+- New effects through the full gate; the owner deleted recoil, timedSweep and buildStacker on sight.
+  89 effects. The kick-burst family (shockwave, kickTunnel, kickCannon, ricochet,
+  pyroBursts, splash) is drawn at most ONE per show via PickRequest.exclude - the hard
+  form of avoid, with an empty-pool fallback - after the weighted form still left two
+  members in most shows. Every drop-class bed must carry (generalised from the peak-only rule after a
   seed reshuffle produced eight dark bars under an all-event stack).
 - The kick-on-switch bug: the anticipation lead consumed boundary hits into the outgoing
   effect; the player re-asserts fresh edges on the install frame. Test proven both ways.
@@ -86,8 +89,9 @@ signatures). The honest fixes, pick one or both:
   scratch does this in 20 lines) and feed a small negative weight above a threshold -
   never a filter. No such mechanism exists yet; design carefully against the
   every-mechanism-becomes-a-mandate history.
-Verdicts pending from the owner on the surviving newcomers: ricochet, snareBlade,
-counterweight, weave (one word deletes any of them - recoil and timedSweep precedent).
+Verdicts pending on: ricochet, snareBlade, counterweight, weave. Burst-family exposure is
+now structurally capped at one per show; if the owner still sees too many bursts, shrink
+the draw (add a second none slot) rather than re-weighting.
 
 ### 4. Peak selection
 

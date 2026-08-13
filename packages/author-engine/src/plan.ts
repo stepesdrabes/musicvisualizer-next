@@ -115,6 +115,17 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	// what makes the fiftieth listen contain shows that never reach for it at all. The
 	// family's own avoid list is not sampled - a foreign gesture is foreign every night.
 	const signatures = profile.signatures.filter(() => rng.float() < 0.5);
+	// The kick-burst family reads as ONE gesture however many files it spans - the owner
+	// named four of its members in one complaint ("they all look very similar and the
+	// effect is so common"). Each show draws at most one member; the rest are foreign for
+	// the night, and one show in seven goes burst-free entirely. Same mechanism as the
+	// signature draw, because it is the same disease: presence arithmetic, not taste.
+	const BURSTS = ['shockwave', 'kickTunnel', 'kickCannon', 'ricochet', 'pyroBursts', 'splash'];
+	const drawnBurst = BURSTS[Math.floor(rng.float() * (BURSTS.length + 1))];
+	// Excluded, not merely avoided: in the loud slots the family saturates, an avoided
+	// burst at energy distance zero still outscored honest alternatives two bands away,
+	// and the measured result was two members in most shows - which is the exact defect.
+	const exclude = BURSTS.filter((e) => e !== drawnBurst);
 	const avoid = [
 		...profile.avoid,
 		...profile.signatures.filter((s) => !signatures.includes(s))
@@ -186,7 +197,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		// the first time the seed reshuffled that way. The peak-only version of this rule
 		// was the same lesson learned half-way.
 		const carrier = bare || slot.span === peakSpan || sectionBase(slot.section) === 'drop';
-		add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid }));
+		add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid, exclude }));
 		switch (sectionBase(slot.section)) {
 			case 'void':
 				break;
@@ -200,7 +211,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// This used to be unfiltered, because requiring it once left most of these cues
 				// with no accent at all: only a single accent in the catalog qualified. There are
 				// now enough that the rule can be what it should always have been.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid, exclude }));
 				break;
 
 			case 'breakdown':
@@ -209,31 +220,31 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// actually produced was a passage lit by one slow bed and nothing else, half the
 				// time. Taking the drums out is what makes a breakdown; taking the light out makes
 				// it look broken.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid, exclude }));
 				// The kit, where the passage still has one. A breakdown with a beat under it is
 				// common in this repertoire and the room should be answering it; a genuinely
 				// stripped one has no onsets to answer and gets nothing, which is the difference
 				// the coin toss was reaching for and could not see.
 				if (profile.transientEvery > 0 && kickDensity(analysis, slot) > 0.25) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				}
 				break;
 
 			case 'build':
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				// A build is the one place an accent belongs before the drop rather than in it, and
 				// without one the two effects written for exactly this moment were unreachable.
-				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				break;
 
 			case 'groove':
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				// The drum layer runs at the genre's cadence, never in every cue. Firing a light
 				// at every hit is the documented failure of audio-to-light mapping: it reads as
 				// mechanical however well timed it is, and leaving it out is what makes it land
 				// on return. A ballad leaves it out entirely; punk and funk barely rest it.
 				if (profile.transientEvery > 0 && grooveIndex % profile.transientEvery === profile.transientEvery - 1) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				}
 				grooveIndex++;
 				break;
@@ -243,16 +254,16 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// chorus whose VISIBLE layers look nothing like the first says the room is not
 				// listening, and without the group the novelty penalty actively pushes the
 				// repeat away from what the first one used.
-				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid }));
+				add('rhythm', picker.pick({ drums, role: 'rhythm', section: slot.section, lengthBars: length, energy: slot.energy, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid, exclude }));
 				if (profile.transientEvery > 0) {
-					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+					add('transient', picker.pick({ drums, role: 'transient', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				}
 				// The first appearance of material that returns holds its accent back, so the
 				// return ADDS something: escalation by vocabulary rather than by brightness,
 				// which prompt.ts warns is the cliche. The peak section and material that never
 				// returns get the full stack from the start.
 				if (!(slot.dropIndex === 0 && !slot.finalOfGroup && slot.span !== peakSpan)) {
-					add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid }));
+					add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, prefer: signatures, avoid, exclude }));
 				}
 				break;
 		}

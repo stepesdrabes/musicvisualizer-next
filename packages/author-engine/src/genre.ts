@@ -61,9 +61,9 @@ const PROFILES: Record<GenreFamily, GenreProfile> = {
 	// Warmer and rounder: wash blooms rather than assaults, gentle punctuation.
 	house: { heatBias: 0, heatWidth: 0.24, satScale: 0.95, monochrome: false, flashBudget: 2, peak: 'bloom', darkBreakdowns: false, motionScale: 1, transientEvery: 2, bumpEvery: 2, signatures: ['impulseSpin', 'rippleTank'], avoid: ['moshSlam', 'headbang', 'doubleKickGatling'] },
 	// Big-room: saturated, loud, the drop is the product.
-	edm: { heatBias: 0.06, heatWidth: 0.3, satScale: 1, monochrome: false, flashBudget: 3, peak: 'slam', darkBreakdowns: true, motionScale: 1.05, transientEvery: 2, bumpEvery: 1, signatures: ['buildStacker'], avoid: ['moshSlam', 'headbang'] },
+	edm: { heatBias: 0.06, heatWidth: 0.3, satScale: 1, monochrome: false, flashBudget: 3, peak: 'slam', darkBreakdowns: true, motionScale: 1.05, transientEvery: 2, bumpEvery: 1, signatures: [], avoid: ['moshSlam', 'headbang'] },
 	// Long builds, euphoric blooms, the longest quiet valleys of any dance genre.
-	trance: { heatBias: -0.12, heatWidth: 0.2, satScale: 1, monochrome: false, flashBudget: 2, peak: 'bloom', darkBreakdowns: true, motionScale: 0.9, transientEvery: 3, bumpEvery: 2, signatures: ['buildStacker', 'pitchRibbon'], avoid: ['moshSlam', 'headbang', 'doubleKickGatling'] },
+	trance: { heatBias: -0.12, heatWidth: 0.2, satScale: 1, monochrome: false, flashBudget: 2, peak: 'bloom', darkBreakdowns: true, motionScale: 0.9, transientEvery: 3, bumpEvery: 2, signatures: ['pitchRibbon'], avoid: ['moshSlam', 'headbang', 'doubleKickGatling'] },
 	// Bimodal: dark simmer between drops, everything at once on them.
 	bass: { heatBias: -0.1, heatWidth: 0.26, satScale: 1.05, monochrome: false, flashBudget: 4, peak: 'slam', darkBreakdowns: true, motionScale: 1.1, transientEvery: 1, bumpEvery: 1, signatures: ['rollerChase'], avoid: ['confetti', 'discoBall', 'mirrorBall'] },
 	// Bright, clean, chorus-driven; pastels are legal here and nowhere else.

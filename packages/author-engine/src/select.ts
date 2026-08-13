@@ -46,6 +46,13 @@ export interface PickRequest {
 	 */
 	avoid?: readonly string[];
 	/**
+	 * Refused outright for this pick, yielding only when nothing else fits at all. The
+	 * hard form of `avoid`, for the one case a weight cannot carry: the undrawn members
+	 * of a look-alike family, where the owner's verdict is that a second member in one
+	 * show IS the defect and an energy-fit alternative two bands away is still better.
+	 */
+	exclude?: readonly string[];
+	/**
 	 * Hits per beat over the slot, per stream. With it, effects declaring `taste.kit` are
 	 * refused where their stream is silent: a kick effect in a kickless verse is either a
 	 * dead layer or a grid pulse lying about the arrangement. Absent skips the veto.
@@ -157,8 +164,9 @@ export class EffectPicker {
 			}
 		}
 
-		const fits = (e: EffectDef, kitAware: boolean): boolean => {
+		const fits = (e: EffectDef, kitAware: boolean, exclusive = true): boolean => {
 			if (e.role !== req.role) return false;
+			if (exclusive && req.exclude?.includes(e.id)) return false;
 			if ((this.vetoCharacter || req.noCharacter) && e.taste.character) return false;
 			if (req.mustCarry && e.taste.carries === false) return false;
 			if (kitAware && kitSilent(e, req.drums)) return false;
@@ -183,6 +191,9 @@ export class EffectPicker {
 		// `carries` taught as a hard requirement.
 		let eligible = this.effects.filter((e) => fits(e, true));
 		if (eligible.length === 0) eligible = this.effects.filter((e) => fits(e, false));
+		// The exclusion yields last: a cue with literally nothing else is lit by the
+		// excluded thing rather than by darkness.
+		if (eligible.length === 0) eligible = this.effects.filter((e) => fits(e, false, false));
 		if (eligible.length === 0) return null;
 
 		// The quiet preference as a rank within THIS pool, not a position on an absolute

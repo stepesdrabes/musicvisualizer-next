@@ -11,7 +11,6 @@ import { beamFlick } from './beamFlick.ts';
 import { blackout } from './blackout.ts';
 import { blinderWall } from './blinderWall.ts';
 import { breathe } from './breathe.ts';
-import { buildStacker } from './buildStacker.ts';
 import { buildStrobe } from './buildStrobe.ts';
 import { cascade } from './cascade.ts';
 import { caustics } from './caustics.ts';
@@ -118,7 +117,6 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	// rhythm
 	weave,
 	impulseSpin,
-	buildStacker,
 	stopTime,
 	sweep,
 	chase,

@@ -85,7 +85,12 @@ not by file count. The archetype vocabulary now on the wall:
 - structural give - architecture taking weight (counterweight)
 - interference - two slow fields making a fast-feeling pattern (weave)
 - freeze - motion withheld as the gesture (stopTime)
-- exact-arrival wipes only a compiled show can do (buildStacker; timedSweep was the same idea as a fill-and-drain wipe and the owner rejected it - an exact arrival earns its place only when the shape between arrivals is worth watching)
+- exact-arrival gestures only a compiled show can do (buildStacker and timedSweep both tried it; the owner rejected both - an exact arrival earns its place only when the shape between arrivals is worth watching)
+
+And the closing law of the family complaints: the whole kick-burst family (shockwave,
+kickTunnel, kickCannon, ricochet, pyroBursts, splash) is drawn at most ONE per show, the
+rest avoided for the night - the owner named four members in one breath, which is the tell
+that files are one gesture.
 
 **New effects must arrive at the incumbents' energy distance or they change nothing.** The
 five newcomers first shipped at e2-3 against incumbent bursts at e4-5, scored 4-8 shows per
