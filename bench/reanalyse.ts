@@ -10,6 +10,7 @@ import {
 	refineGenreFromAudio
 } from '@mv/analysis';
 import { BeatThis } from '../packages/analysis/src/beatthis.ts';
+import { Adtof } from '../packages/analysis/src/adtof.ts';
 import { analyzeTrack } from '../packages/analysis/src/analyze.ts';
 
 /**
@@ -22,6 +23,7 @@ const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7);
 
 const metas = (await readdir(CACHE_DIR)).filter((f) => f.endsWith('.meta.json'));
 const model = await BeatThis.create();
+const drumModel = await Adtof.create();
 let done = 0;
 
 for (const f of metas) {
@@ -38,6 +40,9 @@ for (const f of metas) {
 	try {
 		const decoded = await decodeAudio(join(CACHE_DIR, audio));
 		const tracked = await model.run(decoded.mono);
+		const drums = drumModel
+			? await drumModel.run((await decodeAudio(join(CACHE_DIR, audio), 44100)).mono)
+			: undefined;
 		let context = (await readContext(meta.id)) ?? undefined;
 		if (context && !context.sources.includes('effnet')) {
 			const refined = await refineGenreFromAudio(context, decoded.mono, decoded.sampleRate);
@@ -64,6 +69,7 @@ for (const f of metas) {
 			title: meta.title,
 			beats: tracked.beats,
 			downbeats: tracked.downbeats,
+			drums,
 			metricalLevel,
 			context
 		});
@@ -78,4 +84,5 @@ for (const f of metas) {
 	}
 }
 await model.close();
+await drumModel?.close();
 console.log('reanalyse complete');

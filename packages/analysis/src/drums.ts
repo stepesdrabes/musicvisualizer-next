@@ -145,6 +145,35 @@ function placeOnOnset(
 }
 
 /**
+ * Move detection TIMES onto the broadband onset curve, for streams that arrive from a
+ * model rather than from the band curves above. Same contract as `placeOnOnset`: bounded
+ * at half a sixteenth so a hit cannot be dragged onto a neighbouring slot, falling back
+ * to the original time when no onset lives nearby.
+ */
+export function snapTimesToOnsets(
+	times: readonly number[],
+	odf: Float32Array,
+	fps: number,
+	radiusSec: number
+): number[] {
+	const radius = Math.max(1, Math.round(radiusSec * fps));
+	return times.map((t) => {
+		const frame = Math.round(t * fps);
+		let best = -1;
+		let bestValue = 0;
+		const from = Math.max(1, frame - radius);
+		const to = Math.min(odf.length - 2, frame + radius);
+		for (let i = from; i <= to; i++) {
+			if (odf[i] >= odf[i - 1] && odf[i] >= odf[i + 1] && odf[i] > bestValue) {
+				bestValue = odf[i];
+				best = i;
+			}
+		}
+		return best >= 0 ? refinePeakTime(odf, best, fps) : t;
+	});
+}
+
+/**
  * Kick, snare and hat onsets from the percussive component.
  *
  * Separating first is what makes this work at all. A bassline and a kick share the bottom

@@ -384,6 +384,27 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		}
 	}
 
+	// The drum model hears the kit through the whole mix where the band-flux DSP hears
+	// bands; like the beat model it is optional, and its absence is the DSP path working
+	// exactly as before. It listens at the training frontend's rate, so it decodes its own
+	// copy rather than resampling the analysis one upward, which would be inventing octaves.
+	let drums: import('./adtof.ts').AdtofOnsets | undefined;
+	try {
+		const { Adtof } = await import('./adtof.ts');
+		const model = await Adtof.create();
+		if (model) {
+			log('transcribing drums');
+			try {
+				const wide = await decodeAudio(audioPath, 44100);
+				drums = await model.run(wide.mono);
+			} finally {
+				await model.close();
+			}
+		}
+	} catch (e) {
+		log(`drum model unavailable, falling back: ${e instanceof Error ? e.message : String(e)}`);
+	}
+
 	log('analysing');
 	const analysis = analyzeTrack({
 		mono: decoded.mono,
@@ -396,6 +417,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		title,
 		beats: tracked?.beats,
 		downbeats: tracked?.downbeats,
+		drums,
 		metricalLevel,
 		context
 	});
