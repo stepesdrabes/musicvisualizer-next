@@ -245,7 +245,7 @@ export class Viz {
 			lounge: this.lounge,
 			rest: this.rest
 		});
-		this.roomRenderer?.render(this.director.bytes, dt);
+		this.roomRenderer?.render(this.director.bytes, dt, this.director.bounce);
 		this.publishReadout(dt, frame);
 	}
 

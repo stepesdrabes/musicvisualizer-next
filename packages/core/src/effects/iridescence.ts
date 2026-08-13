@@ -61,9 +61,9 @@ export const iridescence: EffectDef = {
 				const t = clock;
 
 				for (let i = 0; i < g.count; i++) {
-					// The floor plan is the only extent this room has: every strip sits at the same
-					// wall/ceiling junction, so a third spatial axis would only separate the beam
-					// from the walls. Time takes that axis instead and the film flows as one sheet.
+					// The plan is the only extent this fixture has: every run sits in the same plane,
+					// so a third spatial axis would carry nothing. Time takes that axis instead and
+					// the film flows as one sheet.
 					const n1 = noise3(g.nx[i] * scale + t, g.ny[i] * scale - t * 0.6, t * 0.3);
 					const n2 = noise3(g.nx[i] * scale * 1.9 + 17, g.ny[i] * scale * 1.9 - t, 5.1);
 					// `paletteArc` and not a lerp between two slots. Slot space is a ring of declared

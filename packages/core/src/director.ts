@@ -2,7 +2,10 @@ import type { TrackAnalysis } from './contracts/analysis.ts';
 import type { ShowFrame } from './contracts/frame.ts';
 import type { Geometry } from './contracts/room.ts';
 import type { Show } from './contracts/show.ts';
+import { SLOT } from './contracts/palette.ts';
+import { sample } from './color/palette.ts';
 import { smoothstep } from './dsl/math.ts';
+import { BounceLamp } from './bounce.ts';
 import { EffectRegistry } from './effects/index.ts';
 import { Mixer } from './mixer.ts';
 import { BrightnessSlew, MeanLevel, compressHighlights, quantize } from './output.ts';
@@ -64,10 +67,14 @@ export class RoomDirector {
 	readonly frame: Float32Array;
 	/** What the preview and the wire read. */
 	readonly bytes: Uint8Array;
+	/** The Bounce Lamp's one pixel, gamma-encoded like `bytes`. A second fixture, not a tail. */
+	readonly bounce = new Uint8Array(3);
 
 	private readonly idle = new IdleClock();
 	private readonly slew: BrightnessSlew;
 	private readonly meanLevel = new MeanLevel();
+	private readonly lamp = new BounceLamp();
+	private readonly tint = new Float32Array(3);
 
 	/** 0 the show, 1 ambient. Linear; the blend weight is this eased. */
 	private u = 0;
@@ -176,7 +183,7 @@ export class RoomDirector {
 		// than measured, and an exposure that pulls it back toward the target is undoing a decision
 		// it cannot see - which is exactly what it was already forbidden from doing to a silence.
 		const exposed = w < 1 && state.playing && f.energy > 0.02;
-		this.finish(dt, exposed);
+		this.finish(f, w, dt, exposed);
 		return f;
 	}
 
@@ -188,8 +195,10 @@ export class RoomDirector {
 		this.ambientMix.reset();
 		this.frame.fill(0);
 		this.bytes.fill(0);
+		this.bounce.fill(0);
 		this.slew.reset();
 		this.meanLevel.reset();
+		this.lamp.reset();
 		this.u = 0;
 		this.stopped = 0;
 	}
@@ -252,10 +261,42 @@ export class RoomDirector {
 		}
 	}
 
-	private finish(dt: number, exposed: boolean): void {
+	/**
+	 * The accent slot of whichever stage the room is showing, mixed the way `blend` mixes light.
+	 *
+	 * A plain lerp between two full-brightness colours dips through the middle - red to green
+	 * passes through a half-lit olive - and the lamp would darken across a dissolve that is meant
+	 * to be invisible, for the same reason and by the same arithmetic as the picture itself.
+	 */
+	private accent(w: number): Float32Array {
+		const out = this.tint;
+		if (w < 1) sample(this.showMix.palette, SLOT.accent, 1, SHOW_ACCENT);
+		if (w > 0) sample(this.ambientMix.palette, SLOT.accent, 1, AMBIENT_ACCENT);
+
+		if (w <= 0) out.set(SHOW_ACCENT);
+		else if (w >= 1) out.set(AMBIENT_ACCENT);
+		else {
+			const a = 1 - w;
+			for (let c = 0; c < 3; c++) {
+				const s = SHOW_ACCENT[c];
+				const b = AMBIENT_ACCENT[c];
+				out[c] = Math.sqrt(a * s * s + w * b * b);
+			}
+		}
+		return out;
+	}
+
+	private finish(f: ShowFrame, w: number, dt: number, exposed: boolean): void {
 		this.slew.apply(this.frame, dt);
 		this.meanLevel.apply(this.frame, dt, exposed);
 		compressHighlights(this.frame);
 		quantize(this.frame, this.bytes);
+		// After the chain, so the lamp answers the level the frame is actually at rather than the
+		// level the show was authored at.
+		this.lamp.render(this.frame, f, this.accent(w), dt, this.bounce);
 	}
 }
+
+/** Refilled per call. Two, because the dissolve needs both at once. */
+const SHOW_ACCENT: [number, number, number] = [0, 0, 0];
+const AMBIENT_ACCENT: [number, number, number] = [0, 0, 0];

@@ -7,17 +7,18 @@ import {
 	type DeviceTelemetry
 } from './hardware.ts';
 
-// The exact line firmware/src/hello.rs formats.
-const HELLO = 'room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds lamp';
+// The exact line firmware/wire/src/hello.rs formats, asserted against this same text there.
+const HELLO = 'room-node host room-frame fw 0.1.0 up 42s px 720 ddp 4048 stats 4049 leds ws2815';
 
-const withLeds = (leds: string) => HELLO.replace('leds lamp', `leds ${leds}`);
+const withLeds = (leds: string) => HELLO.replace('leds ws2815', `leds ${leds}`);
 
-// The exact line firmware/src/stats.rs formats, and the shorter one FIRMWARE.md documents.
+// The exact line firmware/wire/src/stats.rs formats, asserted against this same text there,
+// plus the shorter one FIRMWARE.md documents.
 const STATS =
-	'up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  ' +
+	'up 42s  720 px  120 pkt/s  127.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  ' +
 	'asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0';
 const STATS_NO_LATE =
-	'up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  asm 2.1 ms  ' +
+	'up 42s  720 px  120 pkt/s  127.7 KB/s  60.0 fps  gap 15.9/17.8 ms  asm 2.1 ms  ' +
 	'seqgap 0  bad 0  oob 0  torn 0';
 
 describe('parseIdentity', () => {
@@ -25,13 +26,13 @@ describe('parseIdentity', () => {
 		const id = parseIdentity(HELLO, '192.168.0.106');
 		expect(id).toEqual({
 			host: '192.168.0.106',
-			name: 'room-node',
+			name: 'room-frame',
 			firmware: '0.1.0',
 			uptimeS: 42,
-			pixels: 1320,
+			pixels: 720,
 			ddpPort: 4048,
 			statsPort: 4049,
-			leds: 'lamp'
+			leds: 'ws2815'
 		});
 	});
 
@@ -60,7 +61,7 @@ describe('parseIdentity', () => {
 	});
 
 	it('survives a firmware that drops a field rather than throwing', () => {
-		const id = parseIdentity('room-node up 9s px 1320', 'h');
+		const id = parseIdentity('room-node up 9s px 720', 'h');
 		expect(id?.uptimeS).toBe(9);
 		expect(id?.firmware).toBe('unknown');
 	});
@@ -70,14 +71,15 @@ describe('parseTelemetry', () => {
 	it('reads the whole stats line', () => {
 		expect(parseTelemetry(STATS, 1000)).toEqual({
 			uptimeS: 42,
-			pixels: 1320,
-			packetsPerSecond: 180,
-			kbPerSecond: 231.7,
+			pixels: 720,
+			packetsPerSecond: 120,
+			kbPerSecond: 127.7,
 			fps: 60,
 			gapMinMs: 15.9,
 			gapMaxMs: 17.8,
 			late: [0, 0, 0],
 			assemblyMaxMs: 2.1,
+			ledMaxUs: 210,
 			seqGaps: 0,
 			bad: 0,
 			outOfRange: 0,

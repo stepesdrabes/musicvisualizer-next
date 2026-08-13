@@ -606,7 +606,7 @@
 	 */
 	async function connectOutput(host: string) {
 		if (hosts(host).length === 0) return;
-		if (host !== ddpHost) await hardware.setHost(host);
+		if (host !== ddpHost) await hardware.setHost('frame', host);
 		const res = await startOutput(trackId, host);
 		if (!res.ok) {
 			note(`ERROR ${await res.text()}`);
@@ -1054,12 +1054,12 @@
 
 <HardwareModal
 	open={hardwareOpen}
-	status={hardware.status}
+	statuses={hardware.statuses}
 	onclose={() => (hardwareOpen = false)}
 	offsetMs={settings.outputOffsetMs}
 	fps={settings.outputFps}
 	protocol={settings.outputProtocol}
-	onhost={(h) => void hardware.setHost(h)}
+	onhost={(role, h) => void hardware.setHost(role, h)}
 	onregion={(r) => void hardware.setRegion(r)}
 	onfps={chooseFps}
 	onprotocol={chooseProtocol}

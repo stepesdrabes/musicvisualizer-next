@@ -1,31 +1,43 @@
-import type { HardwareStatus } from './hardware.ts';
+import { DEVICE_ROLES, type DeviceRole, type HardwareStatus } from './hardware.ts';
 
-const IDLE: HardwareStatus = {
-	host: '',
-	region: 'all',
-	state: 'unconfigured',
-	streaming: false,
-	identity: null,
-	telemetry: null,
-	latencyMs: null,
-	message: ''
-};
+function idle(role: DeviceRole): HardwareStatus {
+	return {
+		role,
+		host: '',
+		region: 'all',
+		state: 'unconfigured',
+		streaming: false,
+		identity: null,
+		telemetry: null,
+		latencyMs: null,
+		message: ''
+	};
+}
 
 /**
- * A view onto the board, mirroring the queue client: the server owns the socket and this
- * reacts. Nothing here is optimistic, because the only thing worth reporting is what the
- * board actually said.
+ * A view onto the boards, mirroring the queue client: the server owns the sockets and this
+ * reacts. Nothing here is optimistic, because the only thing worth reporting is what a board
+ * actually said.
  */
 export class HardwareClient {
-	status = $state<HardwareStatus>(IDLE);
+	statuses = $state<HardwareStatus[]>(DEVICE_ROLES.map(idle));
 
 	private source: EventSource | null = null;
+
+	/** The Frame, which is what the top-bar chip is about: it is the room. */
+	get status(): HardwareStatus {
+		return this.of('frame');
+	}
+
+	of(role: DeviceRole): HardwareStatus {
+		return this.statuses.find((s) => s.role === role) ?? idle(role);
+	}
 
 	connect(): void {
 		if (this.source) return;
 		const es = new EventSource('/api/hardware/stream');
 		es.addEventListener('hardware', (ev) => {
-			this.status = JSON.parse((ev as MessageEvent).data) as HardwareStatus;
+			this.statuses = JSON.parse((ev as MessageEvent).data) as HardwareStatus[];
 		});
 		this.source = es;
 	}
@@ -43,13 +55,13 @@ export class HardwareClient {
 		});
 	}
 
-	setHost(host: string): Promise<Response> {
-		return this.post({ action: 'set', host });
+	setHost(role: DeviceRole, host: string): Promise<Response> {
+		return this.post({ action: 'set', role, host });
 	}
 
-	/** Which part of the room the board is fed. Read by output the next time it starts. */
+	/** Which part of the room The Frame is fed. Read by output the next time it starts. */
 	setRegion(region: string): Promise<Response> {
-		return this.post({ action: 'set', host: this.status.host, region });
+		return this.post({ action: 'set', role: 'frame', host: this.of('frame').host, region });
 	}
 }
 

@@ -1,9 +1,11 @@
 import { createSocket, type Socket } from 'node:dgram';
 import {
+	DEVICE_ROLES,
 	faultsIn,
 	parseIdentity,
 	parseTelemetry,
 	type DeviceIdentity,
+	type DeviceRole,
 	type DeviceTelemetry,
 	type HardwareStatus,
 	type LinkState
@@ -19,7 +21,7 @@ const PROBE_TIMEOUT_MS = 900;
 /** A stats line arrives every second, so two missed ones is a stream that has stopped. */
 const TELEMETRY_STALE_MS = 2600;
 
-type Listener = (status: HardwareStatus) => void;
+type Listener = (statuses: HardwareStatus[]) => void;
 
 /**
  * What the app knows about the board, from the two things the board says.
@@ -28,7 +30,7 @@ type Listener = (status: HardwareStatus) => void;
  * board only sends to whoever is already sending it DDP. So the two answer different
  * questions - "is it there" and "is it keeping up" - and neither substitutes for the other.
  */
-class Hardware {
+class DeviceLink {
 	private host = '';
 	private regionId = 'all';
 	private streaming = false;
@@ -36,19 +38,35 @@ class Hardware {
 	private telemetry: DeviceTelemetry | null = null;
 	private latencyMs: number | null = null;
 	private message = '';
-
-	private listeners = new Set<Listener>();
-	private stats: Socket | null = null;
-	private probeTimer: NodeJS.Timeout | null = null;
 	private probing = false;
-	private watchers = 0;
+	/**
+	 * The board's own IP, from whichever reply last came back.
+	 *
+	 * Not the same thing as `host`, which is whatever was typed and may be a name. Two boards
+	 * report to the same stats port, so a line has to be attributed by where it came from.
+	 */
+	private address = '';
+
+	constructor(
+		private readonly role: DeviceRole,
+		private readonly onChange: () => void
+	) {}
 
 	get region(): string {
 		return this.regionId;
 	}
 
+	get configured(): boolean {
+		return this.host !== '';
+	}
+
+	answersFrom(address: string): boolean {
+		return this.host !== '' && (address === this.address || address === this.host);
+	}
+
 	get status(): HardwareStatus {
 		return {
+			role: this.role,
 			host: this.host,
 			region: this.regionId,
 			state: this.state,
@@ -74,14 +92,8 @@ class Hardware {
 		return this.probing ? 'searching' : 'offline';
 	}
 
-	subscribe(listener: Listener): () => void {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
-	}
-
 	private publish(): void {
-		const status = this.status;
-		for (const listener of this.listeners) listener(status);
+		this.onChange();
 	}
 
 	/**
@@ -95,6 +107,7 @@ class Hardware {
 		this.identity = null;
 		this.telemetry = null;
 		this.latencyMs = null;
+		this.address = '';
 		this.message = '';
 		this.publish();
 		if (next) void this.probe();
@@ -112,10 +125,87 @@ class Hardware {
 	}
 
 	setStreaming(on: boolean): void {
+		if (on === this.streaming) return;
 		this.streaming = on;
+		if (!on) this.telemetry = null;
+		this.publish();
+	}
+
+	takeTelemetry(telemetry: DeviceTelemetry): void {
+		this.telemetry = telemetry;
+		this.publish();
+	}
+
+	/** Ask this board who it is. Leaves the link alone if the address changed while it answered. */
+	async probe(): Promise<void> {
+		const host = this.host;
+		if (!host) return;
+		this.probing = true;
+		this.publish();
+
+		const started = Date.now();
+		const answer = await ask(host, PROBE_TIMEOUT_MS);
+		if (host !== this.host) return;
+
+		this.probing = false;
+		this.identity = answer?.identity ?? null;
+		this.address = answer?.address ?? '';
+		this.latencyMs = this.identity ? Date.now() - started : null;
+		// A board that has never answered is a different situation from one that answered before
+		// and has now gone quiet, and only the second is worth a message.
+		this.message = this.identity ? '' : 'No answer from that address.';
+		this.publish();
+	}
+}
+
+/**
+ * The room's boards.
+ *
+ * One stats socket between them rather than one each: the port is fixed at 4049 and both boards
+ * report to whoever last sent them DDP, so a line is attributed by the address it came from.
+ */
+class Hardware {
+	private readonly links: Record<DeviceRole, DeviceLink>;
+	private listeners = new Set<Listener>();
+	private stats: Socket | null = null;
+	private probeTimer: NodeJS.Timeout | null = null;
+	private watchers = 0;
+
+	constructor() {
+		const publish = () => this.publish();
+		this.links = {
+			frame: new DeviceLink('frame', publish),
+			bounce: new DeviceLink('bounce', publish)
+		};
+	}
+
+	link(role: DeviceRole): DeviceLink {
+		return this.links[role];
+	}
+
+	get statuses(): HardwareStatus[] {
+		return DEVICE_ROLES.map((role) => this.links[role].status);
+	}
+
+	/** Which part of the room The Frame is fed. The lamp has no region; it is fed a colour. */
+	get region(): string {
+		return this.links.frame.region;
+	}
+
+	subscribe(listener: Listener): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	private publish(): void {
+		const statuses = this.statuses;
+		for (const listener of this.listeners) listener(statuses);
+	}
+
+	setStreaming(on: boolean): void {
+		for (const role of DEVICE_ROLES) this.links[role].setStreaming(on);
 		if (on) this.openStats();
 		else this.closeStats();
-		this.publish();
 	}
 
 	/**
@@ -125,8 +215,8 @@ class Hardware {
 	watch(): () => void {
 		this.watchers++;
 		if (this.probeTimer === null) {
-			this.probeTimer = setInterval(() => void this.probe(), PROBE_INTERVAL_MS);
-			void this.probe();
+			this.probeTimer = setInterval(() => this.probeAll(), PROBE_INTERVAL_MS);
+			this.probeAll();
 		}
 		return () => {
 			this.watchers = Math.max(0, this.watchers - 1);
@@ -136,28 +226,8 @@ class Hardware {
 		};
 	}
 
-	/** Ask one address who it is. Resolves to null on anything that is not our firmware. */
-	async probe(host = this.host): Promise<DeviceIdentity | null> {
-		if (!host) return null;
-		const forCurrent = host === this.host;
-		if (forCurrent) {
-			this.probing = true;
-			this.publish();
-		}
-
-		const started = Date.now();
-		const identity = await ask(host, PROBE_TIMEOUT_MS);
-
-		if (forCurrent) {
-			this.probing = false;
-			this.identity = identity;
-			this.latencyMs = identity ? Date.now() - started : null;
-			// A board that has never answered is a different situation from one that answered
-			// before and has now gone quiet, and only the second is worth a message.
-			this.message = identity ? '' : 'No answer from that address.';
-			this.publish();
-		}
-		return identity;
+	private probeAll(): void {
+		for (const role of DEVICE_ROLES) void this.links[role].probe();
 	}
 
 	/**
@@ -171,11 +241,14 @@ class Hardware {
 		const socket = createSocket({ type: 'udp4', reuseAddr: true });
 		this.stats = socket;
 
-		socket.on('message', (buf) => {
+		socket.on('message', (buf, rinfo) => {
 			const telemetry = parseTelemetry(buf.toString(), Date.now());
 			if (!telemetry) return;
-			this.telemetry = telemetry;
-			this.publish();
+			const link = DEVICE_ROLES.map((r) => this.links[r]).find((l) => l.answersFrom(rinfo.address));
+			// An unattributable line goes to the only configured board, if there is one: a name
+			// typed into the field never matches the IP a board reports from.
+			const only = DEVICE_ROLES.map((r) => this.links[r]).filter((l) => l.configured);
+			(link ?? (only.length === 1 ? only[0] : null))?.takeTelemetry(telemetry);
 		});
 		// Losing the port is not worth taking output down for; it only costs the readout.
 		socket.on('error', () => this.closeStats());
@@ -190,8 +263,13 @@ class Hardware {
 	private closeStats(): void {
 		this.stats?.close();
 		this.stats = null;
-		this.telemetry = null;
 	}
+}
+
+interface Answer {
+	identity: DeviceIdentity;
+	/** Where the reply came from, which is how its stats lines are told from the other board's. */
+	address: string;
 }
 
 /**
@@ -200,7 +278,7 @@ class Hardware {
  * The board replies to the source port rather than to the stats port, so this needs no
  * standing listener and works whether or not anything is streaming.
  */
-function ask(host: string, timeoutMs: number): Promise<DeviceIdentity | null> {
+function ask(host: string, timeoutMs: number): Promise<Answer | null> {
 	return new Promise((resolve) => {
 		let socket: Socket;
 		try {
@@ -211,7 +289,7 @@ function ask(host: string, timeoutMs: number): Promise<DeviceIdentity | null> {
 		}
 
 		let settled = false;
-		const finish = (value: DeviceIdentity | null) => {
+		const finish = (value: Answer | null) => {
 			if (settled) return;
 			settled = true;
 			clearTimeout(timer);
@@ -224,7 +302,10 @@ function ask(host: string, timeoutMs: number): Promise<DeviceIdentity | null> {
 		};
 
 		const timer = setTimeout(() => finish(null), timeoutMs);
-		socket.on('message', (buf) => finish(parseIdentity(buf.toString(), host)));
+		socket.on('message', (buf, rinfo) => {
+			const identity = parseIdentity(buf.toString(), host);
+			finish(identity && { identity, address: rinfo.address });
+		});
 		socket.on('error', () => finish(null));
 		socket.send(QUERY, DDP_PORT, host, (err) => {
 			if (err) finish(null);

@@ -194,9 +194,10 @@ time in seconds, not a bar inferred from a published tempo, not a round number.
 
 export function buildSystemPrompt(): string {
 	return [
-		`You are a lighting designer programming one track for a 5 x 4 m room. Five LED strips:
-four wall runs at 2.4 m forming a closed perimeter ring, plus a ceiling beam across the
-middle. 1320 pixels at 60 per metre. The same data drives the 3D preview and the real strips.`,
+		`You are a lighting designer programming one track for a 5 x 4 m room. The light is a
+3 x 2 m aluminium frame hanging at 2.4 m: four runs forming a closed perimeter ring, plus a
+2 m beam across the middle, every LED facing the floor. 720 pixels at 60 per metre. The same
+data drives the 3D preview and the real strips.`,
 		CRAFT,
 		INTERPRETATION,
 		INVESTIGATE,

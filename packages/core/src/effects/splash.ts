@@ -4,7 +4,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
-import { stampOnStrip } from '../dsl/space.ts';
+import { stampOnStrip, stripAxis } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 export const splash: EffectDef = {
@@ -24,8 +24,8 @@ export const splash: EffectDef = {
 	create(g) {
 		// Fixed patch: kicks own the depth axis and the base hue, snares the width axis and
 		// the accent. Randomising this makes hits stop reading as the same instrument.
-		const kickWalls = g.strips.filter((s) => s.inPerimeter && s.normal[1] !== 0);
-		const snareWalls = g.strips.filter((s) => s.inPerimeter && s.normal[0] !== 0);
+		const kickWalls = g.strips.filter((s) => s.inPerimeter && stripAxis(s) === 'x');
+		const snareWalls = g.strips.filter((s) => s.inPerimeter && stripAxis(s) === 'y');
 		let kickCount = 0;
 		let snareCount = 0;
 

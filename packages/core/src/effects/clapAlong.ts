@@ -3,7 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
-import { stampOnStrip } from '../dsl/space.ts';
+import { stampOnStrip, stripAxis } from '../dsl/space.ts';
 import { beatRelease, INTENSITY } from './helpers.ts';
 
 /**
@@ -25,7 +25,7 @@ export const clapAlong: EffectDef = {
 	},
 	params: [INTENSITY],
 	create(g) {
-		const sideWalls = g.strips.filter((s) => s.inPerimeter && s.normal[0] !== 0);
+		const sideWalls = g.strips.filter((s) => s.inPerimeter && stripAxis(s) === 'y');
 		let clapCount = 0;
 		let lastHit = -1;
 

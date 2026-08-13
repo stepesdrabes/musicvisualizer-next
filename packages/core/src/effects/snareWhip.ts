@@ -3,7 +3,7 @@ import { SLOT } from '../contracts/palette.ts';
 import { sample } from '../color/palette.ts';
 import { clamp } from '../dsl/math.ts';
 import { fadeToBlack } from '../dsl/buffer.ts';
-import { stampOnStrip } from '../dsl/space.ts';
+import { stampOnStrip, stripAxis } from '../dsl/space.ts';
 import { beatRelease, INTENSITY, param } from './helpers.ts';
 
 /**
@@ -26,7 +26,7 @@ export const snareWhip: EffectDef = {
 	params: [INTENSITY, param('crackBeats', 'Beats to cross', 0.25, 0.125, 1, 0.125)],
 	create(g) {
 		const beam = g.strips.find((s) => !s.inPerimeter) ?? g.strips[g.strips.length - 1];
-		const sides = g.strips.filter((s) => s.inPerimeter && s.normal[0] !== 0);
+		const sides = g.strips.filter((s) => s.inPerimeter && stripAxis(s) === 'y');
 		let whipT = -1;
 		let dir = 1;
 		let power = 1;

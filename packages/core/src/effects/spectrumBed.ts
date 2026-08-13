@@ -56,7 +56,7 @@ export const spectrumBed: EffectDef = {
 	},
 	params: [INTENSITY, param('spread', 'Octaves across the room', 0.7), param('depth', 'Colour travel', 0.6)],
 	create(g) {
-		// One per pixel would be 1320 followers for a curve the eye reads at a handful of points,
+		// One per pixel would be 720 followers for a curve the eye reads at a handful of points,
 		// so the ring is metered at TAPS places and interpolated between them.
 		const TAPS = 12;
 		const taps = Array.from({ length: TAPS }, () => new Follower(0.02, FALL));

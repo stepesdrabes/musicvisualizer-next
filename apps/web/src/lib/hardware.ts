@@ -7,6 +7,25 @@
  * firmware by construction.
  */
 
+/**
+ * Which fixture a board drives.
+ *
+ * The room is two devices now, and they are not interchangeable: one is fed the whole 720-pixel
+ * frame, the other a single derived pixel. So the address, the state and the readout are per
+ * role rather than per installation.
+ */
+export type DeviceRole = 'frame' | 'bounce';
+export const DEVICE_ROLES: readonly DeviceRole[] = ['frame', 'bounce'];
+
+export const DEVICE_NAMES: Record<DeviceRole, string> = {
+	frame: 'The Frame',
+	bounce: 'Bounce Lamp'
+};
+
+export function isDeviceRole(v: unknown): v is DeviceRole {
+	return DEVICE_ROLES.includes(v as DeviceRole);
+}
+
 /** Answer to a discovery query. Available whether or not anything is streaming. */
 export interface DeviceIdentity {
 	host: string;
@@ -60,6 +79,14 @@ export interface DeviceTelemetry {
 	/** Frames arriving more than 20 / 50 / 100 ms after the one before. */
 	late: [number, number, number];
 	assemblyMaxMs: number;
+	/**
+	 * Longest the board spent presenting one frame, microseconds.
+	 *
+	 * The only part of the frame budget the board itself spends. It was noise while the output was
+	 * one PWM write; driving a strip is 30 us per LED, so it is now a real share of 16.7 ms and
+	 * the number beside it stops being about the radio if it climbs.
+	 */
+	ledMaxUs: number;
 	seqGaps: number;
 	bad: number;
 	outOfRange: number;
@@ -126,6 +153,7 @@ export function parseTelemetry(line: string, at: number): DeviceTelemetry | null
 		gapMaxMs: gap ? Number(gap[2]) : 0,
 		late: late ? [Number(late[1]), Number(late[2]), Number(late[3])] : [0, 0, 0],
 		assemblyMaxMs: num(text, /asm\s+([\d.]+)\s+ms/) ?? 0,
+		ledMaxUs: num(text, /\bled\s+(\d+)\s+us/) ?? 0,
 		seqGaps: num(text, /seqgap\s+(\d+)/) ?? 0,
 		bad: num(text, /\bbad\s+(\d+)/) ?? 0,
 		outOfRange: num(text, /\boob\s+(\d+)/) ?? 0,
@@ -182,10 +210,14 @@ export function isOutputFps(v: unknown): v is number {
 }
 
 export interface HardwareStatus {
+	role: DeviceRole;
 	host: string;
 	/**
 	 * Which part of the room this board is fed, as a `RoomRegion` id. `all` is the whole
 	 * fixture, which is the only sensible default and the only one that was possible before.
+	 *
+	 * Only meaningful for `frame`. The Bounce Lamp is fed a colour derived from the show rather
+	 * than a slice of the room, so there is nothing for it to point at.
 	 */
 	region: string;
 	state: LinkState;

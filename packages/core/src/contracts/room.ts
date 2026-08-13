@@ -36,27 +36,68 @@ export interface RoomRegion {
 	count: number;
 }
 
+/**
+ * The pergola, which is not the fixture.
+ *
+ * The two used to be one object, back when the LEDs ran along the walls and the room's own
+ * dimensions were the fixture's. They are separate things now: the room is an open structure
+ * that is only ever drawn, and the light hangs inside it.
+ */
 export interface RoomSpec {
 	name: string;
+	/** Footprint, metres. */
 	width: number;
 	depth: number;
+	/** Headroom, metres. Nothing is drawn at it; it is what the camera has to hold. */
+	height: number;
+	fixture: FrameSpec;
+	bounce: BounceSpec;
+}
+
+/**
+ * The Frame: a hanging rectangle plus one crossbar, every LED facing down.
+ *
+ * Walked as a closed perimeter with the crossbar off it, which is the same shape the room's
+ * walls and ceiling beam made, so the ring arithmetic and every effect that asks for "the
+ * beam" keep meaning what they meant.
+ */
+export interface FrameSpec {
+	width: number;
+	depth: number;
+	/** The LED plane, metres above the deck. */
 	height: number;
 	/** LEDs per metre. */
 	density: number;
-	wallStripHeight: number;
-	beamHeight: number;
-	/** 'y' means the beam spans the `depth` dimension. */
-	beamAxis: 'x' | 'y';
-	beamOffset: number;
+	/** 'y' means the crossbar spans `depth`. */
+	crossAxis: 'x' | 'y';
+	/** Metres from the frame's centre, along the axis the crossbar does not span. */
+	crossOffset: number;
+	/** Aluminium section, metres. Drawn, never lit. */
+	section: number;
+}
+
+/**
+ * The Bounce Lamp: one diffused emitter standing in the room.
+ *
+ * Not part of `Geometry`, because it carries no position an effect could paint to - it is one
+ * colour derived from the show, and the room is what an effect addresses.
+ */
+export interface BounceSpec {
+	/** Floor position, metres, origin at the room centre. */
+	at: readonly [number, number];
+	height: number;
+	diameter: number;
 }
 
 /**
  * Per-LED attribute tables. Built once from a RoomSpec; effects read these and never
  * compute positions themselves.
  *
- * `nx/ny/nz` are normalised by the single largest room extent, never per-axis. Per-axis
- * normalisation turns circles into ellipses and makes a sweep cross different walls at
- * different speeds.
+ * `nx/ny/nz` are normalised by the single largest extent of the FIXTURE, never per-axis and
+ * never by the room. Per-axis normalisation turns circles into ellipses and makes a sweep
+ * cross different runs at different speeds; normalising by the room would leave every LED
+ * inside the middle of the range, so every sweep and every radial effect would lose most of
+ * its travel to a footprint none of them can reach.
  */
 export interface Geometry {
 	count: number;

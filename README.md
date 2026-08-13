@@ -1,7 +1,9 @@
 # LightningStrike
 
-A lighting show for a 5 x 4 m room with five addressable LED strips: four wall runs at
-2.4 m forming a closed perimeter ring, plus one ceiling beam. 1320 pixels at 60 LED/m.
+A lighting show for a 5 x 4 m room, lit by a 3 x 2 m aluminium frame hanging at 2.4 m: four
+runs forming a closed perimeter ring, plus a 2 m beam across the middle, every LED facing the
+floor. 720 pixels at 60 LED/m. Beside it stands the Bounce Lamp, a one-pixel fixture that takes
+the show's accent colour and pulses on the kit.
 
 The same bytes drive a three.js preview of the room and the real strips over DDP.
 
@@ -477,9 +479,9 @@ build step between editing a package and seeing it in the app.
 
 ## Hardware
 
-DDP over UDP on port 4048, which is what WLED listens on with no configuration. Three
-packets per 1320-LED frame at 94.9% wire efficiency, against eight for sACN with universe
-maths on top.
+DDP over UDP on port 4048, which is what WLED listens on with no configuration. Two packets
+per 720-LED frame at 94.9% wire efficiency, against five for sACN with universe maths on top.
+The Bounce Lamp is a second device on its own stream, one pixel wide.
 
 Two things to get right:
 
@@ -494,9 +496,10 @@ frames a second of pixels to the server would be pointless when the show is dete
 The server renders its own bit-identical copy from the same show and the same position; the
 browser only reports where the audio actually is. The room keeps running if the tab closes.
 
-WS2812 is 30 us per LED, so 1320 pixels on one data line caps at 25 Hz. Reaching 60 needs
-roughly one output per strip: a 4- or 8-output ESP32 board, wired ethernet rather than WiFi.
-Pass several comma-separated hosts and the fixture is split across them.
+WS2815 is 30 us per LED, so 720 pixels on one data line caps near 46 Hz. The board splits the
+frame across two data lines instead - 300 pixels and 420, written together - which fits inside a
+16.7 ms frame with room to spare. Passing several comma-separated hosts splits the fixture across
+boards as well, for a room that outgrows one.
 
 ## Known gaps
 

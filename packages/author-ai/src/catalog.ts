@@ -84,6 +84,9 @@ Colour (address by slot, never by hue)
 
 Space
   ringU(g, i) - one LED's position around the perimeter, or along the beam
+  stripAxis(strip) -> 'x' | 'y' - which axis a run spans. How to tell one side of the
+    frame from the pair at right angles to it; every run's normal points down, so the
+    normal cannot answer this
   ringsFor(g) -> { perimeter, perimeterHalf, beam, all }; each has .map, .length, .metres
   scatter(ring, src, dst) · scatterAdd · scatterMirrored(full, half, src, dst)
   pxPerSecond(ring, metresPerSecond)

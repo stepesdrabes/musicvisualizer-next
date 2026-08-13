@@ -16,11 +16,11 @@ export const GET: RequestHandler = async ({ request }) => {
 		start(controller) {
 			let closed = false;
 
-			const send = (status: HardwareStatus) => {
+			const send = (statuses: HardwareStatus[]) => {
 				if (closed) return;
 				try {
 					controller.enqueue(
-						encoder.encode(`event: hardware\ndata: ${JSON.stringify(status)}\n\n`)
+						encoder.encode(`event: hardware\ndata: ${JSON.stringify(statuses)}\n\n`)
 					);
 				} catch {
 					closed = true;
@@ -53,7 +53,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			};
 			request.signal.addEventListener('abort', close);
 
-			send(hardware.status);
+			send(hardware.statuses);
 		}
 	});
 

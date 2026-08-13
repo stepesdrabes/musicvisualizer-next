@@ -1,92 +1,106 @@
 import type { Geometry, LedSpan, RoomRegion, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
 
-/** 5x4 m, wall strips at the wall/ceiling junction, one ceiling beam, 60 LED/m. */
+/** A 5x4 m room with a 3x2 m frame hanging at 2.4 m. 720 px at 60 LED/m. */
 export const DEFAULT_ROOM: RoomSpec = {
 	name: 'Room 5x4',
 	width: 5,
 	depth: 4,
 	height: 2.6,
-	density: 60,
-	wallStripHeight: 2.4,
-	// Same height as the walls. All five runs on one plane is what lets a sweep cross the
-	// room as a single wavefront instead of reading as a separate fixture.
-	beamHeight: 2.4,
-	beamAxis: 'y',
-	beamOffset: 0
+	fixture: {
+		width: 3,
+		depth: 2,
+		height: 2.4,
+		density: 60,
+		crossAxis: 'y',
+		crossOffset: 0,
+		section: 0.04
+	},
+	bounce: { at: [-2.2, -1.7], height: 1, diameter: 0.175 }
 };
 
 function segLength(s: { start: Vec3; end: Vec3 }): number {
 	return Math.hypot(s.end[0] - s.start[0], s.end[1] - s.start[1], s.end[2] - s.start[2]);
 }
 
-function stripSpecs(spec: RoomSpec): StripSpec[] {
-	const hw = spec.width / 2;
-	const hd = spec.depth / 2;
-	const zw = spec.wallStripHeight;
-	const d = spec.density;
-	const nWall = Math.round(spec.width * d);
-	const eWall = Math.round(spec.depth * d);
+/**
+ * Every run on the frame faces the floor, so `normal` is the same for all five.
+ *
+ * A run is told from its neighbours by the axis it spans, not by where it points. Ask
+ * `stripAxis` for that rather than reading a component of this.
+ */
+const DOWN: Vec3 = [0, 0, -1];
 
-	// Walked as one counter-clockwise ring so concatenating the walls yields a closed
+function stripSpecs(spec: RoomSpec): StripSpec[] {
+	const f = spec.fixture;
+	const hw = f.width / 2;
+	const hd = f.depth / 2;
+	const z = f.height;
+	const d = f.density;
+	const along = Math.round(f.width * d);
+	const across = Math.round(f.depth * d);
+
+	// Walked as one counter-clockwise ring so concatenating the sides yields a closed
 	// perimeter with no seam.
 	const raw: Omit<StripSpec, 'offset'>[] = [
 		{
 			id: 0,
-			name: 'Wall N',
-			count: nWall,
-			start: [-hw, hd, zw],
-			end: [hw, hd, zw],
-			normal: [0, -1, 0],
+			name: 'Frame N',
+			count: along,
+			start: [-hw, hd, z],
+			end: [hw, hd, z],
+			normal: DOWN,
 			inPerimeter: true
 		},
 		{
 			id: 1,
-			name: 'Wall E',
-			count: eWall,
-			start: [hw, hd, zw],
-			end: [hw, -hd, zw],
-			normal: [-1, 0, 0],
+			name: 'Frame E',
+			count: across,
+			start: [hw, hd, z],
+			end: [hw, -hd, z],
+			normal: DOWN,
 			inPerimeter: true
 		},
 		{
 			id: 2,
-			name: 'Wall S',
-			count: nWall,
-			start: [hw, -hd, zw],
-			end: [-hw, -hd, zw],
-			normal: [0, 1, 0],
+			name: 'Frame S',
+			count: along,
+			start: [hw, -hd, z],
+			end: [-hw, -hd, z],
+			normal: DOWN,
 			inPerimeter: true
 		},
 		{
 			id: 3,
-			name: 'Wall W',
-			count: eWall,
-			start: [-hw, -hd, zw],
-			end: [-hw, hd, zw],
-			normal: [1, 0, 0],
+			name: 'Frame W',
+			count: across,
+			start: [-hw, -hd, z],
+			end: [-hw, hd, z],
+			normal: DOWN,
 			inPerimeter: true
 		}
 	];
 
-	const zb = spec.beamHeight;
+	// Pushed after the ring, so everything off the perimeter sits at the tail of the buffer
+	// and a corner that runs off the last side cannot walk into it.
+	const o = f.crossOffset;
 	raw.push(
-		spec.beamAxis === 'y'
+		f.crossAxis === 'y'
 			? {
 					id: 4,
 					name: 'Beam',
-					count: Math.round(spec.depth * d),
-					start: [spec.beamOffset, -hd, zb],
-					end: [spec.beamOffset, hd, zb],
-					normal: [0, 0, -1],
+					count: across,
+					start: [o, -hd, z],
+					end: [o, hd, z],
+					normal: DOWN,
 					inPerimeter: false
 				}
 			: {
 					id: 4,
 					name: 'Beam',
-					count: Math.round(spec.width * d),
-					start: [-hw, spec.beamOffset, zb],
-					end: [hw, spec.beamOffset, zb],
-					normal: [0, 0, -1],
+					count: along,
+					start: [-hw, o, z],
+					end: [hw, o, z],
+					normal: DOWN,
 					inPerimeter: false
 				}
 	);
@@ -117,10 +131,15 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 	const perim = new Float32Array(count).fill(-1);
 	const normal = new Float32Array(count * 3);
 
-	const extent = Math.max(spec.width, spec.depth, spec.height);
-	const halfDiag = Math.hypot(spec.width / 2, spec.depth / 2);
-	const centreZ = spec.wallStripHeight / 2;
-	const maxDist3 = Math.hypot(halfDiag, Math.max(centreZ, spec.beamHeight - centreZ));
+	// Against the fixture, never against the pergola. See the note on `Geometry`.
+	const f = spec.fixture;
+	const extent = Math.max(f.width, f.depth);
+	const halfDiag = Math.hypot(f.width / 2, f.depth / 2);
+	// Head height under the frame rather than the frame's own plane. On its plane `dist` would
+	// collapse onto `r`, because every LED is coplanar, and the two projections would be the
+	// same look under two names.
+	const centreZ = f.height / 2;
+	const maxDist3 = Math.hypot(halfDiag, centreZ);
 
 	const perimeterLength = strips
 		.filter((s) => s.inPerimeter)
@@ -135,7 +154,7 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 
 		for (let k = 0; k < s.count; k++) {
 			const i = s.offset + k;
-			// Sample at LED centres so the corner LED where two walls meet is not
+			// Sample at LED centres so the corner LED where two runs meet is not
 			// duplicated into a visible double-bright dot.
 			const u = (k + 0.5) / s.count;
 
@@ -147,8 +166,8 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 			y[i] = py;
 			z[i] = pz;
 
-			nx[i] = (px + spec.width / 2) / extent;
-			ny[i] = (py + spec.depth / 2) / extent;
+			nx[i] = (px + f.width / 2) / extent;
+			ny[i] = (py + f.depth / 2) / extent;
 			nz[i] = pz / extent;
 
 			const rad = Math.hypot(px, py);
@@ -188,7 +207,7 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 		local,
 		perim,
 		normal,
-		pitch: 1 / spec.density,
+		pitch: 1 / f.density,
 		extent,
 		perimeterLength
 	};
@@ -197,9 +216,9 @@ export function buildGeometry(spec: RoomSpec = DEFAULT_ROOM): Geometry {
 /**
  * How far either side of a corner that corner reaches, in metres.
  *
- * A fixture standing in a corner is lit by, and belongs to, the light near it. A metre each way
- * is roughly what reads as "this corner" rather than "this wall", and at 60 LED/m it is 120
- * pixels, which is enough of a sample for a percentile to mean something.
+ * A board driving part of the fixture is given a corner because a metre each way is roughly what
+ * reads as "this corner" rather than "this side", and at 60 LED/m it is 120 pixels, which is
+ * enough of a sample for a percentile to mean something.
  */
 const CORNER_REACH_M = 1;
 
@@ -209,7 +228,7 @@ const CORNER_REACH_M = 1;
  * The ring wraps and the frame does not, so this returns two spans when the cut straddles the
  * seam. Wrapping is modulo the ring rather than modulo the whole frame: the perimeter is the
  * ring, and anything off it (the beam) sits after the perimeter in the buffer and must not be
- * walked into by a corner that ran off the end of a wall.
+ * walked into by a corner that ran off the end of a side.
  */
 function ringSpans(ringStart: number, ringLen: number, centre: number, count: number): LedSpan[] {
 	const len = Math.min(count, ringLen);
@@ -223,10 +242,10 @@ function ringSpans(ringStart: number, ringLen: number, centre: number, count: nu
 }
 
 /**
- * Two walls named for a corner, in the order a person says them.
+ * Two runs named for a corner, in the order a person says them.
  *
  * The ring is walked N, E, S, W, so taking the pair in walk order yields "ES" and "WN", which
- * read as mistakes. Compass names put the latitude first. Walls named anything else fall back
+ * read as mistakes. Compass names put the latitude first. Runs named anything else fall back
  * to walk order rather than inventing one.
  */
 function cornerLabel(a: StripSpec, b: StripSpec): string {
@@ -264,7 +283,7 @@ export function roomRegions(g: Geometry): RoomRegion[] {
 	for (let i = 0; i < ring.length; i++) {
 		const a = ring[i];
 		const b = ring[(i + 1) % ring.length];
-		// The junction is the first LED of the next wall, which for the pair that closes the
+		// The junction is the first LED of the next run, which for the pair that closes the
 		// ring is the first LED of the whole perimeter.
 		const centre = b.offset - ringStart;
 		out.push(

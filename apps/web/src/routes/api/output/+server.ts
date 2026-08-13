@@ -53,6 +53,8 @@ class Output {
 	private registry = new EffectRegistry();
 	private director = new RoomDirector(this.geometry, this.registry);
 	private sink: LedSink | null = null;
+	/** The Bounce Lamp's own stream, one pixel wide. */
+	private bounce: LedSink | null = null;
 	private timer: NodeJS.Timeout | null = null;
 
 	private position = 0;
@@ -126,7 +128,19 @@ class Output {
 		this.trackId = null;
 	}
 
-	async start(targets: DdpTarget[], offsetMs: number, protocol: WireProtocol): Promise<void> {
+	/**
+	 * `bounceHost` gets its own sink rather than a target on the first one.
+	 *
+	 * They are two devices: independent PUSH, independent sequence, and a lamp that keeps working
+	 * when the boards driving the frame are unplugged. It is always DDP - one pixel is not worth
+	 * a universe - and it is skipped entirely when no lamp is configured.
+	 */
+	async start(
+		targets: DdpTarget[],
+		offsetMs: number,
+		protocol: WireProtocol,
+		bounceHost?: string
+	): Promise<void> {
 		await this.stop();
 		this.targets = targets;
 		this.protocol = protocol;
@@ -135,6 +149,13 @@ class Output {
 		this.sink =
 			protocol === 'sacn' ? createSacnSink({ targets: universesFor(targets) }) : createDdpSink({ targets });
 		await this.sink.open();
+
+		if (bounceHost) {
+			this.bounce = createDdpSink({
+				targets: [{ host: bounceHost, firstLed: 0, ledCount: 1, deviceFirstLed: 0 }]
+			});
+			await this.bounce.open();
+		}
 		this.arm();
 	}
 
@@ -169,6 +190,12 @@ class Output {
 				frameId: this.frames,
 				presentAtMs: now
 			});
+			this.bounce?.send({
+				rgb: this.director.bounce,
+				dt,
+				frameId: this.frames,
+				presentAtMs: now
+			});
 			this.frames++;
 		}, 1000 / this.fps);
 	}
@@ -190,6 +217,8 @@ class Output {
 		this.timer = null;
 		await this.sink?.close();
 		this.sink = null;
+		await this.bounce?.close();
+		this.bounce = null;
 	}
 
 	/** Which track this output is currently rendering, so the queue can tell when to re-point. */
@@ -364,10 +393,11 @@ export const POST: RequestHandler = async (event) => {
 	const protocol = isWireProtocol(body.protocol)
 		? body.protocol
 		: (await settings.read()).outputProtocol;
-	await output.start(targetsFor(region, body.hosts), body.offsetMs ?? 0, protocol);
-	// The first host is the one the readout is about: the board only reports to whoever sends
-	// it DDP, so on a split fixture each would need its own listener and its own port.
-	hardware.setHost(body.hosts[0]);
+	const bounceHost = hardware.link('bounce').status.host;
+	await output.start(targetsFor(region, body.hosts), body.offsetMs ?? 0, protocol, bounceHost);
+	// The first host is the one The Frame's readout is about: a board only reports to whoever
+	// sends it DDP, so on a split fixture each would need its own listener and its own port.
+	hardware.link('frame').setHost(body.hosts[0]);
 	hardware.setStreaming(true);
 	return json(output.status);
 };

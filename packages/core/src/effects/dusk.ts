@@ -10,7 +10,7 @@ import { INTENSITY, param } from './helpers.ts';
 /**
  * A sky, laid across the room rather than up it.
  *
- * Every LED in this fixture is at the same height - four wall runs at 2.4 m and a beam at 2.4 m -
+ * Every LED in this fixture is at the same height - the frame is one plane at 2.4 m -
  * so there is no vertical axis to put a horizon on. What there is is a horizontal plane, and a
  * sunset seen from inside a room is a horizontal thing anyway: one side glows, the far side has
  * already gone blue, and the bearing walks round as the sun goes down.

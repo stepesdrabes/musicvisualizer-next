@@ -1,4 +1,13 @@
-export type { Geometry, LedSpan, RoomRegion, RoomSpec, StripSpec, Vec3 } from './contracts/room.ts';
+export type {
+	BounceSpec,
+	FrameSpec,
+	Geometry,
+	LedSpan,
+	RoomRegion,
+	RoomSpec,
+	StripSpec,
+	Vec3
+} from './contracts/room.ts';
 export type { SectionKind, ShowFrame, Band as BandType } from './contracts/frame.ts';
 export {
 	BAND_EDGES_HZ,
@@ -97,8 +106,12 @@ export {
 } from './effects/sandbox.ts';
 export {
 	BrightnessSlew,
+	GAMMA,
+	LEVEL_BINS,
 	MeanLevel,
 	blend,
 	compressHighlights,
+	perceivedLevel,
 	quantize
 } from './output.ts';
+export { BounceLamp } from './bounce.ts';

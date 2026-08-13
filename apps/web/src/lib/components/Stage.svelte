@@ -134,7 +134,9 @@
 
 	<div class="overlay bottom">
 		<span class="mono subtle">
-			{viz ? `${viz.geometry.count} px · ${viz.spec.width}x${viz.spec.depth} m` : ''}
+			{viz
+				? `${viz.geometry.count} px · ${viz.spec.fixture.width}x${viz.spec.fixture.depth} m frame`
+				: ''}
 		</span>
 		<span class="spacer"></span>
 		<span class="mono subtle">{readout.fps} fps</span>

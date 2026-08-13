@@ -2,9 +2,10 @@ import { error, json } from '@sveltejs/kit';
 import { DEFAULT_ROOM, buildGeometry, roomRegions } from '@mv/core';
 import { hardware } from '$lib/server/hardware.ts';
 import { isLocal } from '$lib/server/access.ts';
+import { isDeviceRole } from '$lib/hardware.ts';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async () => json(hardware.status);
+export const GET: RequestHandler = async () => json(hardware.statuses);
 
 /** Hosts are used as an argument to a UDP send, so anything shell-like is simply not one. */
 const HOST = /^[A-Za-z0-9._-]{1,253}$/;
@@ -16,22 +17,27 @@ export const POST: RequestHandler = async (event) => {
 	// the server probes on its own timer, so asking for one by hand only ever duplicated those.
 	const body = (await event.request.json()) as {
 		action: 'set';
+		role?: string;
 		host?: string;
 		region?: string;
 	};
 
 	if (body.action === 'set') {
+		if (!isDeviceRole(body.role)) error(400, 'that is not a device in this room');
+		const link = hardware.link(body.role);
+
 		const host = (body.host ?? '').trim();
 		if (host && !HOST.test(host)) error(400, 'that does not look like a host or an address');
-		hardware.setHost(host);
+		link.setHost(host);
+
 		if (typeof body.region === 'string') {
 			// Checked against the geometry rather than against a pattern, so an id that no longer
 			// names a part of this room is refused here instead of silently lighting nothing.
 			const known = roomRegions(buildGeometry(DEFAULT_ROOM)).some((r) => r.id === body.region);
 			if (!known) error(400, 'that is not a part of this room');
-			hardware.setRegion(body.region);
+			link.setRegion(body.region);
 		}
-		return json(hardware.status);
+		return json(hardware.statuses);
 	}
 
 	error(400, 'unknown action');

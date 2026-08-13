@@ -1,22 +1,30 @@
 # Firmware
 
-A Raspberry Pi Pico W that receives the DDP stream from `packages/transport-ddp`, lights what
-it has, and reports what actually arrived. Source is in `firmware/`.
+A Raspberry Pi Pico W that receives the DDP stream from `packages/transport`, lights what it
+has, and reports what actually arrived. Source is in `firmware/`.
 
-**It does not drive the strips yet.** It joins WiFi, listens on port 4048, reassembles frames,
-and once a second says how many packets and frames it got, how far apart they were, and what
-went missing. Then it reduces each frame to one colour and one brightness (`src/summary.rs`) and
-lights a salvaged analog RGBW lamp with it (`src/lamp.rs`), which costs a couple of hundred
-microseconds against the 30 us per LED the strips will want.
+It builds as **two fixtures**, one per binary:
 
-The lamp is a one-pixel fixture: every LED on its strip shows the same thing, so it carries
-colour, level and timing and nothing a show says by moving light across a room. That is the
-ceiling on what this build can tell you, and it is why the strips are still on the list.
+| feature | fixture | pixels | output |
+|---|---|---|---|
+| `frame` (default) | **The Frame**, 3 x 2 m of WS2815 at 60 LED/m | 720 | two PIO data lines on GP2 and GP3 |
+| `bounce` | **The Bounce Lamp**, a salvaged analog RGBW strip | 1 | four MOSFET gates on PWM, GP6-9 |
+
+Both run the same receive loop and answer the same two questions about themselves. The only
+thing that differs is what they do with a frame once it has arrived, which is why `claim`,
+`selftest`, `present` and `blank` are the whole surface between `node.rs` and either one.
+
+The lamp is a **one-pixel fixture**: every LED on its strip shows the same thing, so the host
+sends it one pixel and this only has to put that on four channels. Everything that used to shape
+its response - a beat envelope, a passage envelope, a floor - is host-side now, in
+`packages/core/src/bounce.ts`, where it can read the show's own `kickEnv` instead of inferring a
+beat from how much of the room happened to be lit.
 
 ## What it measured
 
 Run on real hardware, 2026-08-07, a Pico W on 2.4 GHz against a MacBook sender on the same
-network. Repeated 20 and 30 second runs at the full 1320-pixel fixture.
+network. Repeated 20 and 30 second runs at the 1320-pixel fixture the room had then, which is
+harder on the radio than the 720 it has now.
 
 **Reception is not a problem.** Zero loss, every run, at 180 packets a second:
 `seqgap 0  bad 0  oob 0  torn 0`, sustained, tracking the sender's frame rate exactly. The
@@ -78,8 +86,9 @@ export WIFI_PASSWORD='your-password'
 ## Build, flash, watch
 
 ```sh
-cd firmware
-cargo build --release            # or cargo clippy --release
+cd firmware/node
+cargo build --release                                          # The Frame
+cargo build --release --no-default-features --features bounce  # The Bounce Lamp
 
 # hold BOOTSEL while plugging the board in, then
 cargo run --release
@@ -87,117 +96,63 @@ cargo run --release
 screen /dev/tty.usbmodem* 115200 # the board reappears as a serial port a second after boot
 ```
 
+The two features are mutually exclusive and one is required; asking for both or neither is a
+`compile_error!` rather than a surprise on the wall.
+
+The protocol half of the crate is a separate library, `firmware/wire`, which imports nothing from
+Embassy and therefore builds and tests on the host:
+
+```sh
+cd firmware
+cargo test -p room-wire --target "$(rustc -vV | sed -n 's/^host: //p')"
+```
+
+The target is spelled out because `.cargo/config.toml` points the default at the board. Those
+tests are worth more than their size: `stats.rs` and `hello.rs` emit strings that
+`apps/web/src/lib/hardware.ts` parses from the other end, and both sides are now pinned to the
+same text rather than to a sample copied into this file.
+
 The banner gives you the address:
 
 ```
-room-node on 192.168.1.57, DDP :4048, stats -> :4049
+room-frame on 192.168.1.57, DDP :4048, stats -> :4049
 ```
 
-Put that address into the board panel in the app, top right. A DHCP reservation is worth
-setting up, since the hostname offered is `room-node` and nothing else advertises it.
+Put that address into the board panel in the app, top right. The panel has a row per device, so
+the lamp's address goes in beside The Frame's. A DHCP reservation is worth setting up, since the
+hostnames offered are `room-frame` and `room-bounce` and nothing else advertises them.
 
-## What the lamp shows
+## What the host sends
 
-Two numbers, computed once per frame in `summary.rs`. That reduction sits apart from the fixture
-lighting it, because what a frame looked like is one question and how a particular fixture says
-so is another:
+Both fixtures receive gamma-corrected bytes and put them out untouched. **Nothing rescales
+anything on the board, and nothing should.** The mixer auto-exposes at track scale, holds a house
+floor under every cue and compresses its own highlights, so what arrives on the wire is already
+the level the room is meant to sit at. A second gain here could only measure the show against
+itself, and normalising against the loudest frame of the last half minute leaves every other
+frame below it by construction - a room that reads bright on screen and dim on the wall. The host
+owns exposure, the same way it owns gamma.
 
-- **Colour** is the frame's mean, per channel, divided by whichever channel is largest. Dark
-  pixels contribute nothing to a sum, so that is already weighted toward the lit part of the
-  room, and the division leaves hue and saturation exactly as they arrived.
-- **Brightness** is the **90th percentile** of `max(r,g,b)`, so a tenth of the fixture is above
-  it, taken straight to the duty cycle with no gain of its own. A 256-bin histogram gets it in
-  one pass and 512 bytes, where a percentile would otherwise want a sort.
+The Bounce Lamp's one pixel is derived rather than sampled: `packages/core/src/bounce.ts` takes
+the show's **accent** slot for colour and splits the level between two envelopes, a passage
+component over about two seconds carrying which section the track is in and a beat component with
+an instant rise and a 100 ms fall carrying which beat. A fixture asked to be both is good at
+neither; split, the hit reads as a shimmer over a steady wash instead of the whole lamp blinking.
 
-**Nothing rescales that on the board, and nothing should.** The mixer auto-exposes at track
-scale, holds a house floor under every cue and compresses its own highlights, so what arrives on
-the wire is already the level the room is meant to sit at. A second gain here can only measure
-the show against itself, and normalising against the loudest frame of the last half minute
-leaves every other frame below it by construction - a room that reads bright on screen and dim
-on the wall. That is the invariant worth keeping: the host owns exposure, the same way it owns
-gamma.
+That reduction used to run on the board, over whatever slice of the room it was fed, and the
+reason it moved is worth keeping: a percentile over the whole fixture barely moves per beat,
+because one kick lights a small share of a big frame. The board could only ever infer the beat
+from pixels. The host has `kickEnv`.
 
-A percentile rather than a mean because **a room is not as bright as its average**. Half the
-fixture lit at full reads as a bright room; averaging over the dark half calls it half lit,
-which is the one error a single emitter standing in for 1320 cannot afford. Measured through the
-same mixer that feeds the wire, per section:
+The lamp also holds a floor. The one thing that makes a light distracting is going fully dark and
+coming back: a fixture breathing between an eighth and full reads as alive, and the same fixture
+between nothing and full reads as a fault. It matters more here than on the frame, because a lamp
+standing in a corner sits in peripheral vision whenever the room is what is being looked at, and
+the periphery is markedly more flicker-sensitive than the fovea. It costs range - measured
+through the same mixer, a room running 0.28 at an intro and 0.90 at a drop arrives as 0.37 and
+0.91, so 3.2:1 becomes 2.5:1 - and that cost is why it is not higher. A genuinely black room
+still goes black, so a blackout in the show is still a blackout in the corner.
 
-| section | perceived brightness |
-|---|---|
-| drop | 0.90 |
-| groove | 0.66 |
-| build | 0.61 |
-| outro / breakdown / intro | 0.28 to 0.34 |
-| void | 0.00 |
-
-Median 0.70 across a whole track, dark 2% of the time. The arrangement is legible on one
-emitter, which is what this is for.
-
-None of this is DSP the board invented. It is arithmetic on the bytes the strips would have
-got, so a wrong colour or a pulse on the offbeat is a wrong colour or a pulse on the offbeat.
-
-**A frame lighting less than a tenth of the room reads as a level of exactly zero.** The 90th
-percentile needs a tenth of the pixels it is given before it can report anything at all, so an
-effect lighting a narrow band or a sparse scatter falls off that cliff rather than reading as a
-dim room. That cliff scales with the feed: on the whole 1320 it takes 132 lit pixels, on a
-120-pixel corner it takes 12. The reduction reports those frames as lit with a level of zero
-rather than as dark, so the fixture can hold its floor through them instead of blinking at a
-threshold, and only a frame with no light anywhere is dark.
-
-## How the lamp answers
-
-Straight through, the numbers above make a mirror: the lamp shows the average of the same room
-the walls are showing, only blurrier. Two fixtures saying the same thing is one fixture and a
-redundancy. What a corner lamp can do that 1080 pixels in a line at 2.4 m cannot is volume, fill
-below the perimeter, and a clean warm white, so its job is room tone rather than accent, and the
-response is shaped for that.
-
-**The level is two envelopes, not one.** A passage component over about two seconds carries
-which section the track is in, and a beat component with an instant rise and a 100 ms fall
-carries which beat. `BEAT_DEPTH` decides how much of the range above the floor the second one
-owns. A fixture asked to be both is good at neither: split them and the hit reads as a shimmer
-over a steady wash instead of the whole lamp blinking.
-
-**What that is worth depends on the feed, far more than on the constant.** A percentile over the
-whole 1320 barely moves per beat, because one kick lights a small share of a big room, so the
-beat is worth about 4 points of output no matter what `BEAT_DEPTH` is set to and the lamp is a
-section light. Fed one corner instead, the same beat swamps the local percentile and is worth
-about 20. **Pointing the board at a corner is what makes it responsive; the constants only
-decide how much of that survives.**
-
-That is a host-side setting, not a rebuild: the board summarises whatever it is sent, and the
-board panel has a **Shows** row listing the parts of the room. `Whole room` is every pixel, each
-wall and the beam are themselves, and each corner is a metre either way around the junction, 120
-pixels at 60 LED/m. It takes effect the next time output starts, the same as the address does,
-because re-pointing a running stream would step the room mid-track.
-
-One of the four corners straddles the seam where the last wall meets the first, so it is two runs
-of the frame and one place in the room. That reaches the board as two DDP targets, and only the
-last packet to a device carries PUSH: a board seeing PUSH twice in a frame would present once
-with half the frame written and tear.
-
-**It has a floor.** The one thing that makes a light distracting is going fully dark and coming
-back: a fixture breathing between an eighth and full reads as alive, and the same fixture between
-nothing and full reads as a fault. It matters more here than on the walls, because a corner
-fixture sits in peripheral vision whenever the room is what is being looked at, and the periphery
-is markedly more flicker-sensitive than the fovea. It costs range - against the measured table a
-room running 0.28 at an intro and 0.90 at a drop arrives as 37% and 91%, so 3.2:1 becomes 2.5:1 -
-and that cost is why it is not higher. A genuinely black frame still goes black, so a blackout in
-the show is still a blackout in the room.
-
-None of that is the auto-exposure the section above refuses to do. The floor measures nothing and
-divides by nothing; it is a constant of the fixture in the same way `MAX_DUTY` is, and the mirror
-image of it.
-
-**Colour moves over about half a second**, in both directions and far slower than either level
-envelope, because position may carry colour freely and time may not. One trap is built into that:
-a dark frame carries no hue, and letting its zeroed ratios into the filter would drag colour
-toward black and make it climb back the moment light returned, which is a desaturation flash on
-every gap in the show. So colour is held through a blackout, and snapped rather than eased on the
-way out of one, since there is nothing to be smooth against across a gap and easing would spend
-half a second on the wrong hue.
-
-## The lamp
+## The Bounce Lamp
 
 An RGB lamp taken apart for its strip and its driver board, which is a generic `UL NR:E330731`
 analog RGBW controller: 12 V common anode, four low-side MOSFETs, an unmarked SOIC-8 doing the
@@ -258,7 +213,7 @@ washed out frames reach for the extra emitters.
 equal duty. This strip carries two phosphor emitters to every RGB package and each is brighter
 than a single die, so the white channel outruns the other three several times over. At unity it
 swamps every desaturated colour and the lamp reads as a warm bulb rather than as the room.
-`TRIM[3]` in `lamp.rs` ships at 64 of 256, a quarter, which is a starting point rather than a
+`TRIM[3]` in `fixture/bounce.rs` ships at 64 of 256, a quarter, which is a starting point rather than a
 measurement.
 
 The measurement is the last two selftest steps: full R+G+B, then full W, the white the colour
@@ -272,7 +227,7 @@ once, which is the most this strip can ever draw. **Measure the current on a ful
 against what the supply is rated for**, and if it is over, pull white down rather than the other
 three: white only carries how washed out a frame is, where the other three carry its colour.
 
-`MAX_DUTY` in `lamp.rs` is full scale, because nothing about this fixture argues for less. A
+`MAX_DUTY` in `fixture/bounce.rs` is full scale, because nothing about this fixture argues for less. A
 small emitter at desk distance has to be held well under its maximum, since past a few
 milliamps it stops reading as a colour and starts reading as glare; a diffused strip seen across
 a room is a wash, and its ceiling is its own maximum. Pull it down if the strip is uncomfortable
@@ -286,7 +241,7 @@ So the board also answers a query, on the DDP port, at any time:
 
 ```
 -> ?room-node
-<- room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds lamp
+<- room-node host room-frame fw 0.1.0 up 42s px 720 ddp 4048 stats 4049 leds ws2815
 ```
 
 The reply goes back to the asker's own source port, so nothing has to be listening on 4049 for
@@ -294,10 +249,10 @@ this to work. A leading `?` is `0x3f`, and DDP version 1 puts `0b01` in the top 
 first byte, so `hello.rs` and `ddp.rs` can never both claim a datagram; the query is checked
 first and never counts against `bad`.
 
-`leds` lists one kind per output, `+`-separated, each read from its own module rather than
-written in `hello.rs`, so it changes with the outputs and not with a string somebody remembered
-to update. `stub` and `monitor` leave the room dark and the app warns on both; `lamp` and
-eventually `ws2815` mean it is lit. The host asks whether **any** kind in that list emits rather
+`leds` lists one kind per output, `+`-separated, and every field on that line comes from the
+binary rather than from `hello.rs` - the wire crate does not know which board it was linked into.
+`ws2815` is The Frame and `lamp` is the Bounce Lamp; a kind the app has never heard of counts as
+lit, because warning that a lit room is dark is the worse of the two mistakes. The host asks whether **any** kind in that list emits rather
 than looking at the first, so a build that adds a second output cannot go quietly dark.
 
 ## Reading the stats line
@@ -306,7 +261,7 @@ One line a second on the console, and the same line as a UDP datagram to port 40
 host last sent DDP. That second copy is for boards already on a wall: `nc -lu 4049`.
 
 ```
-up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0
+up 42s  720 px  120 pkt/s  127.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0
 ```
 
 | Field | Means |
@@ -317,7 +272,7 @@ up 42s  1320 px  180 pkt/s  231.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  
 | `gap` | shortest and longest PUSH to PUSH interval. The max is the jitter that matters |
 | `late` | frames arriving more than 20 / 50 / 100 ms after the one before |
 | `asm` | worst first-packet to PUSH span, so how long a frame took to arrive in pieces |
-| `led` | worst frame summarised and pushed to every output. Every other field here measures the network; this is the only part of the 16.7 ms the board spends itself, so it is what says whether they still do |
+| `led` | worst frame pushed to the fixture. Every other field here measures the network; this is the only part of the 16.7 ms the board spends itself. On The Frame it is two DMA transfers of 300 and 420 pixels awaited together, around 12.6 ms, so watch it |
 | `seqgap` | DDP sequence steps that were not +1 |
 | `bad` | datagrams rejected by the parser |
 | `oob` | writes past the end of the buffer, meaning the host drives more pixels than this build holds |
@@ -340,9 +295,9 @@ shape as the board so the two subtract.
 
 ```sh
 cd firmware/tools
-node --experimental-strip-types ddp-probe.ts 192.168.0.106 1320 30 paced
-node --experimental-strip-types ddp-probe.ts loopback 1320 30 paced     # no radio, the control
-node --experimental-strip-types ddp-probe.ts loopback 1320 30 interval  # what apps/web does
+node --experimental-strip-types ddp-probe.ts 192.168.0.106 720 30 paced
+node --experimental-strip-types ddp-probe.ts loopback 720 30 paced     # no radio, the control
+node --experimental-strip-types ddp-probe.ts loopback 720 30 interval  # what apps/web does
 ```
 
 The loopback mode is the one that matters. It scores packets locally with the same PUSH rule the
@@ -356,36 +311,44 @@ to show `PowerSave` beating `None` before repeat runs showed it was drift.
 
 ## How it is put together
 
+Two crates. `wire` is the protocol and nothing else - no Embassy, no RP2040, no idea which board
+it is on - which is what lets `cargo test` run it on the host. `node` is the firmware.
+
 ```
-main.rs     bringup, then one loop selecting between a packet and the 1 Hz report
-ddp.rs      header parser, no Embassy imports
-frame.rs    the framebuffer, PUSH latch and tear detection
-stats.rs    interval counters and the one line they format into
-summary.rs  the frame reduced to one colour and one brightness
-lamp.rs     that summary on an analog RGBW strip, on PWM
-hello.rs    the discovery answer
-config.rs   compile-time knobs
+wire/src/ddp.rs      header parser
+wire/src/frame.rs    the framebuffer, PUSH latch and tear detection, sized by a const generic
+wire/src/hello.rs    the discovery query and its answer, from an Identity the binary fills in
+wire/src/stats.rs    interval counters and the one line they format into
+
+node/src/main.rs     claim the fixture, selftest it, join, run. Fifteen lines
+node/src/board.rs    the pins cyw43 needs, handed back by whichever fixture did not want them
+node/src/irq.rs      the interrupt table, since two modules bind against it
+node/src/net.rs      console, radio, DHCP, heartbeat
+node/src/node.rs     the socket and the one loop selecting a packet against the 1 Hz report
+node/src/config.rs   credentials and the two ports
+node/src/fixture/    one module per variant, cfg-selected in mod.rs
 ```
 
 The receive loop is `recv_from -> parse -> apply -> on PUSH, present and score`. Everything runs
 in the one thread-mode executor because embassy-net requires all its tasks at the same priority.
 
-The framebuffer is sized to the whole room rather than to this board's share of it. DDP offsets
-are device-local and always start at zero, so one binary receives any host-side split without a
-rebuild, which is what makes the four-way comparison above a host config change rather than a
-reflash.
+`Fixture::claim` takes the whole `Peripherals` by value, keeps what its variant needs and returns
+the rest as a `Board`. That is what makes the pin budget a compile error instead of a comment,
+and it is why `main.rs` carries no `#[cfg]` at all.
+
+The framebuffer is sized to the whole fixture rather than to this board's share of it. DDP
+offsets are device-local and always start at zero, so one binary receives any host-side split
+without a rebuild, which is what makes the four-way comparison above a host config change rather
+than a reflash.
 
 The host owns gamma. `quantize()` in `packages/core/src/output.ts` encodes at 2.2 on the way to
 the wire, so these bytes reach the strips untouched.
 
 Resource split, fixed by cyw43 taking the first of everything: it holds **PIO0 SM0, DMA_CH0** and
-GPIO 23, 24, 25 and 29, and wants no PWM at all. That leaves PIO1 entirely free for the strips,
-and of the eight PWM slices the lamp holds only 3 and 4. The onboard LED is on the CYW43 chip
-rather than a GPIO, so it still cannot indicate anything before WiFi is up: solid means the join
-has not landed, blinking means it has.
-
-Current cost: **344 KiB of 2 MB flash** (235 KiB of that is the three cyw43 blobs) and **38 KiB
-of 264 KiB RAM**.
+GPIO 23, 24, 25 and 29, and wants no PWM at all. That leaves PIO1 and DMA_CH2/CH3 for the strips
+and PWM slices 3 and 4 for the lamp. The onboard LED is on the CYW43 chip rather than a GPIO, so
+it still cannot indicate anything before WiFi is up: solid means the join has not landed,
+blinking means it has.
 
 ## What is left
 
@@ -399,36 +362,16 @@ because the show is deterministic and the host can render that far ahead and can
 drift apart over a track, so occupancy has to steer the present period slowly; and a seek or
 pause has to flush, or the room replays stale frames.
 
-**The strips are WS2815**, 12 V, 60 LED/m, one IC per LED. Decided before any were bought, and
-the reasons are all at the scale this room is: 300 pixels is a 5 m run, which is where 5 V sags
-badly enough to need injecting at both ends, and the finished room is **79 A at 5 V against about
-33 A at 12 V**. WS2815 is constant-current, so brightness does not fall off along a run, and it
-carries a backup data line, so one dead LED does not take the rest of the strip with it - which
-matters rather more in 1320 soldered-up pixels than on a bench.
+**None of the strip code has been run against a strip.** It compiles and it is what the
+arithmetic and the datasheets ask for; it has never lit an LED. The first thing to do is wire one
+run to line A and watch the boot selftest: line A red, line B green, then a single white pixel
+travelling each line. If the order is wrong, or a line stops partway, that is wiring, and nothing
+further up is worth reading until it is fixed.
 
-None of that reaches the firmware. It is the same single-wire 800 kHz protocol as WS2812B, so the
-driver, the pin plan and the timing arithmetic below are unchanged. The two places it does show
-up are the reset gap and the power budget, both noted here.
-
-**Drive the strips.** `embassy_rp::pio_programs::ws2812::PioWs2812` is a first-party driver, so
-this is wiring rather than writing. Put it on PIO1 SM0 to SM3 with DMA_CH2 to CH5. The arithmetic
-that decides the layout: 30 us per LED, so 16.7 ms buys about 555 pixels on one line and the
-room's 1320 need at least three lines, four for margin. They have to be awaited together with
-`join!`. Awaiting them one after another costs 39.6 ms no matter how many state machines are
-involved, which is 25 fps.
-
-One 5 m strip is 300 pixels, which is exactly `Wall N` in `geometry.ts` and 9 ms of data, so a
-single run fits one line at 60 Hz with room to spare. That is the case to build first.
-
-**The reset gap has to be lengthened.** Embassy's driver has a private `RESET_DELAY` of 55 us,
-which satisfies the original WS2812B datasheet and nothing since: WS2815 wants **280 us**, as does
-WS2812B-V5. Below it, back-to-back frames merge and colour walks down the strip. 280 us is 1.7% of
-a frame, so the fix is free, but the constant is private and needs either a vendored driver or an
-added delay. With WS2815 chosen this is no longer conditional on which reel arrives.
-
-**Level shift the data line.** The Pico drives 3.3 V and WS2815 wants its logic high referenced to
-5 V, so a 74AHCT125 or SN74HCT245 sits between them. Without it the strip usually works, which is
-worse than failing: it fails later, intermittently, and looks like a network fault.
+**Level shift the data lines.** The Pico drives 3.3 V and WS2815 wants its logic high referenced
+to 5 V, so a 74AHCT125 or SN74HCT245 sits between them. Without it the strip usually works, which
+is worse than failing: it fails later, intermittently, and looks like a network fault. This is
+the one item on this list that is not optional.
 
 **Reconnect handling.** There is none: the join is retried at boot and that is all. Note before
 building it that `is_link_up()` always returns true after the first connect (embassy #4612), so
@@ -436,14 +379,13 @@ it cannot be the trigger.
 
 **Static IP**, as an alternative to a DHCP reservation.
 
-**Host-testable `ddp.rs`.** It deliberately imports nothing from Embassy, so lifting it into its
-own crate with `#[cfg(test)]` tests is a move rather than a rewrite. Until then it is verified
-only against captured output from the real sender.
-
 **A watchdog**, so a wedged cyw43 recovers without someone walking to the board.
 
-**Power.** Out of scope for the firmware but blocking for a lit room: 1320 WS2815s at full white
-draw roughly **33 A at 12 V**, against the 79 A the same room would have wanted at 5 V. The
-mixer's headroom and `compressHighlights` mean real shows never approach either figure, but the
-supply and injection points have to be sized before any of this is switched on. One 5 m test run
-is 300 pixels and about 7.5 A, which a 12 V 10 A supply covers outright.
+**Power.** Out of scope for the firmware but blocking for a lit room. The strips are WS2815,
+12 V, 60 LED/m, one IC per LED: constant-current, so brightness does not fall off along a run,
+and it carries a backup data line, so one dead LED does not take the rest of the strip with it.
+720 pixels at full white is roughly **18 A at 12 V**, against about 43 A the same fixture would
+have wanted at 5 V. The mixer's headroom and `compressHighlights` mean real shows never approach
+either figure, but the supply and injection points have to be sized before any of this is
+switched on. Line A is 300 pixels and about 7.5 A, which a 12 V 10 A supply covers outright, so
+that is the run to build first.

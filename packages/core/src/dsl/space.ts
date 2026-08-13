@@ -11,8 +11,19 @@ export function ringU(g: Geometry, i: number): number {
 }
 
 /**
+ * Which room axis a run spans. Runs are axis-aligned by construction, so this is exact.
+ *
+ * How to tell one run from the opposite pair. Every LED in this fixture faces the same way, so
+ * a run's `normal` says nothing about which run it is; asking it was only ever a proxy for this
+ * question and stopped answering it the moment the light stopped being on the walls.
+ */
+export function stripAxis(s: StripSpec): 'x' | 'y' {
+	return Math.abs(s.end[0] - s.start[0]) >= Math.abs(s.end[1] - s.start[1]) ? 'x' : 'y';
+}
+
+/**
  * A 1-D topology over the room, so a stateful effect (shift register, trail, chase) can
- * be written once and run around the 18 m perimeter as a seamless ring.
+ * be written once and run around the frame's perimeter as a seamless ring.
  */
 export interface Ring {
 	name: string;

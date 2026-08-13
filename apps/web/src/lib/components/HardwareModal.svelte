@@ -4,8 +4,10 @@
 		OFFSET_MIN_MS,
 		OUTPUT_FPS_CHOICES,
 		WIRE_PROTOCOLS,
+		DEVICE_NAMES,
 		faultsIn,
 		lightsRoom,
+		type DeviceRole,
 		type HardwareStatus,
 		type WireProtocol
 	} from '$lib/hardware.ts';
@@ -22,7 +24,7 @@
 
 	let {
 		open = false,
-		status,
+		statuses,
 		offsetMs = 0,
 		fps = 60,
 		protocol = 'ddp',
@@ -37,7 +39,8 @@
 		ondisconnect
 	}: {
 		open?: boolean;
-		status: HardwareStatus;
+		/** One per device. The Frame is the panel's subject; the lamp is listed under it. */
+		statuses: HardwareStatus[];
 		/** How far ahead of the audio the strips run, milliseconds. */
 		offsetMs?: number;
 		/** Frames a second on the wire. */
@@ -45,7 +48,7 @@
 		/** Which wire the fixture is addressed on. Takes effect the next time output starts. */
 		protocol?: WireProtocol;
 		onclose: () => void;
-		onhost: (host: string) => void;
+		onhost: (role: DeviceRole, host: string) => void;
 		onfps: (fps: number) => void;
 		onprotocol: (protocol: WireProtocol) => void;
 		/** While the trim is being dragged. The running stream picks it up on its next sync. */
@@ -61,16 +64,38 @@
 	// The room does not change while the app is running, so the parts of it do not either.
 	const REGIONS = roomRegions(buildGeometry(DEFAULT_ROOM));
 
+	const blank = (role: DeviceRole): HardwareStatus => ({
+		role,
+		host: '',
+		region: 'all',
+		state: 'unconfigured',
+		streaming: false,
+		identity: null,
+		telemetry: null,
+		latencyMs: null,
+		message: ''
+	});
+	const status = $derived(statuses.find((s) => s.role === 'frame') ?? blank('frame'));
+	const lamp = $derived(statuses.find((s) => s.role === 'bounce') ?? blank('bounce'));
+
 	let draft = $state('');
 	let touched = $state(false);
+	let lampDraft = $state('');
+	let lampTouched = $state(false);
 
-	// The field follows the server until it is typed in, so a host set from another tab shows
+	// The fields follow the server until they are typed in, so a host set from another tab shows
 	// up here without overwriting something half-typed.
 	$effect(() => {
 		if (!touched) draft = status.host;
 	});
 	$effect(() => {
-		if (open) touched = false;
+		if (!lampTouched) lampDraft = lamp.host;
+	});
+	$effect(() => {
+		if (open) {
+			touched = false;
+			lampTouched = false;
+		}
 	});
 
 	const identity = $derived(status.identity);
@@ -114,7 +139,7 @@
 <Dialog {open} {onclose} labelledBy="hardware-title">
 	<header>
 		<StatusDot state={status.state} size={9} />
-		<h2 id="hardware-title">{identity?.name ?? 'room-node'}</h2>
+		<h2 id="hardware-title">{DEVICE_NAMES.frame}</h2>
 		<span class="state" class:bad={status.state === 'offline'} class:warn={status.state === 'degraded'}>
 			{#if status.state === 'searching'}<Spinner size={12} />{/if}
 			{HEADLINE[status.state]}
@@ -129,6 +154,7 @@
 				placeholder="192.168.0.106"
 				spellcheck="false"
 				autocomplete="off"
+				aria-label="The Frame's address"
 				bind:value={draft}
 				oninput={() => (touched = true)}
 				onkeydown={(e) => e.key === 'Enter' && connect()} />
@@ -187,10 +213,36 @@
 				ariaLabel="Which wire the fixture is addressed on"
 				onpick={(id) => onprotocol(id as WireProtocol)} />
 			<span class="hint subtle">
-				{protocol === 'sacn' ? '170 pixels a universe' : 'three packets a frame'}
+				{protocol === 'sacn' ? '170 pixels a universe' : 'two packets a frame'}
 			</span>
 		</div>
 	{/if}
+
+	<div class="lamp">
+		<StatusDot state={lamp.state} size={8} />
+		<span class="name">{DEVICE_NAMES.bounce}</span>
+		<div class="field">
+			<input
+				type="text"
+				placeholder="192.168.0.107"
+				spellcheck="false"
+				autocomplete="off"
+				aria-label="The Bounce Lamp's address"
+				bind:value={lampDraft}
+				oninput={() => (lampTouched = true)}
+				onchange={() => ((lampTouched = false), onhost('bounce', lampDraft.trim()))}
+				onkeydown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+		</div>
+		<span class="lamp-state subtle">
+			{#if lamp.identity}
+				<span class="mono">{lamp.identity.firmware}</span>
+			{:else if lamp.host}
+				{HEADLINE[lamp.state]}
+			{:else}
+				one pixel, the show's accent
+			{/if}
+		</span>
+	</div>
 
 	<div class="body">
 		<div class="device">
@@ -212,10 +264,8 @@
 					<dd><span class="mono">{identity.pixels}</span> pixels</dd>
 					<dt>Output</dt>
 					<dd>
-						{#if identity.leds === 'stub'}
-							<span class="warn">Not wired</span>
-						{:else if identity.leds === 'monitor'}
-							<span class="warn">One LED</span>
+						{#if dark}
+							<span class="warn">Lights nothing</span>
 						{:else}
 							<span class="mono">{identity.leds}</span>
 						{/if}
@@ -236,7 +286,7 @@
 						Asking that address who it is.
 					{:else}
 						Flash <span class="mono">firmware/</span>, then paste the address from its console.
-						It offers the hostname <span class="mono">room-node</span> over DHCP.
+						It offers the hostname <span class="mono">room-frame</span> over DHCP.
 					{/if}
 				</p>
 			{/if}
@@ -392,6 +442,32 @@
 	.trim select:focus {
 		outline: none;
 		border-color: var(--ring);
+	}
+
+	/* The second device: one line, because it has one address and nothing to point at. */
+	.lamp {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 11px 16px;
+		flex: none;
+		border-bottom: 1px solid var(--border);
+	}
+	.lamp .name {
+		flex: none;
+		font-size: 13px;
+	}
+	.lamp .field {
+		flex: 1;
+	}
+	.lamp .field input {
+		height: 30px;
+		padding: 0 10px;
+		font-size: 12.5px;
+	}
+	.lamp-state {
+		flex: none;
+		font-size: 12px;
 	}
 
 	.trim {

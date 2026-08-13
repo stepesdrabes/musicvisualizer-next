@@ -40,10 +40,9 @@ impl Stats {
 	}
 
 	/// `gap_us` is PUSH to PUSH, `asm_us` is first packet of the frame to its PUSH, `led_us` is
-	/// how long presenting it took. The last is here because everything else on this line is a
-	/// measurement of the network, and it is the only part of the budget the board itself
-	/// spends: if it ever approaches the 16.7 ms frame, the numbers beside it stop being about
-	/// the radio.
+	/// how long presenting it took. The last is the only part of the budget the board itself
+	/// spends: a strip is 30 us per LED, so if it approaches the 16.7 ms frame the numbers beside
+	/// it stop being about the radio.
 	pub fn on_frame(&mut self, gap_us: u32, asm_us: u32, led_us: u32) {
 		self.frames += 1;
 		self.gap_min_us = self.gap_min_us.min(gap_us);
@@ -94,6 +93,12 @@ impl Stats {
 	}
 }
 
+impl Default for Stats {
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 struct Tenths(u32);
 
 impl Display for Tenths {
@@ -104,4 +109,51 @@ impl Display for Tenths {
 
 fn tenths(n: u64, d: u64) -> Tenths {
 	Tenths((n * 10 / d) as u32)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Pinned to the exact string `parseTelemetry` in apps/web reads, which is tested there
+	/// against the same text. The two sides of this contract are each other's spec.
+	#[test]
+	fn formats_the_line_the_app_parses() {
+		let mut s = Stats::new();
+		s.packets = 120;
+		s.bytes = 130_800;
+		for _ in 0..60 {
+			s.on_frame(16_600, 2_100, 210);
+		}
+		s.gap_min_us = 15_900;
+		s.gap_max_us = 17_800;
+
+		assert_eq!(
+			s.drain(42, 1000, 720).as_str(),
+			"up 42s  720 px  120 pkt/s  127.7 KB/s  60.0 fps  gap 15.9/17.8 ms  late 0/0/0  \
+			 asm 2.1 ms  led 210 us  seqgap 0  bad 0  oob 0  torn 0"
+		);
+	}
+
+	#[test]
+	fn buckets_a_stall_by_how_far_late_it_was() {
+		let mut s = Stats::new();
+		s.on_frame(25_000, 0, 0);
+		s.on_frame(60_000, 0, 0);
+		s.on_frame(316_000, 0, 0);
+		assert!(s.drain(0, 1000, 0).as_str().contains("late 1/1/1"));
+	}
+
+	/// A drained interval starts from nothing, or one bad second would colour every later one.
+	#[test]
+	fn resets_every_counter_on_drain() {
+		let mut s = Stats::new();
+		s.bad = 7;
+		s.on_frame(90_000, 5_000, 900);
+		s.drain(0, 1000, 0);
+		let line = s.drain(1, 1000, 0);
+		assert!(line.as_str().contains("bad 0"));
+		assert!(line.as_str().contains("late 0/0/0"));
+		assert!(line.as_str().contains("gap 0.0/0.0 ms"));
+	}
 }

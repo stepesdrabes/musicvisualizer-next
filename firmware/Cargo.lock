@@ -1338,7 +1338,6 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 name = "room-node"
 version = "0.1.0"
 dependencies = [
- "cortex-m",
  "cortex-m-rt",
  "critical-section",
  "cyw43",
@@ -1354,7 +1353,16 @@ dependencies = [
  "log",
  "panic-reset",
  "portable-atomic",
+ "room-wire",
+ "smart-leds",
  "static_cell",
+]
+
+[[package]]
+name = "room-wire"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.9.3",
 ]
 
 [[package]]

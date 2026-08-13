@@ -1,6 +1,7 @@
 import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
+import { stripAxis } from '../dsl/space.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 export const strobe: EffectDef = {
@@ -27,7 +28,7 @@ export const strobe: EffectDef = {
 		// the room is half the strobe rate, which is what keeps a 2-per-beat burst inside
 		// the 3 Hz ceiling at club tempos.
 		const groupA = new Set<number>();
-		for (const s of g.strips) if (s.inPerimeter && s.normal[1] !== 0) groupA.add(s.id);
+		for (const s of g.strips) if (s.inPerimeter && stripAxis(s) === 'x') groupA.add(s.id);
 
 		return {
 			reset() {},

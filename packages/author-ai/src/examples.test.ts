@@ -82,7 +82,7 @@ describe('the trail example', () => {
 			geometry
 		).def!;
 		const c = measureEffect(def, geometry);
-		// A single stamp at this sigma covers well under 2% of 1320 pixels. Anything above that
+		// A single stamp at this sigma covers well under 2% of the fixture. Anything above that
 		// is the decayed tail behind it, which is the whole reason the buffer is never cleared.
 		expect(c.fill).toBeGreaterThan(0.02);
 	});

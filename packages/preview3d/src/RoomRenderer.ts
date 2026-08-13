@@ -3,10 +3,11 @@
  *
  *  1. Strips are ribbons sampling a shared LED texture with LINEAR filtering, which gives
  *     LED-to-LED blending for free: the frosted-diffuser look. NEAREST shows raw pixels.
- *  2. Walls sample the SAME texture in their fragment shader with a perpendicular falloff,
- *     so light spill is per-LED at zero extra draw calls. Per-LED PointLights are not an
- *     option: three.js forward-lights, every light is a uniform in every lit shader, and
- *     twenty of them tanks the frame rate.
+ *  2. The room's surfaces sample the SAME texture in their fragment shader, walking the
+ *     fixture's runs as lines in world space, so light spill is per-LED at zero extra draw
+ *     calls. Per-LED PointLights are not an option: three.js forward-lights, every light is
+ *     a uniform in every lit shader, and twenty of them tanks the frame rate. There are no
+ *     `THREE.Light`s in this scene at all - a standard material added here renders black.
  *  3. HDR plus ACES tone mapping. LED values are pushed above 1.0 so the tone mapper rolls
  *     them into a blown-out core with coloured fringes, which is what a camera sees looking
  *     at an LED. Without it they read as flat stickers.
@@ -28,6 +29,32 @@ import type { Geometry, RoomSpec } from '@mv/core';
 const STRIP_THICKNESS = 0.03;
 /** Metres the strip sits proud of its wall, so it does not z-fight with the surface. */
 const STRIP_STANDOFF = 0.012;
+
+/** The lamp's strip runs past 1.0 so the tone mapper blows its core out, as the frame's does. */
+const LAMP_GAIN = 1.9;
+
+/**
+ * How bright a fully lit fixture makes the surface directly beneath it.
+ *
+ * The one number the room's whole look hangs off, and it is a ratio rather than a brightness: the
+ * tape renders at `hdrGain`, so this says how far below its own emitters the room sits. At 0.30 a
+ * white frame puts 0.38 on the floor under it and 0.27 on the walls, against 2.0 on the tape.
+ *
+ * It used to be tied to `hdrGain` and should never have been. That is the emitters' headroom - how
+ * far past 1.0 they run so the tone mapper blows their cores out - and inheriting it drove a white
+ * frame's walls to exactly 1.0, clipped white before the bloom was even added. A room lit by 720
+ * LEDs at 60/m does not white out its own walls, and a preview that does cannot be judged: every
+ * pale palette looks like every other one.
+ */
+const SPILL = 0.3;
+
+/**
+ * The lamp's share of the same scale, per metre of tube.
+ *
+ * Well under the frame's, because it is: a metre of diffused strip against 720 LEDs. It stands
+ * close to two walls, so the falloff does the rest.
+ */
+const LAMP_SPILL = 0.55;
 
 /** Scratch for the framing maths, which runs on every resize. Module-level, so it allocates once. */
 const FIT_EYE = new THREE.Vector3();
@@ -95,9 +122,16 @@ export class RoomRenderer {
 
 	private dots: THREE.InstancedMesh | null = null;
 	private dotColors: Float32Array;
-	private stripMaterials: THREE.ShaderMaterial[] = [];
-	private wallMaterials: THREE.ShaderMaterial[] = [];
 	private ambientUniform = { value: new THREE.Color(0, 0, 0) };
+	/**
+	 * The Bounce Lamp's one pixel, 0..1.
+	 *
+	 * Shared by the tube and by every surface it lights, so what the lamp shows and what the lamp
+	 * throws cannot disagree. Held without the emitter's own headroom, because the walls want the
+	 * colour that actually left it.
+	 */
+	private bounceColor = { value: new THREE.Color(0, 0, 0) };
+	private segments!: { seg: THREE.Vector4[]; uv: THREE.Vector3[] };
 	private disposed = false;
 
 	/**
@@ -155,11 +189,6 @@ export class RoomRenderer {
 		return this.bloom.intensity;
 	}
 
-	set hdrGain(v: number) {
-		for (const m of this.stripMaterials) m.uniforms.uGain.value = v;
-		for (const m of this.wallMaterials) m.uniforms.uSpillGain.value = v * 0.28;
-	}
-
 	private readonly geometry: Geometry;
 	private readonly opts: RoomRendererOptions;
 
@@ -185,11 +214,11 @@ export class RoomRenderer {
 
 		// Both are placeholders: `applyProjection` derives them from the viewport on first resize.
 		this.camera = new THREE.PerspectiveCamera(RoomRenderer.VIEW_FOV, 1, 0.1, 40);
-		this.camera.position.set(spec.width * 0.85, -spec.depth * 1.15, spec.height * 0.75);
+		this.camera.position.set(spec.width * 0.85, -spec.depth * 1.15, spec.height * 1.15);
 		this.camera.up.set(0, 0, 1);
 
 		this.controls = new OrbitControls(this.camera, canvas);
-		this.controls.target.set(0, 0, spec.height * 0.45);
+		this.controls.target.set(0, 0, spec.height * 0.38);
 		this.controls.enableDamping = true;
 		this.controls.dampingFactor = 0.08;
 		this.controls.minDistance = 0.8;
@@ -228,8 +257,10 @@ export class RoomRenderer {
 		this.ledTexture.needsUpdate = true;
 
 		this.dotColors = new Float32Array(geometry.count * 3);
+		this.segments = this.frameSegments();
 
-		this.buildRoom(spec, gain);
+		this.buildRoom(spec);
+		this.buildBounceLamp(spec);
 		this.buildStrips(gain);
 		this.buildDots();
 
@@ -298,8 +329,8 @@ export class RoomRenderer {
 				target.set(0, 0, s.height * 0.45);
 				break;
 			default:
-				pos.set(s.width * 0.85, -s.depth * 1.15, s.height * 0.75);
-				target.set(0, 0, s.height * 0.45);
+				pos.set(s.width * 0.85, -s.depth * 1.15, s.height * 1.15);
+				target.set(0, 0, s.height * 0.38);
 				break;
 		}
 		this.fit(pos, target);
@@ -463,14 +494,19 @@ export class RoomRenderer {
 		);
 	}
 
-	private buildRoom(spec: RoomSpec, gain: number): void {
+	/**
+	 * The room the fixture hangs in: four walls and a ceiling, and nothing else.
+	 *
+	 * There is no floor. The fixture faces down, so the floor would be the brightest thing on
+	 * screen and the room would read as a lit rectangle seen from above rather than as a room -
+	 * and the walls are what give the box its shape anyway.
+	 */
+	private buildRoom(spec: RoomSpec): void {
 		const hw = spec.width / 2;
 		const hd = spec.depth / 2;
 		const H = spec.height;
 		const UP = new THREE.Vector3(0, 0, 1);
 
-		// Same order as geometry.strips 0..3 (N, E, S, W); `dir` matches each strip's LED
-		// order so uv.x lines up with the texture without a flip.
 		const walls = [
 			{ w: spec.width, centre: new THREE.Vector3(0, hd, H / 2), dir: new THREE.Vector3(1, 0, 0) },
 			{ w: spec.depth, centre: new THREE.Vector3(hw, 0, H / 2), dir: new THREE.Vector3(0, -1, 0) },
@@ -478,107 +514,112 @@ export class RoomRenderer {
 			{ w: spec.depth, centre: new THREE.Vector3(-hw, 0, H / 2), dir: new THREE.Vector3(0, 1, 0) }
 		];
 
-		walls.forEach((wall, row) => {
-			const strip = this.geometry.strips[row];
-			const geo = new THREE.PlaneGeometry(wall.w, H, 1, 32);
-			const mat = this.makeWallMaterial(strip.count, row, spec.wallStripHeight, H, gain);
-			const mesh = new THREE.Mesh(geo, mat);
+		for (const wall of walls) {
+			const mat = this.surfaceMaterial(0x0a0a10, SPILL, 0.1);
+			const mesh = new THREE.Mesh(new THREE.PlaneGeometry(wall.w, H, 24, 24), mat);
 			mesh.position.copy(wall.centre);
 			// dir x up gives the inward normal, so near walls are back-face culled and the
 			// camera can orbit outside the room and still see in.
 			this.orient(mesh, wall.dir, UP);
 			this.scene.add(mesh);
-			this.wallMaterials.push(mat);
-		});
+		}
 
-		const beamStrip = this.geometry.strips[4];
-		const alongY = spec.beamAxis === 'y';
-		const beamDir = alongY ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
-		const beamCross = alongY ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, -1, 0);
-		const ceilGeo = new THREE.PlaneGeometry(
-			alongY ? spec.depth : spec.width,
-			alongY ? spec.width : spec.depth,
-			32,
-			32
-		);
-		const ceilMat = this.makeCeilingMaterial(beamStrip.count, 4, spec, gain);
-		const ceil = new THREE.Mesh(ceilGeo, ceilMat);
-		ceil.position.set(0, 0, H);
-		this.orient(ceil, beamDir, beamCross);
-		this.scene.add(ceil);
-		this.wallMaterials.push(ceilMat);
-
-		const floorMat = new THREE.ShaderMaterial({
-			uniforms: { uAmbient: this.ambientUniform, uBase: { value: new THREE.Color(0x0a0a10) } },
-			vertexShader: BASIC_VS,
-			fragmentShader: `
-				uniform vec3 uAmbient;
-				uniform vec3 uBase;
-				varying vec2 vUv;
-				void main() {
-					// Brighter toward the walls, where the light comes from, but kept well below
-					// the walls' level: the floor is furthest from every strip, so a bright floor
-					// makes the room read flat.
-					vec2 d = abs(vUv - 0.5) * 2.0;
-					float edge = max(d.x, d.y);
-					gl_FragColor = vec4(uBase + uAmbient * (0.05 + 0.30 * edge * edge), 1.0);
-				}
-			`
-		});
-		const floor = new THREE.Mesh(new THREE.PlaneGeometry(spec.width, spec.depth, 8, 8), floorMat);
-		this.scene.add(floor);
+		// The ceiling is above the fixture, so it catches none of it directly and is only there to
+		// close the box; the floor is straight under it and is the brightest surface in the room.
+		// `orient` maps the plane's own x onto `dir` and its y onto `up`, so both pairs have to put
+		// width on the room's x: naming the axes the other way round builds a 4 x 5 m panel over a
+		// 5 x 4 m room, which reads as the walls not meeting it.
+		const X = new THREE.Vector3(1, 0, 0);
+		for (const [z, dir, base, ambient] of [
+			[H, new THREE.Vector3(0, -1, 0), 0x090910, 0.14],
+			[0, new THREE.Vector3(0, 1, 0), 0x0a0a0e, 0.1]
+		] as const) {
+			const panel = new THREE.Mesh(
+				new THREE.PlaneGeometry(spec.width, spec.depth, 8, 8),
+				this.surfaceMaterial(base, SPILL, ambient)
+			);
+			panel.position.set(0, 0, z);
+			this.orient(panel, X, dir);
+			this.scene.add(panel);
+		}
 	}
 
-	private makeWallMaterial(
-		ledCount: number,
-		row: number,
-		stripHeight: number,
-		wallHeight: number,
-		gain: number
+	/**
+	 * Every run of the fixture as a line in world space, plus where its texels live.
+	 *
+	 * The spill shader walks these rather than a hardcoded shape, so the room keeps lighting
+	 * correctly if the fixture ever changes.
+	 */
+	private frameSegments(): { seg: THREE.Vector4[]; uv: THREE.Vector3[] } {
+		const seg: THREE.Vector4[] = [];
+		const uv: THREE.Vector3[] = [];
+		for (const s of this.geometry.strips) {
+			seg.push(new THREE.Vector4(s.start[0], s.start[1], s.end[0], s.end[1]));
+			uv.push(
+				new THREE.Vector3((s.count - 1) / this.texW, 0.5 / this.texW, (s.id + 0.5) / this.texH)
+			);
+		}
+		return { seg, uv };
+	}
+
+	/**
+	 * A surface the fixture lights but that does not emit.
+	 *
+	 * `gain` is the only thing that separates one from another, because the falloff is the physics
+	 * rather than a per-surface guess: a surface above the fixture receives nothing from a run
+	 * pointing down, and one below it receives the run's own inverse square.
+	 */
+	private surfaceMaterial(
+		base: number,
+		gain: number,
+		ambient: number,
+		emit = 0,
+		lamp = 1
 	): THREE.ShaderMaterial {
+		const b = this.opts.spec.bounce;
 		return new THREE.ShaderMaterial({
 			uniforms: {
 				uLed: { value: this.ledTexture },
-				uUScale: { value: (ledCount - 1) / this.texW },
-				uUOffset: { value: 0.5 / this.texW },
-				uRow: { value: (row + 0.5) / this.texH },
-				uStripV: { value: stripHeight / wallHeight },
-				uWallHeight: { value: wallHeight },
-				// ~2.2 per metre gives a pool of light roughly a metre deep below the strip,
-				// which is what a real strip in an aluminium channel throws.
-				uFalloff: { value: 2.2 },
-				uSpillGain: { value: gain * 0.12 },
+				uSeg: { value: this.segments.seg },
+				uSegUv: { value: this.segments.uv },
+				uFrameZ: { value: this.opts.spec.fixture.height },
+				uSpillGain: { value: gain },
+				uAmbientMix: { value: ambient },
 				uAmbient: this.ambientUniform,
-				uBase: { value: new THREE.Color(0x0a0a10) }
+				uBase: { value: new THREE.Color(base) },
+				uLampAt: { value: new THREE.Vector3(b.at[0], b.at[1], b.height / 2) },
+				uLampColor: this.bounceColor,
+				// The column's own emitting area, as the radius its inverse square softens over.
+				// Without it the two walls it stands against would have a hot point on them
+				// rather than the broad wash a metre of diffuser actually throws.
+				uLampSize: { value: b.height * b.height * 0.25 },
+				uLampGain: { value: lamp * LAMP_SPILL * b.height },
+				uEmitGain: { value: emit }
 			},
-			vertexShader: BASIC_VS,
-			fragmentShader: SPILL_FS
+			vertexShader: SURFACE_VS,
+			fragmentShader: surfaceFragment(this.geometry.strips.length)
 		});
 	}
 
-	private makeCeilingMaterial(
-		ledCount: number,
-		row: number,
-		spec: RoomSpec,
-		gain: number
-	): THREE.ShaderMaterial {
-		const cross = spec.beamAxis === 'y' ? spec.width : spec.depth;
-		return new THREE.ShaderMaterial({
-			uniforms: {
-				uLed: { value: this.ledTexture },
-				uUScale: { value: (ledCount - 1) / this.texW },
-				uUOffset: { value: 0.5 / this.texW },
-				uRow: { value: (row + 0.5) / this.texH },
-				uCross: { value: cross },
-				uBeamPos: { value: 0.5 },
-				uFalloff: { value: 1.6 },
-				uSpillGain: { value: gain * 0.16 },
-				uAmbient: this.ambientUniform,
-				uBase: { value: new THREE.Color(0x090910) }
-			},
-			vertexShader: BASIC_VS,
-			fragmentShader: CEILING_FS
-		});
+	/**
+	 * The Bounce Lamp: a white diffuser with a strip inside it.
+	 *
+	 * So it is a surface before it is an emitter, and it gets the same shader as the walls with a
+	 * white albedo and the strip's colour added on top. A tube drawn as emission alone is pure
+	 * black whenever the show is - which is the one thing a white plastic column never is.
+	 *
+	 * Its own lamp term is switched off, because a fixture cannot light itself.
+	 */
+	private buildBounceLamp(spec: RoomSpec): void {
+		const b = spec.bounce;
+		const geo = new THREE.CylinderGeometry(b.diameter / 2, b.diameter / 2, b.height, 24, 1, true);
+		geo.rotateX(Math.PI / 2);
+		// Half again the room's spill, because white plastic reflects more than a dark wall does.
+		const mat = this.surfaceMaterial(0x16171b, SPILL * 1.5, 0.5, LAMP_GAIN, 0);
+		mat.side = THREE.DoubleSide;
+		const tube = new THREE.Mesh(geo, mat);
+		tube.position.set(b.at[0], b.at[1], b.height / 2);
+		this.scene.add(tube);
 	}
 
 	private buildStrips(gain: number): void {
@@ -619,7 +660,6 @@ export class RoomRenderer {
 			mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(dir, up, normal));
 
 			this.scene.add(mesh);
-			this.stripMaterials.push(mat);
 		}
 	}
 
@@ -700,11 +740,21 @@ export class RoomRenderer {
 		this.composer.setSize(width, height);
 	}
 
-	/** Zero allocations. The texture upload is a few kB per frame, noise next to the bloom. */
-	render(bytes: Uint8Array, dt: number): void {
+	/**
+	 * Zero allocations. The texture upload is a few kB per frame, noise next to the bloom.
+	 *
+	 * `bounce` is the Bounce Lamp's one gamma-encoded pixel. It is a second fixture rather than a
+	 * tail on the first, so it arrives separately and nothing indexing the room can run off the
+	 * end into it.
+	 */
+	render(bytes: Uint8Array, dt: number, bounce?: Uint8Array): void {
 		if (this.disposed) return;
 		const g = this.geometry;
 		const td = this.texData;
+
+		if (bounce) {
+			this.bounceColor.value.setRGB(bounce[0] / 255, bounce[1] / 255, bounce[2] / 255);
+		}
 
 		let ar = 0;
 		let ag = 0;
@@ -728,8 +778,8 @@ export class RoomRenderer {
 		}
 		this.ledTexture.needsUpdate = true;
 
-		// Average colour feeds the floor and a faint global ambient, so the room reads as one
-		// lit space rather than five glowing lines in the dark.
+		// Average colour feeds a faint global ambient, so the room reads as one lit space rather
+		// than five glowing lines in the dark.
 		const inv = 1 / (g.count * 255);
 		this.ambientUniform.value.setRGB(ar * inv * 0.5, ag * inv * 0.5, ab * inv * 0.5);
 
@@ -766,14 +816,6 @@ export class RoomRenderer {
 		this.renderer.dispose();
 	}
 }
-
-const BASIC_VS = /* glsl */ `
-	varying vec2 vUv;
-	void main() {
-		vUv = uv;
-		gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-	}
-`;
 
 const STRIP_VS = /* glsl */ `
 	varying vec2 vUv;
@@ -821,72 +863,96 @@ const STRIP_FS = /* glsl */ `
 	}
 `;
 
-const SPILL_FS = /* glsl */ `
-	uniform sampler2D uLed;
-	uniform float uUScale;
-	uniform float uUOffset;
-	uniform float uRow;
-	uniform float uStripV;
-	uniform float uWallHeight;
-	uniform float uFalloff;
-	uniform float uSpillGain;
-	uniform vec3 uAmbient;
-	uniform vec3 uBase;
-	varying vec2 vUv;
-
-	vec3 tapLed(float u) {
-		return texture2D(uLed, vec2(clamp(u, 0.0, 1.0) * uUScale + uUOffset, uRow)).rgb;
-	}
-
+const SURFACE_VS = /* glsl */ `
+	varying vec3 vWorld;
+	varying vec3 vNormal3;
 	void main() {
-		// Light spreads sideways as it travels, so the lateral blur widens with distance
-		// rather than using a fixed kernel: near the strip you see individual LEDs, far
-		// away a soft wash.
-		float d = abs(vUv.y - uStripV) * uWallHeight;
-		float spread = 0.004 + d * 0.10;
-		float u = vUv.x;
-
-		vec3 c = tapLed(u) * 0.30;
-		c += tapLed(u - spread) * 0.2;
-		c += tapLed(u + spread) * 0.2;
-		c += tapLed(u - spread * 2.6) * 0.15;
-		c += tapLed(u + spread * 2.6) * 0.15;
-
-		// 1/(1+kd) tail on top of the exponential: the exponential alone drops the lower two
-		// thirds of the wall to pure black and the room loses its shape.
-		float fall = exp(-d * uFalloff) + 0.10 / (1.0 + d * 1.6);
-		gl_FragColor = vec4(uBase + uAmbient * 0.30 + c * fall * uSpillGain, 1.0);
+		vec4 world = modelMatrix * vec4(position, 1.0);
+		vWorld = world.xyz;
+		vNormal3 = normalize(mat3(modelMatrix) * normal);
+		gl_Position = projectionMatrix * viewMatrix * world;
 	}
 `;
 
-const CEILING_FS = /* glsl */ `
+/**
+ * How much of the fixture a surface receives, and in what colour.
+ *
+ * Every run is integrated as the line light it is: sampled along its length, each sample falling
+ * off by `cos(emitter) * cos(surface) / d^2` and weighted by the metres it stands for. Taking the
+ * nearest point instead - which is what this did first, with a widening blur to paper over it -
+ * treats a 3 m run as a bulb, and a wall two metres from one is nothing like a wall two metres
+ * from a bulb: the pool is the wrong shape, it falls off far too fast at the ends, and the colour
+ * gradient along the run never reaches the surface at all.
+ *
+ * The falloff is physics rather than a tuned constant, and it earns that. It does the one thing an
+ * exponential could not: a surface ABOVE the fixture gets a negative emitter cosine and therefore
+ * nothing, which is what keeps the ceiling dark under a fixture facing the floor, with no rule
+ * anywhere saying so.
+ *
+ * The lamp joins the same sum. It is a diffusing column rather than a downlight, so it has no
+ * emitter cosine to apply - a metre of tube throws sideways as readily as down - and it softens
+ * over its own size rather than going singular against the two walls it stands between.
+ */
+function surfaceFragment(segments: number): string {
+	return /* glsl */ `
+	#define SEGMENTS ${segments}
+	// Eight is where the pool stops changing shape on a 3 m run seen from a metre away; the
+	// samples cost a texture fetch each and there is exactly one bank of them on screen.
+	#define SAMPLES 8
+
 	uniform sampler2D uLed;
-	uniform float uUScale;
-	uniform float uUOffset;
-	uniform float uRow;
-	uniform float uCross;
-	uniform float uBeamPos;
-	uniform float uFalloff;
+	uniform vec4 uSeg[SEGMENTS];
+	uniform vec3 uSegUv[SEGMENTS];
+	uniform float uFrameZ;
 	uniform float uSpillGain;
+	uniform float uAmbientMix;
 	uniform vec3 uAmbient;
 	uniform vec3 uBase;
-	varying vec2 vUv;
+	uniform vec3 uLampAt;
+	uniform vec3 uLampColor;
+	uniform float uLampSize;
+	uniform float uLampGain;
+	uniform float uEmitGain;
+	varying vec3 vWorld;
+	varying vec3 vNormal3;
 
-	vec3 tapLed(float u) {
-		return texture2D(uLed, vec2(clamp(u, 0.0, 1.0) * uUScale + uUOffset, uRow)).rgb;
+	/// A surface passing through an emitter must not divide by nothing.
+	const float SOFT = 0.02;
+
+	vec3 tapLed(vec3 uv, float t) {
+		return texture2D(uLed, vec2(clamp(t, 0.0, 1.0) * uv.x + uv.y, uv.z)).rgb;
 	}
 
 	void main() {
-		float d = abs(vUv.y - uBeamPos) * uCross;
-		float spread = 0.006 + d * 0.10;
+		vec3 n = normalize(vNormal3);
+		vec3 lit = vec3(0.0);
 
-		vec3 c = tapLed(vUv.x) * 0.34;
-		c += tapLed(vUv.x - spread) * 0.2;
-		c += tapLed(vUv.x + spread) * 0.2;
-		c += tapLed(vUv.x - spread * 2.4) * 0.13;
-		c += tapLed(vUv.x + spread * 2.4) * 0.13;
+		for (int i = 0; i < SEGMENTS; i++) {
+			vec2 a = uSeg[i].xy;
+			vec2 ab = uSeg[i].zw - a;
+			float dl = length(ab) / float(SAMPLES);
 
-		float fall = exp(-d * uFalloff) + 0.12 / (1.0 + d * 1.4);
-		gl_FragColor = vec4(uBase + uAmbient * 0.40 + c * fall * uSpillGain, 1.0);
+			for (int k = 0; k < SAMPLES; k++) {
+				float t = (float(k) + 0.5) / float(SAMPLES);
+				vec3 toLed = vec3(a + ab * t, uFrameZ) - vWorld;
+				float d2 = dot(toLed, toLed) + SOFT;
+				float d = sqrt(d2);
+				float emit = max(toLed.z / d, 0.0);
+				float face = max(dot(n, toLed) / d, 0.0);
+				lit += tapLed(uSegUv[i], t) * (emit * face * dl / d2);
+			}
+		}
+
+		vec3 toLamp = uLampAt - vWorld;
+		float ld2 = dot(toLamp, toLamp) + uLampSize;
+		lit += uLampColor * (uLampGain * max(dot(n, toLamp) / sqrt(ld2), 0.0) / ld2);
+
+		// A diffuser is brightest looked at square on and falls toward its silhouette, which is
+		// what stops a cylinder reading as a flat painted rectangle. Zero for everything else.
+		float head = max(dot(n, normalize(cameraPosition - vWorld)), 0.0);
+		vec3 emit = uLampColor * (uEmitGain * (0.55 + 0.45 * head));
+
+		gl_FragColor = vec4(uBase + uAmbient * uAmbientMix + lit * uSpillGain + emit, 1.0);
 	}
 `;
+}

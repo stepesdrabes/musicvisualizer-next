@@ -1,0 +1,28 @@
+#![no_std]
+#![no_main]
+
+mod board;
+mod config;
+mod fixture;
+mod irq;
+mod net;
+mod node;
+
+use embassy_executor::Spawner;
+
+use crate::fixture::Fixture;
+
+// A panic reboots and reprints the banner, which is what tells it apart from a WiFi drop. cyw43
+// has open panics on a bad password and on rejoining while already associated.
+use panic_reset as _;
+
+#[embassy_executor::main]
+async fn main(spawner: Spawner) -> ! {
+	let (mut fixture, board) = Fixture::claim(embassy_rp::init(Default::default()));
+	// Before the radio, so the wiring check is the first thing the board does and a join that
+	// never lands cannot hide it.
+	fixture.selftest().await;
+
+	let stack = net::join(spawner, board, Fixture::HOSTNAME).await;
+	node::run(stack, &mut fixture).await
+}

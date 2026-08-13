@@ -54,6 +54,42 @@ export function compressHighlights(buf: Float32Array, knee = 0.78, desat = 0.05)
 	}
 }
 
+/** Bins `perceivedLevel` needs. The caller owns one, so the frame path allocates nothing. */
+export const LEVEL_BINS = 256;
+
+/** Which pixel of the room stands for how bright it looks. A tenth of the fixture is above it. */
+const LEVEL_PERCENTILE = 90;
+
+/**
+ * How bright the room looks, 0..1.
+ *
+ * A room is not as bright as its average. Half the fixture lit at full reads as a bright room,
+ * and an average over the dark half calls it half lit - which is the error a single emitter
+ * standing in for the whole fixture cannot afford to make. Measured on an engine show, this
+ * puts a drop at 0.90, a groove at 0.66, an intro at 0.28 and a void at 0.00.
+ *
+ * One pass and a histogram, where a percentile would otherwise want a sort.
+ */
+export function perceivedLevel(buf: Float32Array, hist: Uint32Array): number {
+	const n = buf.length / 3;
+	if (n === 0) return 0;
+
+	hist.fill(0);
+	for (let i = 0; i < buf.length; i += 3) {
+		const max = Math.max(buf[i], buf[i + 1], buf[i + 2]);
+		hist[max <= 0 ? 0 : max >= 1 ? 255 : (max * 255) | 0]++;
+	}
+
+	// Rounded up, so a mostly dark room cannot satisfy the percentile with nothing.
+	const want = Math.max(1, Math.ceil((n * (100 - LEVEL_PERCENTILE)) / 100));
+	let seen = 0;
+	for (let v = 255; v > 0; v--) {
+		seen += hist[v];
+		if (seen >= want) return v / 255;
+	}
+	return 0;
+}
+
 const MEAN_TARGET = 0.36;
 /**
  * How far auto-exposure may move, and how fast.
@@ -149,6 +185,13 @@ export class BrightnessSlew {
 const DITHER = [0, 4, 2, 6, 1, 5, 3, 7].map((v) => v / 8 - 0.5);
 
 /**
+ * The exponent between the authoring domain and light, which is the one boundary in this program
+ * where the two are told apart. Anything reasoning about how bright something will actually be
+ * has to cross it deliberately.
+ */
+export const GAMMA = 2.2;
+
+/**
  * Authoring domain to 8-bit PWM, with gamma and ordered dither. Applied exactly once, here.
  *
  * The exponent is `gamma`, not `1/gamma`. An LED's output is close to linear in its PWM duty
@@ -161,7 +204,7 @@ const DITHER = [0, 4, 2, 6, 1, 5, 3, 7].map((v) => v / 8 - 0.5);
  * shades vanish entirely, and that dead zone is exactly where slow fades live. WLED's realtime
  * path disables its own gamma by default precisely so the host can own this step.
  */
-export function quantize(buf: Float32Array, out: Uint8Array, gamma = 2.2): void {
+export function quantize(buf: Float32Array, out: Uint8Array, gamma = GAMMA): void {
 	for (let i = 0; i < buf.length; i++) {
 		const v = buf[i] <= 0 ? 0 : buf[i] >= 1 ? 1 : buf[i];
 		// An explicit floor with a half-code bias: without it a full-scale pixel lands on 254

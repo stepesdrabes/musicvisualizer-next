@@ -41,7 +41,7 @@ export const ambientDrift: EffectDef = {
 	create(g) {
 		const lean = new BeatHold(0.4);
 		const spread = new BeatHold(0.4);
-		// One latch per pixel would be 1320 of them for a value that only moves on the beat, so the
+		// One latch per pixel would be 720 of them for a value that only moves on the beat, so the
 		// ring is read at a handful of points and interpolated between them.
 		const TAPS = 10;
 		const taps = Array.from({ length: TAPS }, () => new BeatHold(0.3));
