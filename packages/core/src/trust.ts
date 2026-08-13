@@ -30,11 +30,21 @@ export interface GridTrust {
 const FRAGMENTED = 5.2;
 const SUSPECT = 4.5;
 const SHAKY_METER = 0.55;
+/**
+ * Fragmentation needs FRAGMENTS. A rate alone is biased against short tracks: a 95-second
+ * hardstyle edit with a normal eight-section arrangement reads as 5.1 a minute, which is how
+ * the owner heard a correctly-labelled track routed to lounge. The genuine wrecks this gate
+ * exists for carried 11 and 23 sections; below ten, no track is "chopped to bits" whatever
+ * its rate says.
+ */
+const MIN_SECTIONS = 10;
 
 export function gridTrust(analysis: TrackAnalysis): GridTrust {
 	const minutes = analysis.duration / 60;
 	// Too short to fragment meaningfully, and too short for lounge to improve on anything.
-	if (minutes < 1 || analysis.sections.length === 0) return { trusted: true, reasons: [] };
+	if (minutes < 1 || analysis.sections.length < MIN_SECTIONS) {
+		return { trusted: true, reasons: [] };
+	}
 
 	const perMinute = analysis.sections.length / minutes;
 	const meter = analysis.tempo.meterConfidence;
