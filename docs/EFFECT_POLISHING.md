@@ -1,168 +1,190 @@
 # Effect polishing
 
-How to take a complaint like "moshSlam slams when there are no kicks" from a listening note to
-a shipped fix, and the rules this repo has already paid for. Written after the 2026-08-12 pass
-that fixed seven of them; the method is what transfers to the next sweep.
+How a listening complaint becomes a shipped fix, and the rules this repo has already paid
+for. First written after the 2026-08-12 pass that fixed seven complaints in one sweep;
+rewritten after the first judged rounds, which changed the method: the owner now judges in
+the app, and the judgements are the instrument everything else is tuned against.
+
+## The judge loop is the method
+
+The app has a judge mode: `J` opens the panel, stars and a fixed chip vocabulary score the
+track, `N` drops a time-anchored note at the playhead ("bar 87: this slam came from
+nowhere"). Every judgement autosaves to `<cache>/judge/<trackId>.json` pinned to the
+`analysisHash` and show seed that were actually playing, so a complaint about a
+since-recomposed show is history rather than a bug report. Thirty judged tracks produced
+three actionable clusters in one evening; the marked bars did more than any corpus metric.
+
+Rules the first rounds established:
+
+- **The chips aggregate, the notes diagnose.** "sections wrong" ten times says where to
+  look; "@71s bar 43: chorus starts a bit early" says what to fix. Ask for both.
+- **Marked bars outrank bench scores at one-bar resolution.** The boundary metrics tolerate
+  half a second, which at 120 bpm is most of a bar - exactly the errors the room hears and
+  the bench cannot. Fourteen user-marked bars are a better instrument for that class than
+  either annotated corpus.
+- **Cluster before fixing.** Three of seven complaints in one pass shared a root cause
+  (nothing was kit-aware); ten of thirty shared another (one-bar boundary jitter). A
+  per-complaint fix on a shared cause is work done seven times.
+- **Close the loop.** After a fix lands, hand back the short list of tracks to re-judge,
+  never the whole corpus. Re-listening is the expensive resource here.
+- **Positive judgements are calibration.** The 5-star tracks guard against regressions and
+  say what "right" reads like; ask for them explicitly.
 
 ## Diagnose from the cache, not from the code
 
-Every complaint names a track, and the track's whole story is already on disk. The desktop app
-keeps its artifacts in `~/Library/Application Support/cz.drabek.lightningstrike/cache`, the dev
-server in `cache/` at the repo root - `<id>.analysis.json`, `<id>.show.json`, `<id>.meta.json`,
-`<id>.context.json` beside the audio. Before touching anything:
+Every complaint names a track, and the track's whole story is on disk: the desktop app's
+cache in `~/Library/Application Support/cz.drabek.lightningstrike/cache`, the dev server's
+in `cache/`, the judging corpus in `cache114/` - `<id>.analysis.json`, `.show.json`,
+`.meta.json`, `.context.json` beside the audio. Before touching anything:
 
-1. Find the track's id by grepping the meta files for the title.
-2. Read the analysis against the complaint: sections with per-slot drum densities
-   (kicks/snares/hats per beat), tempo and meter confidence, the events column. Most
-   complaints are visible as numbers - "slams with no kicks" was a groove at 0.00 kicks/beat
-   carrying `moshSlam`; "plays to the very end" was a `kick_out` event nothing read.
-3. Read the show's cues and hits against those numbers. The `<kit>` tags, params and hit notes
-   say what the planner believed.
-4. **Recompose the cached analysis with the current code and diff it against the cached
-   show.** Same seed reproduces the same show, so `cached == fresh` proves the complaint is
-   live at HEAD; a diff means the user tested a stale build - which happens, see the version
-   discipline section. Half of one session's "bugs" turned out to be one already-fixed bug
+1. Find the id by grepping metas for the title; the judgement file already carries it.
+2. Read the analysis against the complaint: per-section kick/snare/hat densities, tempo and
+   meter confidence, the events column. Most complaints are visible as numbers.
+3. Read the show's cues and hits against those numbers - what the planner believed.
+4. Recompose the cached analysis at HEAD and diff against the cached show. Same seed
+   reproduces the same show, so `cached == fresh` proves the complaint is live; a diff
+   means a stale build was judged - half of one session's "bugs" were one already-fixed bug
    that had never reached the cache.
+5. For lyric questions, `chorusSpansFromLyrics` over the cached context is ground truth
+   enough: on the first track checked, the hook line's synced time marked the true chorus
+   bar twice while the boundary sat one and two bars off. LRCLIB line timing is reliable;
+   trust it as evidence.
 
-The complaint list itself is evidence about coverage: three of seven complaints in one pass
-shared a single root cause (nothing was kit-aware), which no amount of per-effect fixing would
-have found.
+## Saturation is a number, and taste has a budget
+
+The complaint "this effect is OVERUSED" arrives long after the numbers could have said so.
+Measure share-of-shows per family before shipping any effect or preference change
+(`bars used and shows containing, per family, over the corpus` - a twenty-line probe):
+
+- **A signature drifts into a mandate at any weight.** The +1.1 preference put impulseSpin
+  in 30 of 34 house shows; removing the preference left it at 80 percent on merit alone,
+  because a mid-energy kick rhythm is near-eligible in every pool. The shipped answer is
+  both halves: each show draws a seed-stable HALF of the family's signature list, and the
+  undrawn half joins the avoid list at full weight for the night. A signature look is
+  either this show's vocabulary or it rests. Guarded by a 60-seed band test.
+- **The avoid weight must beat the jitter.** At 1.2 against 1.4 of seed jitter, moshSlam
+  still opened rap choruses; at 2.4 (one use of novelty) a foreign gesture reliably loses
+  the tie and stays reachable when the pool empties. Prefer and avoid are not symmetric:
+  a nudge suffices toward, a shove is needed away.
+- **High-salience effects saturate at the same share as subtle ones and get complained
+  about first.** vortex and pump sit in ~95 percent of all shows organically and nobody
+  minds; a travelling wave at 88 percent was called out immediately. Budget salience,
+  not just presence.
+
+## Archetypes, not just effects
+
+The second complaint class was "the effects are all shockwave effects" - and the count
+agreed: six of twelve transients were radial energy from a point (expanding rings,
+converging rings, waves from corners, bursts). A catalog diversifies by GESTURE GEOMETRY,
+not by file count. The archetype vocabulary now on the wall:
+
+- radial burst (shockwave, kickTunnel, rippleTank, pyroBursts) - the incumbent family
+- spring displacement - the field itself shoved and returning (recoil; the owner rejected it on sight - whole-field displacement reads as the room glitching, spend displacement on a local element instead)
+- directional travel with reflection - a shot, not a wave (ricochet)
+- linear stroke - one wall, one line, one direction (snareBlade)
+- structural give - architecture taking weight (counterweight)
+- interference - two slow fields making a fast-feeling pattern (weave)
+- freeze - motion withheld as the gesture (stopTime)
+- exact-arrival wipes only a compiled show can do (buildStacker; timedSweep was the same idea as a fill-and-drain wipe and the owner rejected it - an exact arrival earns its place only when the shape between arrivals is worth watching)
+
+**New effects must arrive at the incumbents' energy distance or they change nothing.** The
+five newcomers first shipped at e2-3 against incumbent bursts at e4-5, scored 4-8 shows per
+family, and moved no needle: the -1.6/band energy fit priced them out of the exact cues
+the bursts saturate. Repriced to e3-4 they compete everywhere (28-32 of 36 hip-hop shows)
+and the burst share fell without a single veto. This is the third time the catalog-pairs
+lesson has been paid for; it is apparently the tuition this repo keeps owing.
 
 ## The kit is a fact, not a vibe
 
 `BarRow.kicks/snares/hats` and the onset streams are measurements. The rules built on them:
 
-- An effect whose whole gesture answers one drum declares `taste.kit` (`'kick' | 'snare' |
-  'hat' | 'any'`). The picker refuses it where that stream runs under 0.2 hits/beat over the
-  slot - a shade under the 0.25 the breakdown transient gate uses, because that one asks "is
-  there enough kit to answer" and this one asks "is the stream absent". A sparse half-time
-  kick at one hit per bar is still a kick pattern.
-- The veto **falls back to the unfiltered pool rather than emptying one**. A hard requirement
-  that can empty a pool is a mistake this repo has now made twice (`carries`, then nearly
-  again here). Filters guarantee absence; preferences guarantee presence.
-- Tag by what the gesture IS, not by what it reads. `moshSlam` and `headbang` are `'kick'`,
-  not `'any'`: the passage they pounded through had a clap backbeat at 1.0 snares/beat and
-  zero kicks, and a unison white slam is a kick gesture. `stageBlinders` stays `'any'`
-  because backbeat blinders are honest stagecraft.
-- Grid-locked pulsers keep their timing from the grid and take **permission to strike** from
-  a `Presence` of the hit envelope (dsl/env.ts): full through the gaps a pattern actually
-  contains (hold 4 beats), resting within a couple of bars of real silence, rising only to
-  the envelope's own peak so a ghost note arms a ghost of a pulse. Timing is the grid's;
-  permission is the kit's. That split is what lets a suspension rest the room without the
-  pattern drifting.
-- Punctuation obeys the same honesty: a drop-class arrival whose opening bar has no kick gets
-  a colour bump, not a slam. The slam stays saved for a downbeat that hits back.
+- An effect whose whole gesture answers one drum declares `taste.kit`; the picker refuses
+  it where that stream runs under 0.2 hits/beat over the slot. The veto falls back to the
+  unfiltered pool rather than emptying one - filters guarantee absence, preferences
+  guarantee presence, and a hard requirement that can empty a pool is a mistake made twice
+  already.
+- Tag by what the gesture IS: moshSlam and headbang are `kick` because a unison slam is a
+  kick gesture, whatever band tripped the detector.
+- Grid-locked pulsers keep timing from the grid and take PERMISSION from a `Presence` of
+  the hit envelope: full through a pattern's own gaps, resting within a couple of bars of
+  real silence, rising only to the envelope's own peak.
+- Punctuation obeys the same honesty: a drop arrival with no kick in its bar gets a colour
+  bump, not a slam.
+- The wildcard's freedom is from the SECTION vocabulary only. It still respects the kit
+  veto and never lands a flash or impact effect - a strobe as the one surprise in a rap
+  verse was how "surprise" read as fault.
 
-## Rates have ceilings; subdivisions stay musical
+## Hits must survive the cue boundary
 
-- The strobe picks the fastest of 16th/8th/quarter-per-beat that fits under
-  `STROBE_MAX_HZ = 8` total. Sixteenths survive only to 120 bpm. The number came from the
-  room: 9.4 Hz on a 140 bpm track had fused into a texture, the same gesture at 4.7 Hz still
-  read as events. The alternating wall pairs mean any one wall sees half the rate.
-- `strobePerBeat` lives in core beside `HIT_RULES` and is imported by the planner that writes
-  hits AND the linter that checks them (`strobe-too-fast` is an error). One function, two
-  consumers - two implementations of one allowance is how they come to disagree, the lesson
-  `hitSeconds` and `allowedFlashes` already carry.
-- Anything that accelerates through a ladder (`buildStrobe`'s half -> quarter -> 8th -> 16th)
-  holds at the same ceiling: the roll tops out at eighths and the drop still owns the step up.
+The player consumes onsets up to ~30 ms EARLY on purpose (anticipation: early light reads
+tighter than late). That lead means a kick sitting exactly on a cue boundary fires its
+one-frame edge into the OUTGOING effect; the incoming one - installed precisely to answer
+it - heard silence. The player now re-asserts any edge younger than the lead plus a frame
+on the install frame. The general law: any consume-once event plus any deferred consumer
+is this bug; when adding either, ask who else needed the event.
+
+## Aggression comes from the record, not the genre card
+
+- A bloom-family drop that measurably pounds (>= 0.8 kicks/beat) takes slam treatment for
+  its punctuation - per slot, not only at the peak. The peak-only version fixed Galantis;
+  a listening note then missed the strobe on the FIRST drop of a pounding house track.
+  Same evidence, same answer, anywhere it occurs.
+- Swell families are never overridden; their peak is a rise by definition.
+- Genre remaps are the last resort; the aggression override fixes the track that is
+  playing without moving every other track in the drawer.
+
+## Builds, rates and fades
+
+- buildStrobe fires only from buildProgress 0.45: two listening notes on two tracks said
+  the same thing, a sixteen-bar riser flashing from its first bar is half a minute of
+  strobe. The roll is the END of a build; the front half belongs to the layers that climb.
+- The strobe rate ceiling is `strobePerBeat` under `STROBE_MAX_HZ = 8`, one function
+  imported by the planner AND the linter - two implementations of one allowance is how
+  they disagree (the `hitSeconds` lesson).
+- Quiet-to-quiet seams (intro/breakdown/outro into anything short of a drop) fade over 12
+  beats. Both sides are near-still, so the change IS the event, and at two bars it read
+  as a jump twice in one judging round.
 
 ## Param semantics are contracts
 
-`paramsFor` in the planner writes values into any effect that declares a matching param key.
-That makes the KEY a contract about units:
-
-- `perBeat` means events per beat, a rate. `cycleBeats` means beats per cycle, a period.
-  sineRoll ran at four times its designed speed on every sparse track because it named its
-  period `perBeat` and the planner wrote a rate into it. Never reuse a key across opposite
-  units; rename the param instead, and migrate every scene or show that set it (the lagoon
-  lounge scene carried `perBeat: 12`).
-- Speeds with a felt size get planner-set params derived from the **median** tempo, decided
-  once at compose: `rollerChase.lapBars` is 1 bar only when a bar runs at least 2.2 s. Derive
-  it per frame and a track drifting around the threshold flips lap length mid-song.
-- Grid-locked phase comes off the absolute bar clock (`(barIndex + barPhase) / lapBars`) so a
-  seek reproduces the frame. Never multiply an absolute clock by `ctx.motion` - the player
-  cross-fades motion between cues and the pattern jumps by the whole elapsed length.
-
-## Peaks escalate by contrast, from both directions
-
-"The peak feels less peak" is almost never about the peak alone - it is ordinary drops
-getting the peak's gestures for free.
-
-- Demote where the music is soft: kickless arrivals bump instead of slam (above).
-- Escalate where the music has earned it: a bloom-family peak that measurably pounds
-  (>= 0.8 kicks/beat, four-on-the-floor territory) takes slam treatment anyway - slam-class
-  master pool, the strobe into it, and up to two phrase-locked slams inside the peak section,
-  free of the flash budget. Light the record that is playing, not the genre card. Swell
-  families are never overridden; their peak is a rise by definition.
-- Genre remaps are the LAST resort. The audit over the full cache showed the mapping sane;
-  Galantis files as house because the audio classifier heard house, and the aggression
-  override fixes what the file-cabinet label got wrong without moving every other track in
-  the drawer.
-
-## Endings are arrangement too
-
-- A track that ends inside its loudest section still ends. The DP rarely pays for a boundary
-  two bars from the finish, so `carveRingOut` walks back from the last bar while the kick is
-  absent and the level has clearly left the section's own body (under 0.6x its first-half
-  mean), caps at four bars, and pins the boundary like a void's edges.
-- A void at the END of a track is a labelling error by definition: the void instruction is
-  the held breath before a drop, and silence after the last note is the record being over.
-  The trailing void relabels to outro - after the phrase snap, so it keeps a void's edge
-  protections on the way there. Symmetric with opening silence relabelling to intro.
-- A carve can leave a one-bar outro that no bed accepts (every bed wants two bars). An empty
-  cue inherits the previous cue's bed - the look it is winding down from - because a room
-  that cuts to black on the last bar reads as a fault, not an ending.
+`paramsFor` writes values into any effect declaring a matching key, so the KEY is a
+contract about units: `perBeat` is a rate, `cycleBeats` is a period, and reusing one for
+the other ran sineRoll at four times its speed on every sparse track. Felt sizes derive
+from the MEDIAN tempo once at compose. Grid-locked phase comes off the absolute bar clock
+and is never multiplied by `ctx.motion`; integrated state (springs, momentum) may scale
+its timestep by motion because pausing genuinely parks it.
 
 ## Trust the analysis to distrust itself
 
-Some grids defeat the analyser, and a show composed on a broken grid is worse than no show.
-`gridTrust` (core, beside the contracts) trips on **fragmentation** - over 5.2 sections a
-minute, or over 4.5 with meter confidence at or below 0.55 or a 2/4 verdict - and never on
-confidence alone: calibrated over a 113-track cache, one track sits at meter confidence 0.55
-with clean structure while another at 0.88 is chopped to bits. Confidence tightens the test;
-it must not trip it.
-
-Calibrate any gate like this against the real cache before freezing thresholds, and price the
-false positive honestly: a good show replaced by lounge costs more than a bad one let
-through, so the gate stays conservative and the queue row carries an override the meta
-remembers. Two of the three original calibration offenders were healed by plain re-analysis -
-their blobs were stale versions - which is itself a lesson: **re-analyse before concluding
-the analyser is wrong.**
-
-The verdict must be EXPLICIT everywhere it matters: the queue row (chip + override), the
-inspector (why, in words), and the show's own brief - the agent revising a show should know
-the engine does not believe the grid under it.
+`gridTrust` trips on fragmentation - over 5.2 sections a minute, or over 4.5 with meter
+confidence at or below 0.55 or a 2/4 verdict - never on confidence alone, and now only
+with at least TEN sections: fragmentation needs fragments. A 95-second hardstyle edit with
+a normal eight-section arrangement reads as 5.1 a minute, which routed a correctly
+labelled track to lounge; rate-based gates are biased against short tracks. Calibrate on
+the real corpus, price the false positive honestly (a good show replaced by lounge costs
+more than a bad one let through), and keep the owner's override in the meta.
 
 ## Version discipline, or fixes never arrive
 
-The audio hash identifies the RECORDING; it cannot see that the engine or the analyser
-changed. Three rules keep cached artifacts honest:
-
-- A change to what the analyser emits bumps `ANALYSIS_VERSION`; a change to what the engine
-  composes bumps `SHOW_VERSION`. Both are cheap - everything re-derives lazily per track.
-- `prepare()` keeps an existing show only when nothing under it moved: hash matches AND the
-  show is current-version AND the analysis came from cache. A fresh analysis recomposes an
-  engine show even at the same hash, because the section table may have moved under the
-  cues. Model-authored shows are exempt - they are the one artifact money was spent on.
-- The library reports version-currency (a 2 kB head-read of the analysis, same trick as
-  duration), the ready-shortcut on cached adds requires it, and the queue demotes stale rows
-  at load. Before these existed, a track added from the palette NEVER re-analysed - the
-  owner heard a fixed bug for a full day because the fix could not reach the cache.
-
-And when handing regenerated artifacts to a running installation: the app build must be at
-least as new as the artifacts, or the old build will see a version from the future as merely
-"not mine", re-analyse, and overwrite the fix.
+- Analyser changes bump `ANALYSIS_VERSION`, engine changes bump `SHOW_VERSION`, every
+  session, no exceptions. Everything re-derives lazily per track.
+- `prepare()` keeps a show only when hash matches AND versions are current AND the
+  analysis came from cache; model-authored shows are exempt.
+- The app build must be at least as new as the artifacts handed to it, or the old build
+  re-analyses the future back down. The full loop that works: quit app, rebundle, rebuild,
+  install, sync artifacts, relaunch, then curl its own `/api/library` and read the
+  `current` count - the app's opinion, not the repo's.
 
 ## Prove it before claiming it
 
-The order that worked: unit tests per rule (the engine fixture takes a bpm and mutates
-cleanly), then `composeShow` over the real cached analyses of the named tracks with cue/hit
-diffs, then a scratch-copy re-analysis (`MV_CACHE_DIR` + `bench/reanalyse.ts`) so the live
-cache is never mutated during validation, then `bench/showprobe.ts` over the corpus for the
-numbers that must not regress: **0 lint errors, 0 misfires, 100% quiet coverage**, contrast
-mean, flashes spent of allowed. The engine-never-fails-its-own-linter sweep
-(58-175 bpm, drifting grids, a dozen seeds each) is the cheapest high-yield test in the
-suite - run it against any planner change.
+Unit tests per rule first, and **verify a new regression test fails against the bug it
+was written for** - the kick-on-switch test was flipped off and on to prove both
+directions. Then recompose the named tracks and diff cues/hits; then a scratch-copy
+re-analysis (`MV_CACHE_DIR` + `bench/reanalyse.ts`) so no live cache is mutated during
+validation; then `bench/showprobe.ts` for the gate that never moves: **0 lint errors,
+0 misfires, 100 percent quiet coverage**. Measure saturation per family after any picker
+or catalog change. The engine-never-fails-its-own-linter sweep stays the cheapest
+high-yield test in the suite.
 
-A fix that cannot be seen in a recomposed cue list, a hit diff or a probe number is not
-finished; it is intended.
+A fix that cannot be seen in a recomposed cue list, a hit diff, a probe number or a
+re-judged track is not finished; it is intended.
