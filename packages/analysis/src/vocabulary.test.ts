@@ -4,7 +4,10 @@ import type { Segment } from './arrange.ts';
 import {
 	chorusSpansFromLyrics,
 	demoteVersesFromLyrics,
+	hookBars,
+	hookStarts,
 	promoteChorusesFromLyrics,
+	snapToHooks,
 	spanOverlap,
 	speaksClub,
 	toSongVocabulary
@@ -109,6 +112,175 @@ describe('demoteVersesFromLyrics', () => {
 		const segments: Segment[] = [{ startBar: 0, endBar: 5, kind: 'chorus', group: 0 }];
 		demoteVersesFromLyrics(segments, (bar) => bar * 2, spans);
 		expect(segments[0].kind).toBe('chorus');
+	});
+});
+
+describe('hookBars', () => {
+	const line = (t: number, text: string): LyricLine => ({ t, text });
+	// Bars two seconds long; the repeated block starts at t=14 (bar 7) and t=44 (bar 22).
+	const lyrics: LyricLine[] = [
+		line(2, 'verse one'),
+		line(6, 'verse two'),
+		line(10, 'verse three'),
+		line(14, 'hook alpha'),
+		line(18, 'hook beta'),
+		line(30, 'more verse'),
+		line(34, 'other words'),
+		line(38, 'still other words'),
+		line(44, 'hook alpha'),
+		line(48, 'hook beta')
+	];
+	const barTime = Float64Array.from({ length: 40 }, (_, b) => b * 2);
+
+	it('flags the bar each repeated block starts in', () => {
+		const hooks = hookBars(lyrics, 80, barTime, 39);
+		const flagged = [...hooks].flatMap((v, b) => (v ? [b] : []));
+		expect(flagged).toEqual([7, 22]);
+	});
+
+	it('rolls a back-quarter start into the next bar', () => {
+		// Same blocks shifted to t=15.6: 80% into bar 7, sung into bar 8.
+		const late = lyrics.map((l) => ({ ...l, t: l.t + 1.6 }));
+		const hooks = hookBars(late, 80, barTime, 39);
+		const flagged = [...hooks].flatMap((v, b) => (v ? [b] : []));
+		expect(flagged).toEqual([8, 23]);
+	});
+});
+
+describe('hookStarts', () => {
+	const line = (t: number, text: string): LyricLine => ({ t, text });
+
+	it('finds run starts and the cycle restart a merged run hides', () => {
+		// The Safír shape: the opening chorus flows straight into the first real one, so
+		// lines 0..7 are one unbroken repeated run and the second statement begins at
+		// line 4, betrayed by "line b" coming round again.
+		const lyrics: LyricLine[] = [
+			line(0, 'restated opener'),
+			line(4, 'line b'),
+			line(8, 'line c'),
+			line(12, 'line d'),
+			line(16, 'restated opener'),
+			line(20, 'line b'),
+			line(24, 'line c'),
+			line(28, 'line d'),
+			line(40, 'a verse of its own'),
+			line(44, 'saying unrepeated things'),
+			line(60, 'restated opener'),
+			line(64, 'line b')
+		];
+		expect(hookStarts(lyrics)).toEqual([
+			{ t: 0, restart: false },
+			{ t: 16, restart: true },
+			{ t: 60, restart: false }
+		]);
+	});
+
+	it('does not call a line chanted twice a new block', () => {
+		const lyrics: LyricLine[] = [
+			line(0, 'hey'),
+			line(2, 'hey'),
+			line(4, 'hey'),
+			line(6, 'hey'),
+			line(20, 'verse alpha'),
+			line(24, 'verse beta'),
+			line(40, 'hey'),
+			line(42, 'hey')
+		];
+		expect(hookStarts(lyrics)).toEqual([
+			{ t: 0, restart: false },
+			{ t: 40, restart: false }
+		]);
+	});
+});
+
+describe('snapToHooks', () => {
+	// Two-second bars throughout; a hook time of 21.2 is bar 10 + 0.6.
+	const barTime = Float64Array.from({ length: 61 }, (_, b) => b * 2);
+	const entrance = (t: number) => ({ t, restart: false });
+	const restart = (t: number) => ({ t, restart: true });
+
+	it('pulls back a boundary the pickup slam dragged late', () => {
+		// The Safír case: hook sung at bar 8.4, chorus truly at 9, boundary landed at 11.
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 11, kind: 'verse', group: 0 },
+			{ startBar: 11, endBar: 24, kind: 'chorus', group: 1 }
+		];
+		const moves = snapToHooks(segments, [restart(16.8)], barTime, 60);
+		expect(moves).toEqual([{ from: 11, to: 9 }]);
+		expect(segments[0].endBar).toBe(9);
+	});
+
+	it('leaves a boundary anywhere inside the hook window alone', () => {
+		// A pickup sung at bar 9.3 belongs to bar 9 or 10 and the phase cannot say which,
+		// so a boundary on either is evidence, not error.
+		for (const startBar of [9, 10]) {
+			const segments: Segment[] = [
+				{ startBar: 0, endBar: startBar, kind: 'verse', group: 0 },
+				{ startBar, endBar: 24, kind: 'chorus', group: 1 }
+			];
+			expect(snapToHooks(segments, [entrance(18.6)], barTime, 60)).toEqual([]);
+		}
+	});
+
+	it('moves one bar later only toward a restart, never toward an entrance', () => {
+		// The Cikády case against the VYZEE case: a block returning mid-flow at bar 24.6
+		// marks the drop the boundary undershot; a vocal ENTERING there could as easily
+		// be lagging the drop that already happened.
+		const segments = (): Segment[] => [
+			{ startBar: 0, endBar: 23, kind: 'groove', group: 0 },
+			{ startBar: 23, endBar: 40, kind: 'drop', group: 1 }
+		];
+		expect(snapToHooks(segments(), [entrance(49.2)], barTime, 60)).toEqual([]);
+		const moved = segments();
+		expect(snapToHooks(moved, [restart(49.2)], barTime, 60)).toEqual([{ from: 23, to: 24 }]);
+		expect(moved[1].startBar).toBe(24);
+	});
+
+	it('never delays a boundary by two bars onto a lagging club vocal', () => {
+		// The VYZEE case: the drop hits at 13, the hook line only enters at bar 15.7.
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 13, kind: 'build', group: 0 },
+			{ startBar: 13, endBar: 37, kind: 'drop', group: 1 }
+		];
+		expect(snapToHooks(segments, [restart(31.4)], barTime, 60)).toEqual([]);
+	});
+
+	it('discards refrain hooks cycling faster than a phrase', () => {
+		// Hooks at bars 51, 53, 55, 57: a chant, not four sections. Too few survive the
+		// spacing guard to put a window within reach of the chorus at 60.
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 60, kind: 'build', group: 0 },
+			{ startBar: 60, endBar: 61, kind: 'chorus', group: 1 }
+		];
+		const chant = [102.2, 106.2, 110.2, 114.2].map(restart);
+		expect(snapToHooks(segments, chant, barTime, 61)).toEqual([]);
+	});
+
+	it('never moves a boundary shared with a void', () => {
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 30, kind: 'groove', group: 0 },
+			{ startBar: 30, endBar: 32, kind: 'void', group: -1 },
+			{ startBar: 32, endBar: 40, kind: 'drop', group: 1 }
+		];
+		expect(snapToHooks(segments, [restart(60.4)], barTime, 60)).toEqual([]);
+	});
+
+	it('leaves verse and build starts to the energy evidence', () => {
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 8, kind: 'intro', group: 0 },
+			{ startBar: 8, endBar: 16, kind: 'verse', group: 1 },
+			{ startBar: 16, endBar: 20, kind: 'build', group: 2 }
+		];
+		expect(snapToHooks(segments, [entrance(12.4)], barTime, 60)).toEqual([]);
+	});
+
+	it('refuses a move that would squeeze a neighbour under two bars', () => {
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 3, kind: 'intro', group: 0 },
+			{ startBar: 3, endBar: 11, kind: 'chorus', group: 1 }
+		];
+		// Hook at bar 0.5, window {0, 1}: reaching bar 1 would leave a one-bar intro.
+		expect(snapToHooks(segments, [entrance(1.0)], barTime, 60)).toEqual([]);
 	});
 });
 

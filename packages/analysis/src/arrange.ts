@@ -617,12 +617,35 @@ export function arrange(
 	const tail = segments[segments.length - 1];
 	if (tail?.kind === 'void') tail.kind = 'outro';
 
-	// --- events --------------------------------------------------------------------------
+	placeEvents(segments, bandsN, kicksPerBar, snaresPerBar, count, events);
+
+	return { segments, energy, bands: bandsN, events, phraseAnchorBar: anchor };
+}
+
+/**
+ * Per-bar events from a finished section table, into `into`.
+ *
+ * Exported so the caller can re-place them after the vocabulary and hook-snap stages move
+ * boundaries: an event emitted at a bar a boundary has since left is a cue firing in the
+ * wrong section. Reads section kinds through `sectionBase`, so a chorus carries the same
+ * downbeat a drop does whichever vocabulary named it.
+ */
+export function placeEvents(
+	segments: readonly Segment[],
+	bandsN: Float32Array,
+	kicksPerBar: Int32Array,
+	snaresPerBar: Int32Array,
+	count: number,
+	into?: EventTag[][]
+): EventTag[][] {
+	const events = into ?? Array.from({ length: count }, (): EventTag[] => []);
+	for (const row of events) row.length = 0;
+
 	const air = (b: number) => bandsN[b * NUM_BANDS + 3];
 	const sub = (b: number) => bandsN[b * NUM_BANDS];
 
 	for (const s of segments) {
-		if (s.kind === 'drop') {
+		if (sectionBase(s.kind) === 'drop') {
 			events[s.startBar].push('drop_downbeat');
 			if (air(s.startBar) > 0.62) events[s.startBar].push('crash');
 		}
@@ -662,8 +685,7 @@ export function arrange(
 			}
 		}
 	}
-
-	return { segments, energy, bands: bandsN, events, phraseAnchorBar: anchor };
+	return events;
 }
 
 /**

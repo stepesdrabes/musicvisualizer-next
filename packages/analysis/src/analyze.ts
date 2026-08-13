@@ -9,7 +9,7 @@ import {
 	type TrackAnalysis,
 	type TrackContext
 } from '@mv/core';
-import { arrange, bandLevels, levelEnvelopes, type LabelTuning } from './arrange.ts';
+import { arrange, bandLevels, levelEnvelopes, placeEvents, type LabelTuning } from './arrange.ts';
 import { spectrumTrack } from './spectrum.ts';
 import { detectBeats, type BeatGrid } from './beats.ts';
 import { beatSynchronous } from './beatsync.ts';
@@ -17,6 +17,7 @@ import { chromagram, estimateKey, estimateKeySpan } from './chroma.ts';
 import { detectDrums, snapTimesToOnsets, type DrumStream } from './drums.ts';
 import { extractFeatures } from './features.ts';
 import { detectMeter, type Meter } from './downbeats.ts';
+import { applyHeadLabels, type SectionPosteriors } from './headLabels.ts';
 import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
 import { barGroups, quantiseOnsets } from './quantise.ts';
@@ -36,7 +37,10 @@ import {
 	chorusSpansFromLyrics,
 	demoteVersesFromLyrics,
 	fourOnFloor,
+	hookBars,
+	hookStarts,
 	promoteChorusesFromLyrics,
+	snapToHooks,
 	speaksClub,
 	toSongVocabulary
 } from './vocabulary.ts';
@@ -95,6 +99,14 @@ export interface AnalyzeInput {
 	tuning?: StructureTuning;
 	/** Labelling-stage dials, same contract as `tuning`. */
 	labels?: LabelTuning;
+	/**
+	 * Per-frame section posteriors from the learned labeller (MusicFM + section head),
+	 * when the caller ran it. Replaces the rules' kind assignment and the lyric
+	 * promote/demote - the head is measurably better at exactly that call - while the
+	 * DP boundaries, the carves, the hook snap and the settled-bars gate all still
+	 * apply: positions and silence are facts, and facts outrank predictions.
+	 */
+	sectionPosteriors?: SectionPosteriors;
 }
 
 const TARGET_LUFS = -14;
@@ -210,21 +222,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		}
 	}
 
-	// Where a repeated-line block BEGINS, as a per-bar flag: on a wall-to-wall vocal track
-	// the coverage column never moves, and the hook starting is the boundary the audience
-	// hears. Snapped to the bar carrying most of the start's first beat-or-so of singing.
-	const hooks = new Uint8Array(bars.count);
-	if (lyricLines && lyricLines.length > 0) {
-		for (const span of chorusSpansFromLyrics(lyricLines, duration)) {
-			let b = 0;
-			while (b < bars.count - 1 && bars.time[b + 1] <= span.start) b++;
-			// A hook landing in the back quarter of a bar is sung INTO the next bar: lyric
-			// sync carries tens-of-milliseconds jitter and singers anticipate the downbeat.
-			const len = bars.time[b + 1] - bars.time[b];
-			if (len > 0 && (span.start - bars.time[b]) / len > 0.75 && b + 1 < bars.count) b++;
-			hooks[b] = 1;
-		}
-	}
+	const hooks =
+		lyricLines && lyricLines.length > 0
+			? hookBars(lyricLines, duration, bars.time, bars.count)
+			: new Uint8Array(bars.count);
 
 	const tuning = input.tuning ?? DEFAULT_TUNING;
 	const sim = similarityMatrix(bars);
@@ -287,7 +288,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		input.context?.genreFamily ?? null,
 		fourOnFloor(kicks, plan.energy, meter.beatsPerBar)
 	);
-	if (!club) {
+	if (input.sectionPosteriors) {
+		if (!club) toSongVocabulary(plan.segments);
+		applyHeadLabels(plan.segments, input.sectionPosteriors, bars.time, bars.count, club);
+	} else if (!club) {
 		toSongVocabulary(plan.segments);
 		const lyrics = input.context?.lyrics;
 		if (lyrics && lyrics.length > 0) {
@@ -302,6 +306,16 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			demoteVersesFromLyrics(plan.segments, barTime, spans);
 		}
 	}
+
+	// Only after the vocabulary settles which segments are chorus-class does the hook get
+	// its say on WHERE they start. Then events are re-placed from the final table:
+	// arrange() emitted them while every boundary was still where the energy alone put
+	// it, and a drop downbeat left at a bar its section has moved off - or been demoted
+	// off - fires the show's biggest cue in the wrong section.
+	if (lyricLines && lyricLines.length > 0) {
+		snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count);
+	}
+	placeEvents(plan.segments, plan.bands, kicks, snares, bars.count, plan.events);
 
 	// One array decides where every bar is. `bars[].t` is written from it below rather than
 	// computed alongside it, because two independent copies of the same timing is exactly how
