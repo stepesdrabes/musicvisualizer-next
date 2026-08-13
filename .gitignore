@@ -4,6 +4,7 @@ dist/
 build/
 *.tsbuildinfo
 cache/
+cache114/
 shows/
 .DS_Store
 bench/corpus/
@@ -13,3 +14,6 @@ bench/clicktests/
 bench/renders/
 bench/models/
 bench/authored/
+bench/.musicfm-src/
+bench/corpus/.musicfm/
+bench/.musicfm-weights/
