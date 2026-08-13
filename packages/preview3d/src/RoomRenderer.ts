@@ -34,6 +34,29 @@ const FIT_EYE = new THREE.Vector3();
 const FIT_CORNER = new THREE.Vector3();
 const FIT_RIGHT = new THREE.Vector3();
 const FIT_UP = new THREE.Vector3();
+const POSE_POS = new THREE.Vector3();
+const POSE_TARGET = new THREE.Vector3();
+const GLIDE_OFFSET = new THREE.Vector3();
+const GLIDE_AT = new THREE.Spherical();
+const UP_Y = new THREE.Vector3(0, 1, 0);
+
+/**
+ * How long a preset takes to arrive.
+ *
+ * Long enough to read as the room turning rather than as a cut, short enough that somebody
+ * comparing two angles is not waiting on it.
+ */
+const GLIDE_SECONDS = 0.55;
+
+/** Zero first AND second derivative at both ends, so the move has no visible start or stop. */
+function smoother(t: number): number {
+	return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+/** The short way round a circle, so a move never takes the long way for want of a wrap. */
+function shortestTurn(delta: number): number {
+	return delta - Math.PI * 2 * Math.round(delta / (Math.PI * 2));
+}
 
 export type CameraView = 'orbit' | 'top' | 'front';
 
@@ -87,12 +110,26 @@ export class RoomRenderer {
 	private framed: CameraView | null = 'orbit';
 
 	/**
-	 * The point in the room a preset aims at, before it is offset to sit in the viewport.
+	 * A preset arriving, in orbit coordinates rather than in world ones.
 	 *
-	 * Kept apart from `controls.target` because framing moves the whole rig, and re-framing from
-	 * an already-moved target would walk the room out of the window one resize at a time.
+	 * Interpolating the position directly would send the camera along a chord, and a chord cuts
+	 * inside its own arc: Orbit to Top falls from 7.4 m out to 6.0 and back to 8.3, so the room
+	 * swells about a quarter larger halfway through a move that should only be a turn. Turning
+	 * the azimuth and the elevation instead holds the distance, which is the path a hand on the
+	 * mouse would have taken anyway.
 	 */
-	private readonly baseTarget = new THREE.Vector3();
+	private glide: {
+		from: THREE.Spherical;
+		to: THREE.Spherical;
+		fromTarget: THREE.Vector3;
+		toTarget: THREE.Vector3;
+		t: number;
+	} | null = null;
+
+	/** `Spherical` is defined about +y and this room stands on +z, so poses convert through these. */
+	private readonly toOrbit = new THREE.Quaternion();
+	private readonly fromOrbit = new THREE.Quaternion();
+
 	private canvas = { width: 1, height: 1 };
 	private viewport: Viewport = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -153,14 +190,20 @@ export class RoomRenderer {
 
 		this.controls = new OrbitControls(this.camera, canvas);
 		this.controls.target.set(0, 0, spec.height * 0.45);
-		this.baseTarget.copy(this.controls.target);
 		this.controls.enableDamping = true;
 		this.controls.dampingFactor = 0.08;
 		this.controls.minDistance = 0.8;
 		this.controls.maxDistance = 22;
-		// Touching the camera hands it over: from here it is the user's until a preset is pressed.
-		this.controls.addEventListener('start', () => (this.framed = null));
+		// Touching the camera hands it over: from here it is the user's until a preset is pressed,
+		// and a move still arriving gives way rather than fighting the drag.
+		this.controls.addEventListener('start', () => {
+			this.framed = null;
+			this.glide = null;
+		});
 		this.controls.update();
+
+		this.toOrbit.setFromUnitVectors(this.camera.up, UP_Y);
+		this.fromOrbit.copy(this.toOrbit).invert();
 
 		this.scene.background = new THREE.Color(0x05050a);
 
@@ -215,30 +258,105 @@ export class RoomRenderer {
 	}
 
 	/**
+	 * Move to a preset, going round the room rather than through it.
+	 *
+	 * Pressing the same preset twice arrives at once, which doubles as a way to cut a move short.
+	 * The first call is also instant: the constructor already sits on `orbit`, so animating the
+	 * fit it has not had yet would be a lurch on the first frame anyone sees.
+	 */
+	setView(view: CameraView): void {
+		const arrived = this.framed === view;
+		this.framed = view;
+		this.poseFor(view, POSE_POS, POSE_TARGET);
+
+		if (arrived) {
+			this.glide = null;
+			this.camera.position.copy(POSE_POS);
+			this.controls.target.copy(POSE_TARGET);
+			this.controls.update();
+			return;
+		}
+		this.startGlide(POSE_POS, POSE_TARGET);
+	}
+
+	/**
+	 * Where a preset ends up, without touching the live camera.
+	 *
 	 * `top` is deliberately a few degrees off vertical. OrbitControls derives azimuth from
 	 * `camera.up`, which is +z here, so a camera directly overhead sits at polar angle zero
 	 * where azimuth is undefined and the first drag snaps wildly.
 	 */
-	setView(view: CameraView): void {
+	private poseFor(view: CameraView, pos: THREE.Vector3, target: THREE.Vector3): void {
 		const s = this.opts.spec;
 		switch (view) {
 			case 'top':
-				this.camera.position.set(0, -s.depth * 0.14, s.height * 3.1);
-				this.controls.target.set(0, 0, 0);
+				pos.set(0, -s.depth * 0.14, s.height * 3.1);
+				target.set(0, 0, 0);
 				break;
 			case 'front':
-				this.camera.position.set(0, -s.depth * 2.1, s.height * 0.62);
-				this.controls.target.set(0, 0, s.height * 0.45);
+				pos.set(0, -s.depth * 2.1, s.height * 0.62);
+				target.set(0, 0, s.height * 0.45);
 				break;
 			default:
-				this.camera.position.set(s.width * 0.85, -s.depth * 1.15, s.height * 0.75);
-				this.controls.target.set(0, 0, s.height * 0.45);
+				pos.set(s.width * 0.85, -s.depth * 1.15, s.height * 0.75);
+				target.set(0, 0, s.height * 0.45);
 				break;
 		}
-		this.baseTarget.copy(this.controls.target);
-		this.framed = view;
-		this.frame();
-		this.controls.update();
+		this.fit(pos, target);
+	}
+
+	/** A pose as an orbit around its own target: azimuth, elevation, distance. */
+	private orbitOf(pos: THREE.Vector3, target: THREE.Vector3, out: THREE.Spherical): void {
+		out.setFromVector3(GLIDE_OFFSET.copy(pos).sub(target).applyQuaternion(this.toOrbit));
+	}
+
+	private startGlide(toPos: THREE.Vector3, toTarget: THREE.Vector3): void {
+		const g =
+			this.glide ??
+			(this.glide = {
+				from: new THREE.Spherical(),
+				to: new THREE.Spherical(),
+				fromTarget: new THREE.Vector3(),
+				toTarget: new THREE.Vector3(),
+				t: 0
+			});
+
+		// From wherever the camera actually is, so interrupting one move with another picks up
+		// mid-flight rather than jumping back to where the last one started.
+		this.orbitOf(this.camera.position, this.controls.target, g.from);
+		g.fromTarget.copy(this.controls.target);
+		this.aimGlide(toPos, toTarget);
+		g.t = 0;
+	}
+
+	/** Point an in-flight move at a (possibly new) destination, keeping where it has got to. */
+	private aimGlide(toPos: THREE.Vector3, toTarget: THREE.Vector3): void {
+		const g = this.glide;
+		if (!g) return;
+		this.orbitOf(toPos, toTarget, g.to);
+		g.to.theta = g.from.theta + shortestTurn(g.to.theta - g.from.theta);
+		g.toTarget.copy(toTarget);
+	}
+
+	private advanceGlide(dt: number): void {
+		const g = this.glide;
+		if (!g) return;
+		g.t = Math.min(1, g.t + dt / GLIDE_SECONDS);
+		const e = smoother(g.t);
+
+		this.controls.target.lerpVectors(g.fromTarget, g.toTarget, e);
+		GLIDE_AT.theta = g.from.theta + (g.to.theta - g.from.theta) * e;
+		GLIDE_AT.phi = g.from.phi + (g.to.phi - g.from.phi) * e;
+		// Geometric, so closing half the gap looks the same from three metres as from twelve.
+		GLIDE_AT.radius =
+			Math.max(1e-4, g.from.radius) * Math.pow(g.to.radius / Math.max(1e-4, g.from.radius), e);
+		GLIDE_AT.makeSafe();
+
+		this.camera.position
+			.copy(this.controls.target)
+			.add(GLIDE_OFFSET.setFromSpherical(GLIDE_AT).applyQuaternion(this.fromOrbit));
+
+		if (g.t >= 1) this.glide = null;
 	}
 
 	/** A little air past the room's own extent, so a bloom halo is not clipped by the frame. */
@@ -289,9 +407,9 @@ export class RoomRenderer {
 	 * furthest off-axis. Bounding both and adding them backs off about 20% too far, which shows
 	 * up as the room shrinking on the ordinary window it used to fit.
 	 */
-	private frame(): void {
+	private fit(pos: THREE.Vector3, target: THREE.Vector3): void {
 		const s = this.opts.spec;
-		const eye = FIT_EYE.copy(this.camera.position).sub(this.controls.target);
+		const eye = FIT_EYE.copy(pos).sub(target);
 		const dist = eye.length();
 		if (dist < 1e-4) return;
 		eye.divideScalar(dist);
@@ -316,7 +434,7 @@ export class RoomRenderer {
 				(corner & 1 ? 0.5 : -0.5) * s.width,
 				(corner & 2 ? 0.5 : -0.5) * s.depth,
 				corner & 4 ? s.height : 0
-			).sub(this.baseTarget);
+			).sub(target);
 			const along = u.dot(eye);
 			need = Math.max(
 				need,
@@ -329,8 +447,7 @@ export class RoomRenderer {
 			this.controls.minDistance,
 			Math.min(this.controls.maxDistance, need * RoomRenderer.FIT_MARGIN)
 		);
-		this.controls.target.copy(this.baseTarget);
-		this.camera.position.copy(this.controls.target).addScaledVector(eye, at);
+		pos.copy(target).addScaledVector(eye, at);
 	}
 
 	/**
@@ -556,7 +673,15 @@ export class RoomRenderer {
 		// A preset means the same thing at every window shape, so it re-fits. A camera the user
 		// has orbited is theirs, and a resize is not a reason to take it back.
 		if (this.framed) {
-			this.frame();
+			this.poseFor(this.framed, POSE_POS, POSE_TARGET);
+			// A move already in flight is re-aimed rather than cancelled, so a window resized
+			// mid-turn lands on the new framing instead of the one it set off for.
+			if (this.glide) {
+				this.aimGlide(POSE_POS, POSE_TARGET);
+			} else {
+				this.camera.position.copy(POSE_POS);
+				this.controls.target.copy(POSE_TARGET);
+			}
 			this.controls.update();
 		}
 
@@ -619,6 +744,8 @@ export class RoomRenderer {
 			if (this.dots.instanceColor) this.dots.instanceColor.needsUpdate = true;
 		}
 
+		// Before the controls, so they read the pose this frame arrived at rather than last one's.
+		if (this.glide) this.advanceGlide(dt);
 		this.controls.update();
 		this.composer.render(dt);
 	}
