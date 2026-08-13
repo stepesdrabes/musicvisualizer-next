@@ -170,6 +170,10 @@ export class ShowPlayer {
 	private kickCursor = 0;
 	private snareCursor = 0;
 	private hatCursor = 0;
+	/** When each stream last fired, so a cue switch can re-assert a hit it just consumed. */
+	private lastKickAt = -Infinity;
+	private lastSnareAt = -Infinity;
+	private lastHatAt = -Infinity;
 
 	private lastBeatIndex = Number.NaN;
 	private lastBarIndex = Number.NaN;
@@ -375,6 +379,9 @@ export class ShowPlayer {
 		this.kickEnv.reset();
 		this.snareEnv.reset();
 		this.hatEnv.reset();
+		this.lastKickAt = -Infinity;
+		this.lastSnareAt = -Infinity;
+		this.lastHatAt = -Infinity;
 		const a = this.analysis;
 		if (a) {
 			this.kickCursor = seekCursor(a.onsets.kick.times, t);
@@ -544,9 +551,18 @@ export class ShowPlayer {
 		f.snare = snare > 0;
 		f.hat = hat > 0;
 
-		if (kick > 0) this.kickEnv.fire(kick);
-		if (snare > 0) this.snareEnv.fire(snare);
-		if (hat > 0) this.hatEnv.fire(hat);
+		if (kick > 0) {
+			this.kickEnv.fire(kick);
+			this.lastKickAt = t;
+		}
+		if (snare > 0) {
+			this.snareEnv.fire(snare);
+			this.lastSnareAt = t;
+		}
+		if (hat > 0) {
+			this.hatEnv.fire(hat);
+			this.lastHatAt = t;
+		}
 
 		f.kickEnv = this.kickEnv.update(dt);
 		f.snareEnv = this.snareEnv.update(dt);
@@ -597,6 +613,16 @@ export class ShowPlayer {
 		if (this.appliedCue !== this.cueCursor) {
 			this.installLayers(active);
 			this.appliedCue = this.cueCursor;
+			// A hit landing ON the boundary was consumed a frame or two ago by the anticipation
+			// lead - up to ~30 ms early, on purpose - so its one-frame edge fired into the
+			// OUTGOING effect and the incoming one heard silence. Exactly the hits an incoming
+			// drop effect exists for. Re-assert any edge younger than the lead plus a frame, so
+			// the fresh instance sees the kick it was installed to answer; the envelopes carry
+			// across on their own, this is only the boolean.
+			const recent = HIT_LEAD_CAP + 0.02;
+			if (t - this.lastKickAt <= recent) f.kick = true;
+			if (t - this.lastSnareAt <= recent) f.snare = true;
+			if (t - this.lastHatAt <= recent) f.hat = true;
 		}
 
 		// The fade begins fadeBeats early and completes exactly ON the boundary downbeat,
