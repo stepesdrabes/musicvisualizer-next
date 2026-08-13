@@ -166,7 +166,52 @@ const DROP_KICK_STEP = 0.3;
  */
 const BUILD_KICK_RATIO = 0.85;
 const BUILD_SNARE_RISE = 1.15;
-const MAX_BUILD_BARS = 16;
+
+/**
+ * The build walk-back's dials, sweepable by the bench against annotated ground truth the same
+ * way `StructureTuning` is. Shipping code never passes them; the defaults ARE the winner of
+ * the 2026-08-12 sweep over Harmonix (prechorus) and Raveform (buildup).
+ *
+ * They exist because the previous rules over-called builds three to one: 17.0% of corpus bars
+ * against 6.1% annotated in pop and 9.6% in EDM, with eighty consecutive build-build
+ * boundaries. An OR of three weak tests, walking sixteen bars, eating breakdowns on the way,
+ * turns most verses before choruses into two-phrase climbs - and a room that is climbing a
+ * fifth of the night has no rest left to make the real climbs read.
+ */
+export interface LabelTuning {
+	/** Longest total walk-back, bars. */
+	maxBuildBars: number;
+	/**
+	 * Segments beyond the one touching the drop must also RISE within themselves. The
+	 * touching segment keeps the softer test: a one-phrase riser is often flat-loud with the
+	 * lift living in its last bar, but a claim that the walk should continue backwards is a
+	 * claim the climb was already under way, which is checkable.
+	 */
+	riseBeyondFirst: boolean;
+	/** Second-half air over first-half air that counts as rising within a segment. */
+	riseRatio: number;
+	/**
+	 * The walk stops at a segment already labelled breakdown instead of eating it. The
+	 * touching segment is exempt: a riser with the kit out measures as a breakdown and is
+	 * still the build when it passes the build test. This is where the EDM deficit lived -
+	 * annotated EDM is 29% breakdown and the walk was relabelling the rests before drops.
+	 */
+	breakOnBreakdown: boolean;
+}
+
+/**
+ * The 2026-08-12 sweep's verdict (bench/structscore.ts, 60 Harmonix + 60 Raveform):
+ * capping the walk at one phrase and refusing to eat breakdowns is worth +2.6 points of
+ * seven-way agreement on Harmonix (50.5 -> 53.1) with build share landing on the
+ * annotated rate (6.9% vs 5.6%); the within-segment rise test scored the same on pop and
+ * cost most of EDM's real builds (Raveform build recall 7.0 -> 1.6), so it stays off.
+ */
+export const DEFAULT_LABEL_TUNING: LabelTuning = {
+	maxBuildBars: 8,
+	riseBeyondFirst: false,
+	riseRatio: 1,
+	breakOnBreakdown: true
+};
 /** The longest a merge may make a section. Four phrases. */
 const MAX_MERGED_BARS = 32;
 const MAX_VOID_BARS = 2;
@@ -257,7 +302,8 @@ export function arrange(
 	kicksPerBar: Int32Array,
 	snaresPerBar: Int32Array,
 	/** Boundaries placed on measured arrivals, which the phrase snap must not drag off them. */
-	pinned: ReadonlySet<number> = new Set()
+	pinned: ReadonlySet<number> = new Set(),
+	label: LabelTuning = DEFAULT_LABEL_TUNING
 ): Arrangement {
 	const count = bars.count;
 
@@ -466,6 +512,25 @@ export function arrange(
 		return climbing || withdrawn || (kickHeld && snareClimbing);
 	};
 
+	// Rising WITHIN the segment: its own second half over its own first. The soft tests above
+	// compare a segment against its surroundings, which any loud verse passes; a claim that
+	// the climb was already under way two phrases before the drop is a claim about the
+	// segment's own shape, and that is checkable.
+	const risesWithin = (p: number): boolean => {
+		const s = segments[p];
+		const mid = (s.startBar + s.endBar) >> 1;
+		if (mid <= s.startBar || s.endBar - s.startBar < 2) return false;
+		const airRise =
+			meanBand(bandsN, mid, s.endBar, 3) >
+			meanBand(bandsN, s.startBar, mid, 3) * label.riseRatio;
+		let snFirst = 0;
+		let snSecond = 0;
+		for (let b = s.startBar; b < mid; b++) snFirst += snaresPerBar[b];
+		for (let b = mid; b < Math.min(s.endBar, snaresPerBar.length); b++) snSecond += snaresPerBar[b];
+		const snareRise = audible && snSecond > snFirst * BUILD_SNARE_RISE && snSecond > 0;
+		return airRise || snareRise;
+	};
+
 	for (let i = 1; i < segments.length; i++) {
 		if (segments[i].kind !== 'drop') continue;
 		// Past a void, because a gap between the build and the drop is the oldest arrangement
@@ -473,19 +538,25 @@ export function arrange(
 		let p = i - 1;
 		while (p > 0 && segments[p].kind === 'void') p--;
 
-		// Walked back rather than tested once. A segmenter that split a sixteen-bar riser in
-		// two leaves only its second half touching the drop, and stopping at the first segment
-		// calls the rest of the climb a groove. Bounded in bars, so the walk cannot swallow the
-		// verse: a build that runs longer than four phrases is the arrangement, not a build.
+		// Walked back rather than tested once. A segmenter that split a riser in two leaves
+		// only its second half touching the drop, and stopping at the first segment calls the
+		// rest of the climb a groove. Bounded in bars, so the walk cannot swallow the verse.
 		let bars = 0;
+		let walked = 0;
 		while (p >= 0) {
 			const prev = segments[p];
 			if (prev.kind === 'drop' || prev.kind === 'void' || prev.kind === 'build') break;
+			// The rest before the climb stays a rest. Only the segment touching the drop may
+			// be a kit-out riser wearing a breakdown label; further back, a breakdown is the
+			// passage the build exists to rise OUT of.
+			if (label.breakOnBreakdown && prev.kind === 'breakdown' && walked > 0) break;
 			bars += prev.endBar - prev.startBar;
-			if (bars > MAX_BUILD_BARS) break;
+			if (bars > label.maxBuildBars) break;
 			if (!looksLikeBuild(p, i)) break;
+			if (label.riseBeyondFirst && walked > 0 && !risesWithin(p)) break;
 			prev.kind = 'build';
 			p--;
+			walked++;
 		}
 	}
 

@@ -140,8 +140,20 @@ function correlate(a: readonly number[], b: readonly number[], rotate: number): 
 }
 
 export function estimateKey(chroma: Chromagram): KeyEstimate {
+	return estimateKeySpan(chroma, 0, chroma.frames / chroma.fps);
+}
+
+/**
+ * The key over one span of the track, for comparing a section against its siblings.
+ *
+ * Same profiles, same correlation, restricted frames. The caller owns the judgement about
+ * what a disagreement between two spans means; this only reports each span honestly.
+ */
+export function estimateKeySpan(chroma: Chromagram, fromSec: number, toSec: number): KeyEstimate {
+	const from = Math.max(0, Math.floor(fromSec * chroma.fps));
+	const to = Math.min(chroma.frames, Math.ceil(toSec * chroma.fps));
 	const avg = new Array<number>(PITCH_CLASSES).fill(0);
-	for (let f = 0; f < chroma.frames; f++) {
+	for (let f = from; f < to; f++) {
 		const o = f * PITCH_CLASSES;
 		for (let p = 0; p < PITCH_CLASSES; p++) avg[p] += chroma.values[o + p];
 	}

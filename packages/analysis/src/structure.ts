@@ -320,6 +320,8 @@ function arrivalStrength(
 	db: Float32Array,
 	tol: number,
 	kicksPerBar: Int32Array | null,
+	vocal: Float64Array | null,
+	hooks: Uint8Array | null,
 	b: number
 ): number {
 	if (b <= 0 || b >= bars.count) return 0;
@@ -332,6 +334,16 @@ function arrivalStrength(
 		if (now > 0 && before === 0) kit = 1;
 		else kit = Math.max(0, now - before) / 8;
 	}
+
+	// The lyric evidence, two forms because tracks come in two shapes. On a sparse-vocal
+	// track the voice ENTERING is the boundary (coverage jumps across the bar line); on a
+	// wall-to-wall one - most rap - coverage never moves and the boundary the audience
+	// hears is the HOOK starting, so the caller marks the bars where a repeated-line block
+	// begins. Weighted beside the kit's return: either tips a boundary that has physical
+	// evidence, neither moves one alone (the refine floor sits above them), and a track
+	// with no lyrics scores exactly zero everywhere.
+	const entrance = vocal && vocal[b] >= 0.25 && (vocal[b - 1] ?? 0) < 0.1;
+	const voice = entrance || (hooks && hooks[b] === 1) ? 1.2 : 0;
 
 	// The held-breath bar: its quietest beat collapses while the arrival bar slams. Measured
 	// against the bar's own mean so a track-wide quiet passage does not read as a dip.
@@ -348,7 +360,7 @@ function arrivalStrength(
 		novelty = Math.max(0, 1 - dot);
 	}
 
-	return step + kit + 0.8 * dip + 1.5 * novelty;
+	return step + kit + voice + 0.8 * dip + 1.5 * novelty;
 }
 
 export interface BoundaryMove {
@@ -393,12 +405,17 @@ export const DEFAULT_TUNING: StructureTuning = {
 };
 
 /** Per-bar arrival strengths, for the bench to look at. Not part of the pipeline. */
-export function debugArrivals(bars: BarFeatures, kicksPerBar: Int32Array | null): Float32Array {
+export function debugArrivals(
+	bars: BarFeatures,
+	kicksPerBar: Int32Array | null,
+	vocal: Float64Array | null = null,
+	hooks: Uint8Array | null = null
+): Float32Array {
 	const db = barLevels(bars);
 	const tol = LEVEL_TOL * levelSpread(db);
 	const out = new Float32Array(bars.count);
 	for (let b = 1; b < bars.count; b++) {
-		out[b] = arrivalStrength(bars, db, tol, kicksPerBar, b);
+		out[b] = arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, b);
 	}
 	return out;
 }
@@ -415,7 +432,9 @@ export function refineBoundaries(
 	bars: BarFeatures,
 	kicksPerBar: Int32Array | null,
 	moves?: BoundaryMove[],
-	floor = REFINE_FLOOR
+	floor = REFINE_FLOOR,
+	vocal: Float64Array | null = null,
+	hooks: Uint8Array | null = null
 ): number[] {
 	const db = barLevels(bars);
 	const tol = LEVEL_TOL * levelSpread(db);
@@ -424,11 +443,12 @@ export function refineBoundaries(
 	for (let i = 1; i + 1 < out.length; i++) {
 		const here = out[i];
 		let best = here;
-		let bestScore = arrivalStrength(bars, db, tol, kicksPerBar, here) * REFINE_MARGIN;
+		let bestScore =
+			arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, here) * REFINE_MARGIN;
 		for (let c = here - REFINE_REACH; c <= here + REFINE_REACH; c++) {
 			if (c === here) continue;
 			if (c - out[i - 1] < MIN_SEGMENT_BARS || out[i + 1] - c < MIN_SEGMENT_BARS) continue;
-			const score = arrivalStrength(bars, db, tol, kicksPerBar, c);
+			const score = arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, c);
 			if (score > bestScore && score > floor) {
 				bestScore = score;
 				best = c;

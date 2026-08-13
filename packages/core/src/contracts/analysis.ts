@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 13;
+export const ANALYSIS_VERSION = 15;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -69,7 +69,13 @@ export type EventTag =
 	| 'bass_in'
 	| 'bass_out'
 	| 'filter_sweep'
-	| 'vocal_in';
+	| 'vocal_in'
+	/**
+	 * The final drop-class section arrives a semitone or two above the earlier statements of
+	 * the same energy class - the classic pop lift. Tagged on its first bar; the planner
+	 * answers it with the one palette move the colour identity sanctions beyond the swap.
+	 */
+	| 'key_change';
 
 /** One row per bar. This is the granularity every cue is authored at. */
 export interface BarRow {

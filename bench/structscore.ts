@@ -6,6 +6,7 @@ import { decodeAudio } from '@mv/analysis';
 import { BeatThis } from '../packages/analysis/src/beatthis.ts';
 import { analyzeTrack } from '../packages/analysis/src/analyze.ts';
 import { DEFAULT_TUNING, type StructureTuning } from '../packages/analysis/src/structure.ts';
+import { DEFAULT_LABEL_TUNING, type LabelTuning } from '../packages/analysis/src/arrange.ts';
 import { fMeasure } from './metrics.ts';
 import { KIND_SONG, KIND_CLUB } from './kinds.ts';
 
@@ -41,6 +42,25 @@ const VARIANTS: Record<string, StructureTuning> = {
 };
 const tuning = VARIANTS[variantName];
 if (!tuning) throw new Error(`unknown variant ${variantName}`);
+
+/**
+ * Build walk-back variants, orthogonal to the structure tuning. `wide16` is the pre-2026-08-12
+ * behaviour; the rest tighten one dial at a time so the sweep says which one pays.
+ */
+const LABEL_VARIANTS: Record<string, LabelTuning> = {
+	current: { ...DEFAULT_LABEL_TUNING },
+	wide16: { maxBuildBars: 16, riseBeyondFirst: false, riseRatio: 1, breakOnBreakdown: false },
+	rise16: { maxBuildBars: 16, riseBeyondFirst: true, riseRatio: 1.04, breakOnBreakdown: false },
+	cap8: { maxBuildBars: 8, riseBeyondFirst: false, riseRatio: 1, breakOnBreakdown: false },
+	rise8: { maxBuildBars: 8, riseBeyondFirst: true, riseRatio: 1.04, breakOnBreakdown: false },
+	rise8bd: { maxBuildBars: 8, riseBeyondFirst: true, riseRatio: 1.04, breakOnBreakdown: true },
+	rise12bd: { maxBuildBars: 12, riseBeyondFirst: true, riseRatio: 1.04, breakOnBreakdown: true },
+	cap8bd: { maxBuildBars: 8, riseBeyondFirst: false, riseRatio: 1, breakOnBreakdown: true },
+	cap12bd: { maxBuildBars: 12, riseBeyondFirst: false, riseRatio: 1, breakOnBreakdown: true }
+};
+const labelName = flag('labels', 'current');
+const labels = LABEL_VARIANTS[labelName];
+if (!labels) throw new Error(`unknown label variant ${labelName}`);
 
 const ROOT = join(import.meta.dirname, 'corpus');
 const BEATS = join(ROOT, '.beats');
@@ -150,6 +170,16 @@ let frames = 0;
 let predSections = 0;
 let refSections = 0;
 let done = 0;
+/** Per-kind frame counts, scored through sectionBase so club and song vocabularies compare. */
+const perKind = new Map<string, { ref: number; est: number; hit: number }>();
+const kindCell = (k: string) => {
+	let cell = perKind.get(k);
+	if (!cell) {
+		cell = { ref: 0, est: 0, hit: 0 };
+		perKind.set(k, cell);
+	}
+	return cell;
+};
 
 for (const track of tracks) {
 	try {
@@ -164,7 +194,8 @@ for (const track of tracks) {
 			title: track.id,
 			beats: tracked.beats,
 			downbeats: tracked.downbeats,
-			tuning
+			tuning,
+			labels
 		});
 
 		const estBounds = analysis.sections.slice(1).map((s) => s.startTime);
@@ -184,6 +215,11 @@ for (const track of tracks) {
 			frames++;
 			if (ref === est) exact++;
 			if (sectionBase(ref) === sectionBase(est)) base++;
+			const refBase = sectionBase(ref);
+			const estBase = sectionBase(est);
+			kindCell(refBase).ref++;
+			kindCell(estBase).est++;
+			if (refBase === estBase) kindCell(refBase).hit++;
 		}
 		predSections += analysis.sections.length;
 		refSections += track.spans.length;
@@ -198,7 +234,7 @@ if (model) await (model as BeatThis).close();
 const pct = (v: number) => ((100 * v) / Math.max(1, frames)).toFixed(1);
 console.log(
 	[
-		variantName.padEnd(8),
+		`${variantName}/${labelName}`.padEnd(16),
 		dataset.padEnd(9),
 		`n=${done}`,
 		`F0.5=${(f05 / Math.max(1, done)).toFixed(3)}`,
@@ -208,3 +244,14 @@ console.log(
 		`sections=${(predSections / Math.max(1, done)).toFixed(1)}/${(refSections / Math.max(1, done)).toFixed(1)}`
 	].join('  ')
 );
+for (const kind of [...perKind.keys()].sort()) {
+	const cell = perKind.get(kind)!;
+	const precision = cell.hit / Math.max(1, cell.est);
+	const recall = cell.hit / Math.max(1, cell.ref);
+	const f1 = (2 * precision * recall) / Math.max(1e-9, precision + recall);
+	console.log(
+		`  ${kind.padEnd(10)} P=${(100 * precision).toFixed(1).padStart(5)}  R=${(100 * recall)
+			.toFixed(1)
+			.padStart(5)}  F1=${(100 * f1).toFixed(1).padStart(5)}  share est=${pct(cell.est)}% ref=${pct(cell.ref)}%`
+	);
+}

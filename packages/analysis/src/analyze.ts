@@ -9,12 +9,12 @@ import {
 	type TrackAnalysis,
 	type TrackContext
 } from '@mv/core';
-import { arrange, bandLevels, levelEnvelopes } from './arrange.ts';
+import { arrange, bandLevels, levelEnvelopes, type LabelTuning } from './arrange.ts';
 import { spectrumTrack } from './spectrum.ts';
 import { detectBeats, type BeatGrid } from './beats.ts';
 import { beatSynchronous } from './beatsync.ts';
-import { chromagram, estimateKey } from './chroma.ts';
-import { detectDrums, type DrumStream } from './drums.ts';
+import { chromagram, estimateKey, estimateKeySpan } from './chroma.ts';
+import { detectDrums, snapTimesToOnsets, type DrumStream } from './drums.ts';
 import { extractFeatures } from './features.ts';
 import { detectMeter, type Meter } from './downbeats.ts';
 import { assessMetricalLevel } from './metricalLevel.ts';
@@ -71,6 +71,13 @@ export interface AnalyzeInput {
 	beats?: readonly number[];
 	downbeats?: readonly number[];
 	/**
+	 * Kick/snare/hat streams from the drum model, when the caller ran it. The band-flux
+	 * detector runs instead when absent, so the pipeline still works with no model on
+	 * disk. Model times are re-placed on the broadband onset curve exactly as the DSP
+	 * detections are: whichever detector answers WHICH, the grid's own curve answers WHERE.
+	 */
+	drums?: { kick: DrumStream; snare: DrumStream; hat: DrumStream };
+	/**
 	 * What the track is, from free metadata: genre family for the section vocabulary, synced
 	 * lyrics for chorus location. Optional, and an empty context changes nothing.
 	 */
@@ -86,6 +93,8 @@ export interface AnalyzeInput {
 	 * than argued about here.
 	 */
 	tuning?: StructureTuning;
+	/** Labelling-stage dials, same contract as `tuning`. */
+	labels?: LabelTuning;
 }
 
 const TARGET_LUFS = -14;
@@ -159,13 +168,76 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// Detection before structure, because a boundary is refined onto the bar the kit returns
 	// at. Only the QUANTISE step needs to know which bars repeat which, and it still runs
 	// after the segmentation it depends on.
-	const detected = detectDrums(features.spec, { beatPeriod: grid.beatPeriod, odf: features.odf });
+	//
+	// The model takes only the streams it is measurably better at. Kick and snare are its
+	// strong classes; its hi-hat is its published weak one (rhythm-game annotations blur
+	// hats into cymbals), and on a first real track it heard 0.5 hats/beat where the band
+	// flux heard the 8th-note pattern - and the hat stream is what paces every subdivision
+	// param, so a sparse misreading would slow half the catalog's flicker.
+	const dspDrums = detectDrums(features.spec, { beatPeriod: grid.beatPeriod, odf: features.odf });
+	const detected = input.drums
+		? {
+				kick: snapStream(input.drums.kick, features.odf, features.curves.fps, grid.beatPeriod),
+				snare: snapStream(input.drums.snare, features.odf, features.curves.fps, grid.beatPeriod),
+				hat: dspDrums.hat
+			}
+		: dspDrums;
 	const rawKicks = countPerBar(detected.kick.times, bars.time, bars.count);
+
+	// Synced lyrics become timing data: per-bar coverage, computed BEFORE structure because
+	// the voice arriving is boundary evidence - the chorus starts where the hook sings, and
+	// the instrumental pickup a bar before it is what the energy step alone lands on. Pure
+	// arithmetic over what ingest already cached; an offline track carries zeros throughout.
+	const vocal = new Float64Array(bars.count);
+	const lyricLines = input.context?.instrumental ? null : (input.context?.lyrics ?? null);
+	if (lyricLines && lyricLines.length > 0) {
+		const barAt = (t: number) => {
+			let b = 0;
+			while (b < bars.count - 1 && bars.time[b + 1] <= t) b++;
+			return b;
+		};
+		for (let i = 0; i < lyricLines.length; i++) {
+			const start = lyricLines[i].t;
+			// A line carries only its start; it lasts until the next one, capped at a sung
+			// phrase's worth so an instrumental gap stays a gap.
+			const end = Math.min(lyricLines[i + 1]?.t ?? start + 4, start + 4, duration);
+			for (let b = barAt(start); b < bars.count && bars.time[b] < end; b++) {
+				const len = bars.time[b + 1] - bars.time[b];
+				if (len <= 0) continue;
+				const overlap = Math.min(end, bars.time[b + 1]) - Math.max(start, bars.time[b]);
+				if (overlap > 0) vocal[b] += overlap / len;
+			}
+		}
+	}
+
+	// Where a repeated-line block BEGINS, as a per-bar flag: on a wall-to-wall vocal track
+	// the coverage column never moves, and the hook starting is the boundary the audience
+	// hears. Snapped to the bar carrying most of the start's first beat-or-so of singing.
+	const hooks = new Uint8Array(bars.count);
+	if (lyricLines && lyricLines.length > 0) {
+		for (const span of chorusSpansFromLyrics(lyricLines, duration)) {
+			let b = 0;
+			while (b < bars.count - 1 && bars.time[b + 1] <= span.start) b++;
+			// A hook landing in the back quarter of a bar is sung INTO the next bar: lyric
+			// sync carries tens-of-milliseconds jitter and singers anticipate the downbeat.
+			const len = bars.time[b + 1] - bars.time[b];
+			if (len > 0 && (span.start - bars.time[b]) / len > 0.75 && b + 1 < bars.count) b++;
+			hooks[b] = 1;
+		}
+	}
 
 	const tuning = input.tuning ?? DEFAULT_TUNING;
 	const sim = similarityMatrix(bars);
 	const moves: BoundaryMove[] = [];
-	const rough = refineBoundaries(segmentBars(sim, bars), bars, rawKicks, moves, tuning.refineFloor);
+	const rough = refineBoundaries(
+		segmentBars(sim, bars),
+		bars,
+		rawKicks,
+		moves,
+		tuning.refineFloor,
+		vocal,
+		hooks
+	);
 	// Only the decisive arrivals earn pin status; a marginal move may correct its own
 	// boundary without getting a vote over everyone else's.
 	const pinned = new Set(moves.filter((m) => m.score >= tuning.pinScore).map((m) => m.to));
@@ -203,7 +275,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		loudness.shortTermFps,
 		kicks,
 		snares,
-		pinned
+		pinned,
+		input.labels
 	);
 
 	// The vocabulary is chosen per track, after labelling: the structural machinery only
@@ -235,31 +308,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// the grid and the bar table came to disagree by eight beats on a track that speeds up.
 	const barTimes = Array.from(bars.time.subarray(0, bars.count + 1), round3);
 
-	// Synced lyrics become timing data: a per-bar coverage column and a 'vocal_in' event at
-	// each entrance. Pure arithmetic over what ingest already cached - an offline track just
-	// carries zeros - and the one thing the room most visibly answers in a song is when the
-	// voice arrives, which until this column nothing downstream could see.
-	const vocal = new Float64Array(bars.count);
+	// The 'vocal_in' events, off the coverage column computed before the structure stage:
+	// the one thing the room most visibly answers in a song is when the voice arrives.
 	const vocalIn = new Set<number>();
-	const lyricLines = input.context?.instrumental ? null : (input.context?.lyrics ?? null);
 	if (lyricLines && lyricLines.length > 0) {
-		const barAt = (t: number) => {
-			let b = 0;
-			while (b < bars.count - 1 && bars.time[b + 1] <= t) b++;
-			return b;
-		};
-		for (let i = 0; i < lyricLines.length; i++) {
-			const start = lyricLines[i].t;
-			// A line carries only its start; it lasts until the next one, capped at a sung
-			// phrase's worth so an instrumental gap stays a gap.
-			const end = Math.min(lyricLines[i + 1]?.t ?? start + 4, start + 4, duration);
-			for (let b = barAt(start); b < bars.count && bars.time[b] < end; b++) {
-				const len = bars.time[b + 1] - bars.time[b];
-				if (len <= 0) continue;
-				const overlap = Math.min(end, bars.time[b + 1]) - Math.max(start, bars.time[b]);
-				if (overlap > 0) vocal[b] += overlap / len;
-			}
-		}
 		let silentBars = 2;
 		for (let b = 0; b < bars.count; b++) {
 			if (vocal[b] >= 0.05) {
@@ -267,6 +319,40 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 				silentBars = 0;
 			} else {
 				silentBars++;
+			}
+		}
+	}
+
+	// The pop lift: the final statement of the loudest material arrives a semitone or two up.
+	// Read across the same energy class - the last drop-class section against the pooled
+	// earlier ones - so a bridge that wanders somewhere harmonic cannot fake it, and only
+	// when both readings are confident: a chroma correlation under 0.55 is a guess, and a
+	// palette answering a guessed modulation is worse than one answering nothing.
+	let keyChangeBar = -1;
+	{
+		const dropish = plan.segments.filter(
+			(s) => s.kind === 'drop' || s.kind === 'chorus'
+		);
+		const last = dropish[dropish.length - 1];
+		if (dropish.length >= 2 && last) {
+			const earlier = dropish.slice(0, -1);
+			const spanKey = (fromBar: number, toBar: number) =>
+				estimateKeySpan(chroma, bars.time[fromBar], bars.time[Math.min(toBar, bars.count)]);
+			const lastKey = spanKey(last.startBar, last.endBar);
+			// Pooled by taking the longest earlier statement: pooling disjoint spans through
+			// one correlation would need a stitched chromagram, and the longest member is the
+			// best-evidenced single reading of what the material was in.
+			const anchor = earlier.reduce((a, b) =>
+				b.endBar - b.startBar > a.endBar - a.startBar ? b : a
+			);
+			const anchorKey = spanKey(anchor.startBar, anchor.endBar);
+			const shift = (lastKey.tonic - anchorKey.tonic + 12) % 12;
+			if (
+				(shift === 1 || shift === 2) &&
+				lastKey.confidence >= 0.55 &&
+				anchorKey.confidence >= 0.55
+			) {
+				keyChangeBar = last.startBar;
 			}
 		}
 	}
@@ -287,7 +373,11 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 			snares: snares[b],
 			hats: hats[b],
 			vocal: Math.round(Math.min(1, vocal[b]) * 100) / 100,
-			events: vocalIn.has(b) ? [...plan.events[b], 'vocal_in'] : plan.events[b]
+			events: [
+				...plan.events[b],
+				...(vocalIn.has(b) ? (['vocal_in'] as const) : []),
+				...(b === keyChangeBar ? (['key_change'] as const) : [])
+			]
 		});
 	}
 
@@ -530,6 +620,25 @@ function meterFromDownbeats(beats: Float64Array, downbeats: readonly number[]): 
 	return { beatsPerBar, phase, confidence: Math.max(0, Math.min(1, votes[phase] / total)) };
 }
 
+/**
+ * A model stream with its times moved onto the broadband onsets the grid was fitted to.
+ *
+ * Same physics as the DSP path: the kick's own curve peaks late because a long window
+ * cannot localise a low event, and a model trained on those spectrograms inherits the
+ * bias. Hats stay put upstream - their transients are wideband and already on time.
+ */
+function snapStream(
+	stream: DrumStream,
+	odf: Float32Array,
+	fps: number,
+	beatPeriod: number
+): DrumStream {
+	return {
+		...stream,
+		times: snapTimesToOnsets(stream.times, odf, fps, Math.min(0.05, beatPeriod / 8))
+	};
+}
+
 function countPerBar(times: readonly number[], barTime: Float64Array, count: number): Int32Array {
 	const out = new Int32Array(count);
 	let i = 0;
@@ -591,6 +700,8 @@ function describe(ev: string, row: BarRow): string {
 			return `brightness opening, air ${row.air}`;
 		case 'vocal_in':
 			return 'the voice comes in';
+		case 'key_change':
+			return 'the last chorus lifts a key';
 		default:
 			return '';
 	}
