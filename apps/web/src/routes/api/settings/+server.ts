@@ -1,5 +1,11 @@
 import { error, json } from '@sveltejs/kit';
-import { OFFSET_MAX_MS, OFFSET_MIN_MS, isOutputFps } from '$lib/hardware.ts';
+import {
+	OFFSET_MAX_MS,
+	OFFSET_MIN_MS,
+	isOutputFps,
+	isWireProtocol,
+	type WireProtocol
+} from '$lib/hardware.ts';
 import {
 	BRIGHTNESS_MAX,
 	BRIGHTNESS_MIN,
@@ -64,6 +70,7 @@ export const PUT: RequestHandler = async (event) => {
 	// One of three rather than clamped: this is a picker, and a rate between them is not a
 	// slower version of either, it is a frame interval nothing was tuned against.
 	if (isOutputFps(body.outputFps)) patch.outputFps = body.outputFps;
+	if (isWireProtocol(body.outputProtocol)) patch.outputProtocol = body.outputProtocol;
 	if (Object.keys(patch).length === 0) error(400, 'nothing to change');
 
 	return json(await settings.update(patch));
@@ -75,6 +82,7 @@ interface Writable {
 	authorEffort?: EffortLevel;
 	outputOffsetMs?: number;
 	outputFps?: number;
+	outputProtocol?: WireProtocol;
 	autopilot?: boolean;
 	lounge?: boolean;
 	rest?: boolean;

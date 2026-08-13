@@ -6,7 +6,7 @@
 	import { installHint, readShell } from '$lib/shell.svelte.ts';
 	import { DEFAULT_AMBIENT, type AmbientSettings } from '@mv/core';
 	import { indexOfKey } from '$lib/queueModel.ts';
-	import { DEFAULT_OUTPUT_FPS } from '$lib/hardware.ts';
+	import { DEFAULT_OUTPUT_FPS, type WireProtocol } from '$lib/hardware.ts';
 	import { FULL_WINDOW, type TimeWindow } from '$lib/timeline.ts';
 	import { libraryToCandidate, type Candidate } from '$lib/search.svelte.ts';
 	import type {
@@ -76,6 +76,7 @@
 		authorModels: [],
 		outputOffsetMs: 0,
 		outputFps: DEFAULT_OUTPUT_FPS,
+		outputProtocol: 'ddp',
 		autopilot: false,
 		lounge: false,
 		rest: true,
@@ -369,6 +370,11 @@
 	function chooseFps(outputFps: number) {
 		settings = { ...settings, outputFps };
 		void patchSettings({ outputFps });
+	}
+
+	function chooseProtocol(outputProtocol: WireProtocol) {
+		settings = { ...settings, outputProtocol };
+		void patchSettings({ outputProtocol });
 	}
 
 	function toggleLounge(on: boolean) {
@@ -1052,9 +1058,11 @@
 	onclose={() => (hardwareOpen = false)}
 	offsetMs={settings.outputOffsetMs}
 	fps={settings.outputFps}
+	protocol={settings.outputProtocol}
 	onhost={(h) => void hardware.setHost(h)}
 	onregion={(r) => void hardware.setRegion(r)}
 	onfps={chooseFps}
+	onprotocol={chooseProtocol}
 	onoffset={moveOffset}
 	onoffsetdone={saveOffset}
 	onconnect={(h) => void connectOutput(h)}

@@ -7,7 +7,7 @@
 // and the OS with no radio in the path. That difference is the whole point of the tool.
 
 import { createSocket, type Socket } from 'node:dgram';
-import { createDdpSink } from '../../packages/transport-ddp/src/index.ts';
+import { createDdpSink } from '../../packages/transport/src/index.ts';
 
 const FRAME_MS = 1000 / 60;
 const STATS_PORT = 4049;

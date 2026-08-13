@@ -13,8 +13,15 @@ import {
 	type TrackAnalysis
 } from '@mv/core';
 import { analysisPath, isValidId, showPath } from '@mv/analysis';
-import { createDdpSink, type DdpTarget } from '@mv/transport-ddp';
-import { DEFAULT_OUTPUT_FPS } from '$lib/hardware.ts';
+import {
+	DDP_PORT,
+	SACN_PIXELS_PER_UNIVERSE,
+	SACN_PORT,
+	createDdpSink,
+	createSacnSink,
+	type DdpTarget
+} from '@mv/transport';
+import { DEFAULT_OUTPUT_FPS, isWireProtocol, type WireProtocol } from '$lib/hardware.ts';
 import { currentItem } from '$lib/queueModel.ts';
 import { queue } from '$lib/server/queueStore.ts';
 import { hardware } from '$lib/server/hardware.ts';
@@ -60,6 +67,8 @@ class Output {
 	private fps = DEFAULT_OUTPUT_FPS;
 
 	targets: DdpTarget[] = [];
+	/** Which wire those targets are being addressed on, so the readout names the right port. */
+	private protocol: WireProtocol = 'ddp';
 
 	get running(): boolean {
 		return this.timer !== null;
@@ -78,7 +87,9 @@ class Output {
 			frames: this.frames,
 			resting: this.director.resting,
 			scene: this.director.sceneName,
-			targets: this.targets.map((t) => `${t.host}:${t.port ?? 4048}`)
+			targets: this.targets.map(
+				(t) => `${t.host}:${t.port ?? (this.protocol === 'sacn' ? SACN_PORT : DDP_PORT)}`
+			)
 		};
 	}
 
@@ -115,12 +126,14 @@ class Output {
 		this.trackId = null;
 	}
 
-	async start(targets: DdpTarget[], offsetMs: number): Promise<void> {
+	async start(targets: DdpTarget[], offsetMs: number, protocol: WireProtocol): Promise<void> {
 		await this.stop();
 		this.targets = targets;
+		this.protocol = protocol;
 		this.offsetMs = offsetMs;
 		this.frames = 0;
-		this.sink = createDdpSink({ targets });
+		this.sink =
+			protocol === 'sacn' ? createSacnSink({ targets: universesFor(targets) }) : createDdpSink({ targets });
 		await this.sink.open();
 		this.arm();
 	}
@@ -221,6 +234,32 @@ function targetsFor(region: RoomRegion, hosts: string[]): DdpTarget[] {
 	return targets;
 }
 
+/**
+ * Lay the same cut out as sACN universes.
+ *
+ * They run on across the whole fixture rather than restarting at each board, because a universe
+ * is a global address once the packets go to a multicast group: two controllers both claiming
+ * universe 1 is one room lit twice and the other half dark. 170 pixels each, so a pixel never
+ * straddles the boundary.
+ */
+function universesFor(targets: DdpTarget[]) {
+	const firstForHost = new Map<string, number>();
+	let next = 1;
+	for (const t of targets) {
+		if (firstForHost.has(t.host)) continue;
+		firstForHost.set(t.host, next);
+		const pixels = targets
+			.filter((o) => o.host === t.host)
+			.reduce((max, o) => Math.max(max, (o.deviceFirstLed ?? 0) + o.ledCount), 0);
+		next += Math.ceil(pixels / SACN_PIXELS_PER_UNIVERSE);
+	}
+	return targets.map((t) => ({
+		...t,
+		port: t.port ?? SACN_PORT,
+		universe: firstForHost.get(t.host) ?? 1
+	}));
+}
+
 /** Load a track's analysis and show, or explain why it cannot be loaded. */
 async function loadTrack(id: string): Promise<{ analysis: TrackAnalysis; show: Show } | null> {
 	try {
@@ -276,6 +315,7 @@ export const POST: RequestHandler = async (event) => {
 		trackId?: string;
 		hosts?: string[];
 		offsetMs?: number;
+		protocol?: string;
 		position?: number;
 		playing?: boolean;
 	};
@@ -320,7 +360,11 @@ export const POST: RequestHandler = async (event) => {
 	const regions = roomRegions(buildGeometry(DEFAULT_ROOM));
 	const region = regions.find((r) => r.id === hardware.region) ?? regions[0];
 
-	await output.start(targetsFor(region, body.hosts), body.offsetMs ?? 0);
+	// The stored setting is the installation's, and the body may override it for one start.
+	const protocol = isWireProtocol(body.protocol)
+		? body.protocol
+		: (await settings.read()).outputProtocol;
+	await output.start(targetsFor(region, body.hosts), body.offsetMs ?? 0, protocol);
 	// The first host is the one the readout is about: the board only reports to whoever sends
 	// it DDP, so on a split fixture each would need its own listener and its own port.
 	hardware.setHost(body.hosts[0]);

@@ -1,7 +1,12 @@
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CACHE_DIR } from '@mv/analysis';
-import { DEFAULT_OUTPUT_FPS, isOutputFps } from '$lib/hardware.ts';
+import {
+	DEFAULT_OUTPUT_FPS,
+	isOutputFps,
+	isWireProtocol,
+	type WireProtocol
+} from '$lib/hardware.ts';
 import { DEFAULT_AMBIENT, type AmbientSettings, type ColourSource } from '@mv/core';
 import {
 	AUTHOR_MODELS,
@@ -49,6 +54,8 @@ interface SettingsFile {
 	outputOffsetMs?: number;
 	/** Frames a second on the wire. Belongs to the fixture, like the trim above it. */
 	outputFps?: number;
+	/** Which wire the fixture is addressed on. Belongs to the installation too. */
+	outputProtocol?: WireProtocol;
 	/**
 	 * Whether the radio keeps the queue from running out.
 	 *
@@ -92,6 +99,7 @@ export interface PublicSettings {
 	authorModels: readonly AuthorModel[];
 	outputOffsetMs: number;
 	outputFps: number;
+	outputProtocol: WireProtocol;
 	autopilot: boolean;
 	lounge: boolean;
 	rest: boolean;
@@ -136,6 +144,7 @@ class Settings {
 			authorModels: AUTHOR_MODELS,
 			outputOffsetMs: file.outputOffsetMs ?? 0,
 			outputFps: isOutputFps(file.outputFps) ? file.outputFps : DEFAULT_OUTPUT_FPS,
+			outputProtocol: isWireProtocol(file.outputProtocol) ? file.outputProtocol : 'ddp',
 			autopilot: file.autopilot ?? false,
 			lounge: file.lounge ?? false,
 			// On by default. A room that holds its last cue forever after the music stops is the

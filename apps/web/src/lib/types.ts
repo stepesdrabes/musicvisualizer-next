@@ -1,4 +1,5 @@
 import type { AmbientSettings, ColourSource } from '@mv/core';
+import type { WireProtocol } from '$lib/hardware.ts';
 
 /** Mirrors @mv/analysis TrackMeta. Duplicated because SvelteKit blocks server imports on
     the client, even for types. */
@@ -93,6 +94,8 @@ export interface Settings {
 	outputOffsetMs: number;
 	/** Frames a second on the wire. One of `OUTPUT_FPS_CHOICES`. */
 	outputFps: number;
+	/** Which wire the fixture is addressed on. */
+	outputProtocol: WireProtocol;
 	/** Whether the radio keeps the queue from running out. */
 	autopilot: boolean;
 	/** Calm scenes instead of the authored show, while a track is playing. */
@@ -119,6 +122,7 @@ export interface SettingsPatch {
 	authorEffort?: AuthorEffort;
 	outputOffsetMs?: number;
 	outputFps?: number;
+	outputProtocol?: WireProtocol;
 	autopilot?: boolean;
 	lounge?: boolean;
 	rest?: boolean;

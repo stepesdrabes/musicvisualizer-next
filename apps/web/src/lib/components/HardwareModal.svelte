@@ -3,9 +3,11 @@
 		OFFSET_MAX_MS,
 		OFFSET_MIN_MS,
 		OUTPUT_FPS_CHOICES,
+		WIRE_PROTOCOLS,
 		faultsIn,
 		lightsRoom,
-		type HardwareStatus
+		type HardwareStatus,
+		type WireProtocol
 	} from '$lib/hardware.ts';
 	import { DEFAULT_ROOM, buildGeometry, roomRegions } from '@mv/core';
 	import { uptime } from '$lib/hardware.svelte.ts';
@@ -23,9 +25,11 @@
 		status,
 		offsetMs = 0,
 		fps = 60,
+		protocol = 'ddp',
 		onclose,
 		onhost,
 		onfps,
+		onprotocol,
 		onoffset,
 		onoffsetdone,
 		onregion,
@@ -38,9 +42,12 @@
 		offsetMs?: number;
 		/** Frames a second on the wire. */
 		fps?: number;
+		/** Which wire the fixture is addressed on. Takes effect the next time output starts. */
+		protocol?: WireProtocol;
 		onclose: () => void;
 		onhost: (host: string) => void;
 		onfps: (fps: number) => void;
+		onprotocol: (protocol: WireProtocol) => void;
 		/** While the trim is being dragged. The running stream picks it up on its next sync. */
 		onoffset: (ms: number) => void;
 		/** On release, which is the only point worth writing to disk. */
@@ -73,6 +80,8 @@
 	const region = $derived(REGIONS.find((r) => r.id === status.region) ?? REGIONS[0]);
 
 	const FPS_OPTIONS = OUTPUT_FPS_CHOICES.map((f) => ({ id: String(f), label: `${f}` }));
+	const WIRE_LABEL: Record<WireProtocol, string> = { ddp: 'DDP', sacn: 'sACN' };
+	const WIRE_OPTIONS = WIRE_PROTOCOLS.map((p) => ({ id: p, label: WIRE_LABEL[p] }));
 
 	/**
 	 * Connect is one action, so it is one button.
@@ -165,9 +174,20 @@
 				value={String(fps)}
 				ariaLabel="Frames a second on the wire"
 				onpick={(id) => onfps(Number(id))} />
-			<span class="ms subtle">
+			<span class="hint subtle">
 				<!-- The cap is the strip's, not this program's: one data line is 30 us per LED. -->
 				{fps > 60 ? 'needs an output per strip' : fps < 60 ? 'below what the show was judged at' : 'fps'}
+			</span>
+		</div>
+		<div class="trim">
+			<span>Wire</span>
+			<Segmented
+				options={WIRE_OPTIONS}
+				value={protocol}
+				ariaLabel="Which wire the fixture is addressed on"
+				onpick={(id) => onprotocol(id as WireProtocol)} />
+			<span class="hint subtle">
+				{protocol === 'sacn' ? '170 pixels a universe' : 'three packets a frame'}
 			</span>
 		</div>
 	{/if}
@@ -393,6 +413,12 @@
 		width: 58px;
 		text-align: right;
 		flex: none;
+	}
+	.hint {
+		/* A picker's note is prose rather than digits, so it takes the row's spare width instead
+		   of the slider's fixed column, where anything longer than "fps" wrapped three ways. */
+		flex: 1;
+		min-width: 0;
 	}
 
 	.body {

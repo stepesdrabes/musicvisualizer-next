@@ -15,7 +15,7 @@
 		"@mv/author-engine": "*",
 		"@mv/core": "*",
 		"@mv/preview3d": "*",
-		"@mv/transport-ddp": "*",
+		"@mv/transport": "*",
 		"lucide-svelte": "^1.0.1",
 		"uqr": "^0.1.3"
 	},

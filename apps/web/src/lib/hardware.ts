@@ -160,6 +160,20 @@ export const OFFSET_MAX_MS = 250;
  * pixels on a single data line cap near 25 Hz however fast this sends, and 120 is only reachable
  * on a board with roughly one output per strip.
  */
+/**
+ * What the strips are addressed with.
+ *
+ * DDP stays the default: three packets per 1320-LED frame against eight, and no universe
+ * arithmetic to get wrong. sACN is here because it is what pixel controllers that are not
+ * WLED expect, and it costs the show nothing to speak either.
+ */
+export type WireProtocol = 'ddp' | 'sacn';
+export const WIRE_PROTOCOLS = ['ddp', 'sacn'] as const;
+
+export function isWireProtocol(v: unknown): v is WireProtocol {
+	return WIRE_PROTOCOLS.includes(v as WireProtocol);
+}
+
 export const OUTPUT_FPS_CHOICES = [30, 60, 120] as const;
 export const DEFAULT_OUTPUT_FPS = 60;
 
