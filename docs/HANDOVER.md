@@ -1,14 +1,15 @@
 # Handover
 
-State of the analysis/authoring overhaul as of 2026-08-13, what remains, and the knowhow a
-continuation needs. `docs/EFFECT_POLISHING.md` carries the method; this file carries the
-open work. The session memory has the same facts with more numbers.
+State of the analysis/authoring overhaul as of 2026-08-13 (evening), what remains, and the
+knowhow a continuation needs. `docs/EFFECT_POLISHING.md` carries the method; this file
+carries the open work. The session memory has the same facts with more numbers.
 
 ## Where things stand
 
-Shipped and verified across the overhaul and two judged rounds (analysis v15, show v10,
+Shipped and verified across the overhaul and two judged rounds (analysis v16, show v11,
 nothing regressed - the gate at every step was 0 lint errors, 0 misfires, 100% quiet
-coverage over the 114-track corpus, full suite green):
+coverage over the 114-track corpus, full suite green; cache114 artifacts regenerated at
+v16 on 2026-08-13):
 
 - Build-labelling discipline: Harmonix 7-way agreement 50.5 -> 53.1, build share on the
   owner's corpus 17.0 -> 9.6% (annotated 6.1 pop / 9.6 EDM), consecutive-build chains 80 -> 2.
@@ -29,24 +30,34 @@ coverage over the 114-track corpus, full suite green):
 
 ## Remaining work, in order
 
-### 1. Hook-snap boundaries (top item; the owner's biggest complaint class)
+### 1. Hook-snap boundaries - SHIPPED 2026-08-13 at ANALYSIS_VERSION 16
 
-~14 judged tracks carry one-bar section offsets, mixed directions, worst near track starts.
-The diagnosis is done: LRCLIB hook-line timing reliably marks the true chorus bar
-(`chorusSpansFromLyrics` span starts; verified on Safir where the boundary sat at 11 and 43
-against hooks at 9 and 42). The refiner already takes vocal-entrance and hook-start terms
-(weight 1.2, tip-only) but they cannot move a boundary that is 2 bars out (refine reach 1)
-or beat a strong incumbent times the 1.45 margin.
+Built, but not as diagnosed: the acceptance corpus refuted "the hook bar IS the chorus
+bar" twice before a design survived. Measured across the judged tracks, hook lines sit
+anywhere in the bar before the true downbeat (sung pickups: Svoboda's 5/5 boundaries at
+10/42 against hooks at 9.27/41.28) or bars AFTER it (club vocals entering over a drop
+already running: VYZEE), and in-bar phase cannot split the two (a 0.27 pickup belongs to
+the next bar where a 0.31 belongs to its own). What shipped (`hookStarts` + `snapToHooks`
+in vocabulary.ts, wired post-vocabulary in analyze.ts):
 
-The mechanism to build: a post-vocabulary hook-SNAP - after promote/demote in analyze.ts,
-move a chorus-class startBar onto an adjacent hook bar (reach 1, maybe 2 for decisive
-hooks). THE TRAP: `arrange()` has already emitted `drop_downbeat`/events at the old bars
-and carved voids/ring-outs; either snap before events are placed or move the events with
-the boundary. Wall-to-wall-vocal tracks have no entrance edge, which is why the hook (not
-coverage) is the signal. Acceptance test: the 14 marked bars in the desktop cache's
-judge/ files (each carries t + bar + direction in the note text); the bench is blind to
-lyric evidence (structscore fetches no contexts), so structscore is only the
-no-regression guard, not the target.
+- cycle-restart detection recovers hooks hidden inside merged repeated-line runs (Safír's
+  opening chorus flows straight into the first real one; the restart at bar 8.4 is the
+  only evidence for the true boundary at 9);
+- a hook claims a two-bar WINDOW {bar, bar+1}; a boundary inside any window is evidence
+  and never moves; an outside one moves at most 2 bars EARLIER onto the nearest edge, or
+  exactly 1 bar later and only toward a RESTART hook (an entrance can lag the drop it
+  belongs to, a mid-flow restart cannot); hooks under 4 bars apart are refrain chant and
+  are dropped;
+- events are re-placed from the final table afterwards (`placeEvents`, extracted from
+  arrange.ts) - that resolved the events trap, and also made events honest for
+  promoted/demoted segments.
+
+Yield on the judged corpus (bench/hooksnap.ts): Safír 11->9, Cikády 23->24, VYZEE 65->63,
+every sentinel and out-of-scope track byte-identical. Gates: structscore bit-identical on
+both corpora (the bench has no lyrics), 702 tests, showprobe 0/0/100% over the
+regenerated cache114. HONEST YIELD WARNING: ~10 of the ~14 marked complaint bars carry no
+lyric evidence at all (no LRCLIB sync, or hooks nowhere near the boundary) - that
+residue is the learned labeller's to fix, not the hook's.
 
 ### 2. P6 production: the learned section labeller
 
@@ -59,23 +70,44 @@ embeddings for all 270 annotated tracks in the same dir; checkpoint at
 Training is ~3 min on MPS via `bench/train-sectionhead.py` - iterate freely (layer-10
 fusion and more depth untried).
 
+DONE 2026-08-13 - export, TS port, parity, mapping, end-to-end gate:
+- Both graphs exported by `bench/export-musicfm.py` via DYNAMO with dynamic time axes.
+  Two traps paid for: the extraction pieces are variable-length (35 s head, 40 s
+  interior, arbitrary tail), so a static graph would corrupt exactly the intro/outro
+  numerics; and the legacy tracer baked T=400 into the head's attention reshape - the
+  first longer track failed inside the graph. The HF rotary cache is monkey-patched to
+  compute unconditionally before export.
+- TS side in `packages/analysis/src/musicfm.ts` (MusicFm = frontend + encoder + head,
+  MusicFmHead = head alone for embedding-holding callers). Parity
+  (`bench/musicfm-parity.ts`): head exact (2e-6), fp32 encoder 1.6e-5 at two window
+  lengths, mel within torchaudio's OWN run-to-run envelope (~0.1 dB max, 0.02 median -
+  torch disagrees with itself by the same amount, so the head already lives with it).
+  int8 encoder (246 MB): whole-track worst-frame cosine 0.9696, head label agreement
+  95.1% against the stored fp32 embeddings, ~0.6x realtime on a loaded CPU.
+- Mapping: `sectionPosteriors` on AnalyzeInput; `applyHeadLabels` re-reads kinds by mean
+  posterior per DP segment. Rules keep carves (group < 0), the settled-bars drop gate
+  and club vocabulary coercion. Background refine can just re-run analyzeTrack with the
+  posteriors - every downstream artifact (events, moments, spectrum AGC, key change)
+  stays consistent for free, no blob surgery.
+- End-to-end gate (`structscore --head`, posteriors from the stored corpus embeddings):
+  Harmonix base 71.1% vs rules 53.1; Raveform 87.1% vs 33.6, with build F1 2.6 -> 82.7
+  and drop 53.7 -> 90.0. The mapping through DP segments beats the head's own frame CV.
+
 Remaining, in order:
-1. Export the MusicFM conformer to ONNX (+int8, ~350 MB). The frontend does NOT export:
-   reimplement in TS - torchaudio MelSpectrogram (24 kHz, n_fft 2048, hop 240, 128 mels),
-   AmplitudeToDB, drop the last frame, normalise by the two scalars in msd_stats.json.
-   Validate numerics against saved probe vectors the way `bench/export-adtof.py` did
-   (that script is the template; ONNX matched torch to 5.7e-7).
-2. Mind the windowing: embeddings were extracted in 30 s windows with 5 s pad discarded
-   each side (`bench/extract-musicfm.py`); production inference must match or the head
-   sees unfamiliar edge effects.
-3. Head to ONNX or a TS matmul (it is tiny); serve-time mapping = mean posterior per DP
-   segment, argmax, keep the rule overrides for void (silence is a fact) and the
-   settled-bars drop gates.
-4. BACKGROUND REFINE plumbing (the owner chose this over in-ingest): track plays on rule
-   labels, the model relabels post-ready, the engine show recomposes through the same
-   stale-version machinery `prepare()` already has. A show changing under a PLAYING track
-   is the open UX question - recompose only if unplayed, or on the next play.
-5. Gate end-to-end with structscore using head labels, and bump ANALYSIS_VERSION.
+1. Serving/refine plumbing in apps/web: track plays on rule labels, MusicFm relabels
+   post-ready (minutes per track on CPU - int8 embed is ~0.6-1x realtime, so this is
+   firmly a background job), analysis + show rewritten through the same stale-version
+   machinery `prepare()` already has. THE OPEN UX QUESTION for the owner: a show
+   changing under a PLAYING track - recompose only if unplayed, or on the next play.
+2. Ship-form decision: int8 (246 MB, 95.1% label agreement) vs fp32 (977 MB, exact).
+   Nothing measured yet says int8 costs accuracy where it matters (the gate above ran
+   fp32 embeddings); either re-run the gate over TS-int8 embeddings for a few tracks or
+   accept the 95% agreement and watch judgements. CoreML EP is the latency lever if the
+   background refine feels slow.
+3. Bump ANALYSIS_VERSION when the head path ships in the app, and re-run the full gate
+   set. The model files live in models/ (musicfm_encoder_int8.onnx, musicfm_encoder.onnx
+   + .data, musicfm_sectionhead.onnx, musicfm_mel_fb.bin, musicfm_config.json) - local
+   artefacts, never committed, fetch story undecided.
 
 ### 3. Effect-pool saturation (the owner has now complained twice)
 
@@ -89,7 +121,9 @@ signatures). The honest fixes, pick one or both:
   scratch does this in 20 lines) and feed a small negative weight above a threshold -
   never a filter. No such mechanism exists yet; design carefully against the
   every-mechanism-becomes-a-mandate history.
-Verdicts pending on: ricochet, snareBlade, counterweight, weave. Burst-family exposure is
+Verdicts pending on: ricochet, snareBlade, counterweight, weave (still pending as of
+2026-08-13 evening - every judge file on disk predates show v11, so nothing has yet been
+heard under the burst cap). Burst-family exposure is
 now structurally capped at one per show; if the owner still sees too many bursts, shrink
 the draw (add a second none slot) rather than re-weighting.
 
