@@ -1,5 +1,5 @@
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -12,6 +12,21 @@ use tauri_plugin_shell::ShellExt;
 /// a genuinely broken sidecar reports rather than hangs.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL_EVERY: Duration = Duration::from_millis(40);
+
+/// What distinguishes a renamed copy of the app, or nothing for the original.
+///
+/// Read off the bundle rather than from a setting so the choice survives a double-click:
+/// naming the copy is the whole of the configuration.
+fn bundle_suffix() -> Option<String> {
+	let exe = std::env::current_exe().ok()?;
+	let bundle = exe
+		.ancestors()
+		.find(|p| p.extension().is_some_and(|e| e == "app"))?;
+	let stem = bundle.file_stem()?.to_str()?;
+	let rest = stem.strip_prefix("LightningStrike")?;
+	let cleaned: String = rest.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+	(!cleaned.is_empty()).then_some(cleaned)
+}
 
 pub struct Server {
 	pub port: u16,
@@ -41,11 +56,25 @@ pub fn spawn(app: &AppHandle, path: &str) -> Result<Server, String> {
 	let models = resource(app, "models")?;
 	// The bundle is read-only and code-signed, so everything the app writes lives beside its
 	// preferences instead. `paths.ts` reads both of these.
-	let cache = app
-		.path()
-		.app_data_dir()
-		.map_err(|e| format!("no data directory: {e}"))?
-		.join("cache");
+	// Two copies of this app share one bundle identifier, so by default they share one library
+	// - which makes comparing two builds impossible without wiping between them, and a
+	// comparison is how every real question about the room has been settled. A copy renamed on
+	// the way into /Applications gets a library of its own, so "LightningStrike (B).app" can
+	// hold a different show for the same track and be judged beside the original. An inherited
+	// MV_CACHE_DIR still wins, for a session driving the comparison itself.
+	let cache = match std::env::var_os("MV_CACHE_DIR") {
+		Some(dir) => PathBuf::from(dir),
+		None => {
+			let data = app
+				.path()
+				.app_data_dir()
+				.map_err(|e| format!("no data directory: {e}"))?;
+			match bundle_suffix() {
+				Some(name) => data.join(format!("cache-{name}")),
+				None => data.join("cache"),
+			}
+		}
+	};
 	std::fs::create_dir_all(&cache).map_err(|e| format!("cannot create {cache:?}: {e}"))?;
 
 	let mut sidecar = app
