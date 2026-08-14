@@ -6,7 +6,7 @@ carries the open work. The session memory has the same facts with more numbers.
 
 ## Where things stand
 
-Shipped and verified across the overhaul and two judged rounds (analysis v16, show v11,
+Shipped and verified across the overhaul and two judged rounds (analysis v16, show v12,
 nothing regressed - the gate at every step was 0 lint errors, 0 misfires, 100% quiet
 coverage over the 114-track corpus, full suite green; cache114 artifacts regenerated at
 v16 on 2026-08-13):
@@ -59,7 +59,14 @@ regenerated cache114. HONEST YIELD WARNING: ~10 of the ~14 marked complaint bars
 lyric evidence at all (no LRCLIB sync, or hooks nowhere near the boundary) - that
 residue is the learned labeller's to fix, not the hook's.
 
-### 2. P6 production: the learned section labeller
+### 2. P6 production: the learned section labeller - ABANDONED, see the rollback below
+
+Everything in this section was built and then rolled back on 2026-08-14 after the owner
+judged it in the room. Read "Tried and rolled back" further down before acting on any of it;
+the three "Remaining" items at the end of this section are moot. It is kept because the
+measurements in it are real and the traps it documents are still traps.
+
+### 2 (as written at the time). P6 production: the learned section labeller
 
 The head is trained and validated: 5-fold grouped CV 66.8% +-1.8 on the nine-way lighting
 vocabulary; Harmonix 62.6 (rules: 53.1 on the easier 7-way), Raveform 69.8 (rules: 33.6).
@@ -206,7 +213,7 @@ on its AGPL-3.0 licence; a pooled MusicFM embedding as a continuous taste vector
 - **Caches**: desktop app `~/Library/Application Support/cz.drabek.lightningstrike/cache`
   (the owner's library + judge/ verdicts - 2026-08-13 wipe kept audio/meta/context and
   deleted analysis/show blobs, so everything regenerates lazily); repo `cache/` (dev);
-  `cache114/` (gitignored bench corpus, full artifacts at v15 - do NOT wipe, the probes
+  `cache114/` (gitignored bench corpus, full artifacts at v16 - do NOT wipe, the probes
   and sweeps run against it).
 - **Versions**: analyser changes bump ANALYSIS_VERSION, engine/effect changes bump
   SHOW_VERSION, every time - the wipe does not remove the need, it only clears the current

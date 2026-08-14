@@ -31,7 +31,7 @@ harder on the radio than the 720 it has now.
 concern that shaped the original design, cyw43's four fixed receive buffers
 (`ch::State<1514, 4, 4>`) against three datagrams per frame, **did not materialise**. Dropping
 to 330 px and one datagram per frame changed nothing measurable, so the fixture does not need
-splitting for throughput. The README's "one output per strip" remains true for the strips'
+splitting for throughput. One output per strip remains true for the strips'
 own timing, but not for the network.
 
 **Delivery timing is the problem, and it is the radio.** Per 30 second run, counting frames
@@ -58,11 +58,11 @@ interval, and it makes no difference whether the call is made before or after th
 power save were active the AP would hold downlink frames until the next beacon and the
 histogram would show it. So the chip is already awake, there is no latency left to win from
 this knob, and the tail is simply what this 2.4 GHz network does. To re-test after a cyw43
-update, swap the mode at `src/main.rs:105` and compare ping histograms.
+update, swap the mode at `node/src/net.rs:72` and compare ping histograms.
 
 **Pace the sender.** A deadline-based pacer delivers exactly 60.0 fps where
 `setInterval(1000/60)` gives 57.8 to 58.7. That is 2 to 4% of frames lost to timer drift, and
-`apps/web/src/routes/api/output/+server.ts:79` currently uses `setInterval`. Worth fixing
+`apps/web/src/routes/api/output/+server.ts:173` currently uses `setInterval`. Worth fixing
 independently of anything wireless.
 
 ## Setup
@@ -320,7 +320,7 @@ wire/src/frame.rs    the framebuffer, PUSH latch and tear detection, sized by a 
 wire/src/hello.rs    the discovery query and its answer, from an Identity the binary fills in
 wire/src/stats.rs    interval counters and the one line they format into
 
-node/src/main.rs     claim the fixture, selftest it, join, run. Fifteen lines
+node/src/main.rs     claim the fixture, selftest it, join, run. Under thirty lines
 node/src/board.rs    the pins cyw43 needs, handed back by whichever fixture did not want them
 node/src/irq.rs      the interrupt table, since two modules bind against it
 node/src/net.rs      console, radio, DHCP, heartbeat

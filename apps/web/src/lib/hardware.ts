@@ -101,7 +101,7 @@ const num = (line: string, re: RegExp): number | null => {
 };
 
 /**
- * `room-node host room-node fw 0.1.0 up 42s px 1320 ddp 4048 stats 4049 leds stub`
+ * `room-node host room-frame fw 0.1.0 up 42s px 720 ddp 4048 stats 4049 leds ws2815`
  *
  * The leading token is the magic that says this is ours; anything else on the port is some
  * other device answering something else.

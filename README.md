@@ -5,7 +5,8 @@ runs forming a closed perimeter ring, plus a 2 m beam across the middle, every L
 floor. 720 pixels at 60 LED/m. Beside it stands the Bounce Lamp, a one-pixel fixture that takes
 the show's accent colour and pulses on the kit.
 
-The same bytes drive a three.js preview of the room and the real strips over DDP.
+The same bytes drive a three.js preview of the room and the real strips over DDP, or over
+sACN where the controller wants that instead.
 
 ## The idea
 
@@ -230,11 +231,17 @@ the effects, not in prose about them.
 
 ## Models
 
-Two ONNX graphs, fetched once into `models/` with pinned digests, none required: every
-consumer has a life without its model, so a machine that cannot download still analyses.
+Three ONNX graphs, none required: every consumer has a life without its model, so a machine
+that cannot download still analyses.
 
 - **Beat This!** (79 MB, MIT) finds the beats and downbeats.
 - **discogs-effnet** (18 MB, CC BY-NC-SA) hears the genre from the middle of the track.
+- **ADTOF** (2 MB, CC BY-NC-SA) transcribes kick and snare; hats stay on the DSP detector,
+  which its published weak class is the reason for.
+
+The first two are fetched once with pinned digests. ADTOF is not: its weights are
+non-commercial, so it is exported locally by `bench/export-adtof.py` and simply absent on a
+machine that never ran it.
 
 Vocal stem separation was built, measured and removed. It cost about two minutes per track
 and bought two subtle accent effects, a drum detector that heard marginally cleaner snares,
@@ -244,6 +251,9 @@ HTTP call. If a stem is ever worth having again it wants to be a background upgr
 the track is already playing, never a thing anyone waits behind.
 
 ## How the grid is found
+
+Beat This finds the beats when its weights are present, which is the normal case; everything
+below is what runs when they are not, and it still decides the metrical level either way.
 
 Onset strength is SuperFlux: spectral flux on a log-frequency, log-magnitude spectrogram
 where the frame being subtracted has first been passed through a maximum filter across
@@ -341,14 +351,15 @@ Everything else is greyscale, because the LEDs have to be the only saturated thi
   on it. Hovering shows bar number and section.
 - **Timeline drawer**, under the player, holds the raw LED bands - the exact bytes that go on
   the wire - and four lanes of sections, cues, drum density and punctuation.
-- **Inspector** has four tabs: the show (Revise with Claude, Reroll, tempo, arrangement, palette,
-  Claude's brief, the generated effects, linter notes), the cue sheet with the live cue
-  highlighted, **design** (a live feed of what the agent is doing - every tool call, its
+- **Inspector** has three tabs: the show (Revise with Claude, Reroll, tempo, arrangement with
+  the live cue highlighted under its section, palette, Claude's brief, the generated effects,
+  linter notes), **design** (a live feed of what the agent is doing - every tool call, its
   arguments and its result, as it happens), and the raw log. It switches to design
   automatically while a show is being authored.
 - **The board**, top right, is a live readout rather than a button: a dot and the frame rate
   the hardware itself reports. Opening it gives the address field, what the board says it is,
-  how the stream is actually arriving, and the lead trim. See `FIRMWARE.md`.
+  how the stream is actually arriving, the frame rate, which wire it is addressed on, and the
+  lead trim. See `FIRMWARE.md`.
 
 Space plays and pauses. Arrows seek 5 s, shift-arrows 30 s. Cmd-K opens the palette,
 `[` and `]` collapse the two rails, `L` switches to lounge.
@@ -465,7 +476,7 @@ wins over the stored one.
 
 ```sh
 npm run dev            # the app
-npm test               # 617 tests
+npm test               # 724 tests
 npm run check          # tsc --build across all packages, then svelte-check
 ```
 
@@ -482,6 +493,10 @@ build step between editing a package and seeing it in the app.
 DDP over UDP on port 4048, which is what WLED listens on with no configuration. Two packets
 per 720-LED frame at 94.9% wire efficiency, against five for sACN with universe maths on top.
 The Bounce Lamp is a second device on its own stream, one pixel wide.
+
+sACN is there as well, chosen in the board panel, because a controller that is not WLED
+usually expects it. It costs what the arithmetic above says it costs, so DDP stays the
+default rather than the only option.
 
 Two things to get right:
 
