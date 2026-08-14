@@ -103,6 +103,12 @@ export async function readMeta(id: string): Promise<TrackMeta | null> {
 	}
 }
 
+/** yt-dlp errors are paragraphs; a row has one line. */
+function firstLine(message: string): string {
+	const line = message.split('\n').find((l) => l.includes('ERROR')) ?? message.split('\n')[0];
+	return line.replace(/^.*ERROR:\s*/, '').trim().slice(0, 90);
+}
+
 /** The cached audio for a track, whatever container yt-dlp settled on. */
 export async function findAudioFile(id: string): Promise<string | null> {
 	assertId(id);
@@ -215,6 +221,28 @@ export function publishedLevel(
 	return null;
 }
 
+/**
+ * Every stage an ingest reports, as a closed set.
+ *
+ * A union rather than free text because the queue maps each one to a row status: when
+ * `looking the track up` and `transcribing drums` were merely emitted and not mapped, a row
+ * sat reading "Downloading" through the whole enrichment. Callers type their tables against
+ * this, so the compiler catches the next one instead of a listener noticing months later.
+ *
+ * The same channel also carries free-text notes - a model that failed to load, a grid being
+ * re-read at a corrected level - which are messages rather than stages and leave the row's
+ * status where it was. That is why the type is widened rather than closed.
+ */
+export type IngestStage =
+	| 'resolving'
+	| 'downloading'
+	| 'looking the track up'
+	| 'cached'
+	| 'decoding'
+	| 'tracking beats'
+	| 'transcribing drums'
+	| 'analysing';
+
 export interface IngestOptions {
 	/** Re-analyse even when a current cached analysis exists. */
 	force?: boolean;
@@ -232,7 +260,7 @@ export interface IngestOptions {
 	 * which both muddies the blurred backdrop and drags `artHue` toward the fill.
 	 */
 	artwork?: string;
-	onProgress?: (stage: string) => void;
+	onProgress?: (stage: IngestStage | (string & {})) => void;
 }
 
 /** A YouTube URL or a local audio file path. */
@@ -248,7 +276,9 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 
 	if (/^https?:\/\//.test(source)) {
 		log('resolving');
-		probed = await probe(source);
+		probed = await probe(source, (n, of, why) =>
+			log(`resolving - retrying (${n + 1} of ${of}): ${firstLine(why)}`)
+		);
 		id = probed.id;
 		title = probed.title;
 		assertId(id);
@@ -264,7 +294,9 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		audioPath = await findAudioFile(id);
 		if (!audioPath) {
 			log('downloading');
-			await downloadAudio(source, join(CACHE_DIR, `${id}.%(ext)s`));
+			await downloadAudio(source, join(CACHE_DIR, `${id}.%(ext)s`), (n, of, why) =>
+				log(`downloading - retrying (${n + 1} of ${of}): ${firstLine(why)}`)
+			);
 			audioPath = await findAudioFile(id);
 			if (!audioPath) throw new Error('yt-dlp reported success but wrote no audio file');
 		}

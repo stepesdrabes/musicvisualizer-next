@@ -36,6 +36,11 @@ export interface QueueItem {
 	/** Why it failed, or which stage it is in. Empty when there is nothing to say. */
 	message: string;
 	authored: Authored;
+	/**
+	 * Fetches already spent on this row. Only set while a transient failure is being retried,
+	 * so an untouched row and a first attempt look the same.
+	 */
+	attempts?: number;
 	/** The lighting family, once the track has been enriched. Absent until then. */
 	genre?: string;
 	/**

@@ -101,14 +101,53 @@ export interface ProbeResult {
 	tags?: string[];
 }
 
-export async function probe(url: string): Promise<ProbeResult> {
-	const { stdout } = await run('yt-dlp', [
-		'--no-playlist',
-		'--skip-download',
-		'--dump-single-json',
-		'--no-warnings',
-		url
-	]);
+/**
+ * yt-dlp failures that clear on their own, against the ones that never will.
+ *
+ * YouTube answers 403 to a share of requests under no discernible pattern: of fifty tracks
+ * fetched in one sitting, twelve failed this way and a plain re-run recovered seven of them.
+ * A permanent refusal looks nothing like it - a private, removed or region-locked video says
+ * so - and retrying those three times only delays the queue by the length of two more
+ * downloads. The permanent list is checked first, because a takedown notice can carry a 403.
+ */
+const PERMANENT =
+	/Video unavailable|Private video|removed by the uploader|members-only|Sign in to confirm|not available in your country|account associated with this video has been terminated|violat|copyright|age-restricted|requested format is not available/i;
+const TRANSIENT =
+	/HTTP Error 403|HTTP Error 429|HTTP Error 5\d\d|Unable to download (?:webpage|API page|JSON)|timed out|timeout|Connection reset|Remote end closed|temporarily unavailable|EOF occurred|handshake|Network is unreachable|getaddrinfo/i;
+
+/** Whether a failed fetch is worth asking for again. Shared with the queue, so the two agree. */
+export function isTransientFetchError(message: string): boolean {
+	return !PERMANENT.test(message) && TRANSIENT.test(message);
+}
+
+/** How a caller is told a fetch is being tried again, so a row can say so rather than hang. */
+export type RetryNote = (attempt: number, of: number, reason: string) => void;
+
+const ATTEMPTS = 3;
+/** Short: a 403 clears in seconds or not at all, and the queue is waiting behind this. */
+const BACKOFF_MS = [1500, 4000];
+
+async function withRetry<T>(
+	what: () => Promise<T>,
+	onRetry: RetryNote | undefined
+): Promise<T> {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await what();
+		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			if (attempt >= ATTEMPTS || !isTransientFetchError(message)) throw e;
+			onRetry?.(attempt, ATTEMPTS, message);
+			await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt - 1] ?? 4000));
+		}
+	}
+}
+
+export async function probe(url: string, onRetry?: RetryNote): Promise<ProbeResult> {
+	const { stdout } = await withRetry(
+		() => run('yt-dlp', ['--no-playlist', '--skip-download', '--dump-single-json', '--no-warnings', url]),
+		onRetry
+	);
 	const j = JSON.parse(stdout.toString()) as Record<string, unknown>;
 	return {
 		id: String(j.id ?? ''),
@@ -128,14 +167,22 @@ export async function probe(url: string): Promise<ProbeResult> {
  * Downloads bestaudio without `-x --audio-format`, which would transcode a lossy source
  * into another lossy format for no benefit.
  */
-export async function downloadAudio(url: string, outTemplate: string): Promise<void> {
-	await run('yt-dlp', [
-		'--no-playlist',
-		'--no-warnings',
-		'-f',
-		'140/251/bestaudio[ext=m4a]/bestaudio',
-		'-o',
-		outTemplate,
-		url
-	]);
+export async function downloadAudio(
+	url: string,
+	outTemplate: string,
+	onRetry?: RetryNote
+): Promise<void> {
+	await withRetry(
+		() =>
+			run('yt-dlp', [
+				'--no-playlist',
+				'--no-warnings',
+				'-f',
+				'140/251/bestaudio[ext=m4a]/bestaudio',
+				'-o',
+				outTemplate,
+				url
+			]),
+		onRetry
+	);
 }

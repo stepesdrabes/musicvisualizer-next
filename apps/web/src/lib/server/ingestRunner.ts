@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { BUILT_IN_EFFECTS, SHOW_VERSION, type Show } from '@mv/core';
-import { showPath } from '@mv/analysis';
+import { isTransientFetchError, showPath, type IngestStage } from '@mv/analysis';
 import { composeShow, lintShow } from '@mv/author-engine';
 import { currentItem, nextItem, type ItemStatus, type QueueItem } from '$lib/queueModel.ts';
 import { autopilot } from './autopilot.ts';
@@ -12,21 +12,27 @@ import { queue } from './queueStore.ts';
  * Anything unrecognised leaves the status alone and only updates the message, so a new stage
  * appearing upstream shows up as text rather than as a wrong chip.
  */
-const STAGES: Record<string, ItemStatus> = {
+const STAGES: Record<IngestStage, ItemStatus> = {
 	resolving: 'resolving',
 	downloading: 'downloading',
+	// Everything past the download is analysis as far as a row is concerned. Enrichment used
+	// to be missing here, which left the chip reading "Downloading" for the whole lookup.
+	'looking the track up': 'analysing',
 	cached: 'analysing',
 	decoding: 'analysing',
 	'tracking beats': 'analysing',
+	'transcribing drums': 'analysing',
 	analysing: 'analysing'
 };
 
-const LABELS: Record<string, string> = {
+const LABELS: Record<IngestStage | 'composing', string> = {
 	resolving: 'Resolving',
 	downloading: 'Downloading',
+	'looking the track up': 'Looking it up',
 	cached: 'Reading cache',
 	decoding: 'Decoding',
 	'tracking beats': 'Tracking beats',
+	'transcribing drums': 'Transcribing drums',
 	analysing: 'Analysing',
 	composing: 'Composing the show'
 };
@@ -94,6 +100,17 @@ async function prepare(item: QueueItem, onStage: (stage: string) => void) {
 }
 
 /**
+ * How many times a row is fetched before it is called failed, counting the first.
+ *
+ * Two layers, deliberately: the fetcher retries three times seconds apart inside one attempt,
+ * and this spaces whole attempts a minute or so apart. Of fifty tracks fetched in one sitting
+ * twelve returned 403 and a later re-run recovered seven, so the slow layer is the one that
+ * actually pays.
+ */
+const QUEUE_ATTEMPTS = 3;
+const RETRY_WAIT_MS = [20000, 60000];
+
+/**
  * One ingest at a time, ever.
  *
  * The beat tracker is an ONNX graph that will happily take every core it is offered, so two
@@ -146,10 +163,11 @@ class IngestRunner {
 		queue.patch(item.key, { status: 'resolving', message: 'Resolving' });
 		try {
 			const { result, authored, loungeOnly, trustNote } = await prepare(item, (stage) => {
-				queue.patch(item.key, {
-					status: STAGES[stage] ?? 'analysing',
-					message: LABELS[stage] ?? stage
-				});
+				// A stage moves the chip; a free-text note (a retry, a model that failed to load)
+				// only changes what the row says, leaving the status where it was.
+				const status = STAGES[stage as IngestStage];
+				const message = LABELS[stage as IngestStage] ?? stage;
+				queue.patch(item.key, status ? { status, message } : { message });
 			});
 
 			queue.patch(item.key, {
@@ -168,10 +186,26 @@ class IngestRunner {
 			if (item.auto) autopilot.noteSuccess();
 		} catch (e) {
 			// yt-dlp and ffmpeg messages are the useful part; keep them rather than a generic one.
-			queue.patch(item.key, {
-				status: 'error',
-				message: (e as Error).message.split('\n')[0].slice(0, 200)
-			});
+			const raw = (e as Error).message;
+			const reason = raw.split('\n')[0].slice(0, 200);
+			const spent = (item.attempts ?? 1) + 1;
+
+			// The fetcher already tried three times inside one prepare, seconds apart. YouTube
+			// hands out 403s that outlast that and clear a minute later, so the row goes back in
+			// line rather than stopping - bounded, and only for a failure worth asking again.
+			// The wait is taken here, inside the serialised runner, so nothing is left armed to
+			// wake the machine on its own.
+			if (isTransientFetchError(raw) && spent <= QUEUE_ATTEMPTS) {
+				queue.patch(item.key, {
+					status: 'pending',
+					attempts: spent,
+					message: `Retrying (${spent} of ${QUEUE_ATTEMPTS})`
+				});
+				await new Promise((r) => setTimeout(r, RETRY_WAIT_MS[spent - 2] ?? 20000));
+				return;
+			}
+
+			queue.patch(item.key, { status: 'error', attempts: spent, message: reason });
 			// A radio pick that will not download is usually the network or a stale yt-dlp
 			// rather than that track, so the count is what stops it queueing all night into
 			// the same failure.
@@ -181,7 +215,7 @@ class IngestRunner {
 
 	/** Put a failed row back in line, which is what a retry button means. */
 	async retry(key: string): Promise<void> {
-		queue.patch(key, { status: 'pending', message: '' });
+		queue.patch(key, { status: 'pending', message: '', attempts: 0 });
 		void this.pump();
 	}
 }

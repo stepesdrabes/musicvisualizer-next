@@ -1,5 +1,5 @@
 export { analyzeTrack, type AnalyzeInput } from './analyze.ts';
-export { ANALYSIS_RATE, decodeAudio } from './decode.ts';
+export { ANALYSIS_RATE, decodeAudio, isTransientFetchError } from './decode.ts';
 export { artworkHue, dominantHue, type Artwork } from './artwork.ts';
 export { BEATTHIS_RATE, BeatThis, ensureModels, modelDir, modelsPresent } from './beatthis.ts';
 export { assessMetricalLevel, type MetricalAssessment } from './metricalLevel.ts';
@@ -21,6 +21,7 @@ export {
 	refineGenreFromAudio,
 	showPath,
 	type IngestOptions,
+	type IngestStage,
 	type IngestResult,
 	type TrackMeta
 } from './ingest.ts';

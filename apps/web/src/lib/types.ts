@@ -31,6 +31,8 @@ export interface LibraryEntry extends TrackMeta {
 	/** The cached blobs are this build's versions, so the track plays without preparing again. */
 	current: boolean;
 	authored: Authored;
+	/** Fetches already spent on this row, while a transient failure is being retried. */
+	attempts?: number;
 	genreFamily: string | null;
 	updatedAt: number;
 }
