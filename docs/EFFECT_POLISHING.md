@@ -49,6 +49,21 @@ What a continuation needs, in this order:
 4. **Which complaints repeat.** One track with a bad drop is a track; five tracks with the
    same chip is a root cause, and the root cause is the only thing worth fixing.
 
+### Comparing two builds, cheaply
+
+Copy the `.app` into `/Applications` under a different name and it gets its own library:
+`LightningStrike (B).app` reads and writes `cache-B`, judgements included, because the judge
+directory hangs off the cache. Naming the copy is the whole of the configuration - no terminal,
+no wiping between. `cp -R` the existing cache into the new one first and the second build
+inherits the same audio and analyses without re-downloading anything, so only the shows
+differ. An inherited `MV_CACHE_DIR` still overrides, for a session driving the comparison
+itself.
+
+**For small differences, ask which rather than how many stars.** Absolute ratings across days
+rest on memory, and memory is poor at exactly the differences worth arguing over; paired
+comparison is the standard instrument for small impairments for that reason. Hand back the
+same track twice, A and B, and ask which - it is more sensitive and it is less work to answer.
+
 ## When the bench disagrees with the room, suspect the bench
 
 The room is the instrument of record. Twice now a corpus score has argued a change was good
