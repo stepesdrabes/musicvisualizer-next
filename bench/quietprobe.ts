@@ -10,12 +10,13 @@ import {
 	type Show,
 	type TrackAnalysis
 } from '@mv/core';
+import { CACHE_DIR } from '@mv/analysis';
 
 
 /**
  * What each bed and accent actually delivers over the REAL quiet sections of the cache.
  *
- * `effectprobe`'s `quiet` column asks the same question of a synthesised passage, and it answers
+ * The effect gate asks a version of this of a synthesised passage, and it answers
  * it differently: its spectrum spreads a wandering peak across every band, where a real sparse
  * intro has content in a handful of bands and silence in the rest. Ranked on the synthetic
  * journey, `nebula` and `harmonicRibbon` look like the reactive pair; substituted into a real
@@ -37,7 +38,7 @@ const flag = (n: string) => {
 const onlyRole = flag('role');
 const limit = Number(flag('limit') ?? 8);
 
-const CACHE_DIR = join(import.meta.dirname, '..', 'cache');
+
 const QUIET = new Set(['intro', 'outro', 'breakdown']);
 const g = buildGeometry(DEFAULT_ROOM);
 

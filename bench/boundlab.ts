@@ -9,6 +9,7 @@ import { detectDrums } from '../packages/analysis/src/drums.ts';
 import { measureLoudness } from '../packages/analysis/src/loudness.ts';
 import {
 	barSynchronous,
+	DEFAULT_TUNING,
 	refineBoundaries,
 	segmentBars,
 	similarityMatrix,
@@ -71,7 +72,11 @@ const rawKicks = new Int32Array(bars.count);
 const sim = similarityMatrix(bars);
 const rough = segmentBars(sim, bars);
 const moves: BoundaryMove[] = [];
-const refined = refineBoundaries(rough, bars, rawKicks, moves);
+// The floor the pipeline actually runs at. Left at the function's own default this printed
+// a different set of moves from the shipped analyser and read as a disagreement about the
+// music. No vocal column or hook list: the bench fetches no contexts, so the lyric evidence
+// analyze.ts passes here simply does not exist.
+const refined = refineBoundaries(rough, bars, rawKicks, moves, DEFAULT_TUNING.refineFloor);
 
 console.log('rough bounds:  ', rough.join(' '));
 console.log('refined bounds:', refined.join(' '));
