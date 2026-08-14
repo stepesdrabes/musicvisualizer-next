@@ -289,7 +289,7 @@ and on rejoining while already associated.
 
 ## Reproducing the measurement
 
-`tools/ddp-probe.ts` drives the real `createDdpSink` from `packages/transport-ddp`, so it
+`tools/ddp-probe.ts` drives the real `createDdpSink` from `packages/transport`, so it
 exercises the actual wire format rather than a replica, and reports its own timing in the same
 shape as the board so the two subtract.
 

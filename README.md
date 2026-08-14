@@ -103,11 +103,11 @@ show run in a browser, in headless Node, and eventually on an ESP32.
 apps/desktop          Tauri shell, runs apps/web as a Node sidecar
 apps/web              SvelteKit, one screen, plus the phone-sized guest page
 packages/preview3d    three.js room view          -> core
-packages/transport-ddp  DDP over UDP              -> core
+packages/transport    DDP and sACN over UDP       -> core
 packages/author-ai    Agent SDK, tools, backends  -> core, analysis, author-engine
 packages/author-engine  deterministic show generation + the linter  -> core
 packages/analysis     ffmpeg -> PCM -> SuperFlux -> beat grid -> bars -> sections  -> core
-packages/core         contracts, geometry, colour, DSL, 78 effects, mixer, player, director
+packages/core         contracts, geometry, colour, DSL, 89 effects, mixer, player, director
 ```
 
 The layering is enforced by separate `package.json` files rather than by convention: `core`

@@ -27,7 +27,7 @@ before committing.
 
 ```
 apps/desktop  -> apps/web (as a running process, not an import)
-apps/web      -> preview3d, transport-ddp, author-ai, author-engine, analysis, core
+apps/web      -> preview3d, transport, author-ai, author-engine, analysis, core
 author-ai     -> author-engine, analysis, core
 author-engine -> core
 analysis      -> core
