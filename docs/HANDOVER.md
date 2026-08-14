@@ -4,6 +4,54 @@ State of the analysis/authoring overhaul as of 2026-08-13 (evening), what remain
 knowhow a continuation needs. `docs/EFFECT_POLISHING.md` carries the method; this file
 carries the open work. The session memory has the same facts with more numbers.
 
+## Round 1 against the 2026-08-14 judged round (36 judgements, build 337d06f)
+
+Everything about that round lives in `bench/judged/round-2026-08-14/`: `snapshot.json`
+(the full join of every judgement against sections/cues/hits/kit rows - survives version
+bumps), `digest.md`, `diagnosis.md` (ranked root causes RC1-RC6), `adversary-review.md`
+(25 attacks on the designs and their dispositions), `research-endings.md` (verified
+practice for the endings round), `sweep-record.md`. All 36 judged shows recomposed
+bit-identically at 337d06f before any change - every complaint was live.
+
+Shipped at ANALYSIS_VERSION 17 + SHOW_VERSION 13 (2026-08-14 late, not yet judged):
+
+- **Same-material consolidation** (`consolidate.ts`, floor 1.6 in `StructureTuning`):
+  merges adjacent same-kind sections only when nothing arrives within a bar of the seam
+  AND the material matches across it (groupSegments' 0.92 standard, seam-local) AND the
+  seam is phrase-aligned from the merged start AND it touches neither the loudest
+  segment, a pinned arrival, nor a hook-snap target. Sweep: Raveform F0.5/F3 +1.5/+1.9
+  with sections 20.0 -> 17.9-18.1, Harmonix within 0.2pt of baseline. On the judged 36:
+  conservative by design - 6 tracks changed (No One Knows 17->15, Sandman 13->12 with
+  the phantom slam@79 gone, Self Esteem, Roygbiv, As It Was, Adele), 0 peaks moved,
+  every steelman-watchlist seam survived. Xtal kept its five drops: the evidence says
+  those seams are real; its complaint is now filed under boundary placement (round 2).
+- **Genre trio**: the "Folk, World, & Country" Discogs parent no longer votes (Get
+  Lucky stops being ballad; other parents deliberately kept - stripping "Hip Hop" turns
+  "Trap" into a bass vote); `speaksClub` requires kit corroboration (CLUB_KICK_FLOOR
+  0.4 kicks/beat over the loud half - a house-tagged piano ballad and beatless ambient
+  now speak song vocabulary; halftime bass at ~0.5 keeps its drops); `hasDrops` requires
+  `audible` (a track the drum detector heard nothing in cannot have drops). Someone You
+  Loved: six kickless drops -> verse/chorus, bumps 8 -> 4. An Ending: drops -> calm
+  verse treatment. DEFERRED: per-source context provenance + CONTEXT_VERSION (cached
+  `genres` carry effnet's own echo, so a context re-vote no-ops - see adversary-review
+  finding 17); the ambient-in-CLUB_FAMILIES question (Roygbiv keeps its drops, on
+  purpose).
+- **gridTrust reads `rawSectionCount`** (new optional TrackAnalysis field): a wreck must
+  not merge its way past the lounge gate.
+- **Effects**: heartbeat now declares `taste.kit: 'kick'` and takes strike permission
+  from a kick Presence (two judged tracks heard it fighting the drums); new `silhouette`
+  peak master - figure/ground inversion, ring blazing over a dark centre beam, held for
+  up to 8 bars, from the verified rap-climax research (Saint Pablo / Stormzy silhouette
+  practice). It wins 4 of 28 mastered peaks on the judged corpus by seed tie-break
+  alone, no preference wiring.
+
+Round 2, designed but NOT started: the early-boundary skew (22 early vs 7 late notes;
+fill-vs-arrival scoring in `arrivalStrength`, the hook snap's -2/+1 asymmetry - see
+diagnosis.md RC2) paired with endings (finish-line anchoring, button/decay/fade by
+terminal envelope, afterglow, no look-change at outro start - research-endings.md).
+Round 3 candidates: lyric-assertive chorus naming (RC5 - the hook windows measure
+better than the 0.12 demotion threshold uses), context provenance, exposure damper.
+
 ## Where things stand
 
 Shipped and verified across the overhaul and two judged rounds (analysis v16, show v12,
@@ -141,6 +189,11 @@ on Self Aware). energyRank is by mean energy; the peak master and treatment hang
 Wait for 2-3 more examples before changing the rule; the judge files name the exact bars.
 
 ### 5. Smaller open threads
+
+- Two pre-existing dark bars on cache114 (Eternal Youth bar 7, Shalom Margaret bar 20,
+  verified present under the pre-round catalog too): a build cue carried by a lone
+  `lavaBlobs` bed goes near-black for a bar at audible energy. A bed-only build cue is
+  the suspect, not the analysis. Quiet-passages round material.
 
 - boundlab still calls refineBoundaries with the old default floor (0.6), so its printout
   disagrees with the shipped pipeline (floor 2 via tuning); align when next used.
