@@ -30,6 +30,48 @@ Rules the first rounds established:
 - **Positive judgements are calibration.** The 5-star tracks guard against regressions and
   say what "right" reads like; ask for them explicitly.
 
+- **A judgement is only worth what its build is.** The file pins `analysisHash` and the show
+  seed, which catches a recomposed show but NOT a rebuilt app: a rollback or a re-analysis
+  can leave both pinned values identical while the show is different. Say which build was
+  installed when a round starts, and treat verdicts from before a version bump as history.
+
+### Handing a judged round to the next session
+
+What a continuation needs, in this order:
+
+1. **Which build was judged** - the commit the app was installed from, and whether the cache
+   was cleared first. Without it a verdict cannot be attributed.
+2. **The judge files themselves** (`<cache>/judge/*.json`). They carry the rating, chips,
+   notes, bars, `analysisHash` and seed. Aggregate the chips with a python one-liner before
+   reading any of them individually.
+3. **The 5-star tracks named explicitly.** They are the regression guard and they are what
+   the fixes must not break.
+4. **Which complaints repeat.** One track with a bad drop is a track; five tracks with the
+   same chip is a root cause, and the root cause is the only thing worth fixing.
+
+## When the bench disagrees with the room, suspect the bench
+
+The room is the instrument of record. Twice now a corpus score has argued a change was good
+while listening said it was worse, and both times the score was answering a different
+question:
+
+- **A metric that collapses the classes under test cannot see the error.** `structscore`'s
+  `base=` column maps verse onto groove and chorus onto drop, so a labeller that renamed
+  every chorus scored 53.1 to 71.1 on it while the EXACT figure sat at 22.5% in the same
+  output. Read the column that distinguishes the thing being changed, and headline that one.
+- **Check what the baseline arm actually has.** `structscore` fetches no `TrackContext`, so
+  its rules path runs with no lyrics where the app has them, and `speaksClub` falls back to a
+  kick heuristic that reads much of a pop corpus as club. A win over a crippled arm is not a
+  win.
+- **Aggregate scores hide degeneracy.** A track labelled one thing end to end can score
+  respectably against a reference that is also mostly one thing. Measure the per-track
+  distribution as well as the mean: single-label dominance caught what section agreement
+  missed, and it was the number that matched what the owner heard.
+
+The general shape: before believing a corpus result over a listening result, write down what
+the metric would report if the specific failure being alleged were present. If the answer is
+"the same number", the metric is not evidence.
+
 ## Diagnose from the cache, not from the code
 
 Every complaint names a track, and the track's whole story is on disk: the desktop app's
