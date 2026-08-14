@@ -34,11 +34,20 @@ const VARIANTS: Record<string, StructureTuning> = {
 	// No re-phasing at all: refinement still moves single boundaries onto arrivals.
 	off: { ...DEFAULT_TUNING, rephaseReach: 0 },
 	// Re-phasing kept but disciplined: short reach, decisive pins only, near-unanimity.
-	strict: { refineFloor: 0.6, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8 },
+	strict: { refineFloor: 0.6, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0 },
 	// Strict, and boundaries only move onto DECISIVE arrivals - the kick-wall class.
-	tight: { refineFloor: 2, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8 },
+	tight: { refineFloor: 2, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0 },
 	// No refinement follow-up at all, approximating the pipeline before this work.
-	none: { refineFloor: 1e9, pinScore: 1e9, rephaseReach: 0, rephaseMinPins: 99, rephaseAgreement: 1 }
+	none: { refineFloor: 1e9, pinScore: 1e9, rephaseReach: 0, rephaseMinPins: 99, rephaseAgreement: 1, consolidateFloor: 0 },
+	// Same-kind seam consolidation, swept over the arrival floor a seam must clear to
+	// survive. cons0 is the explicit baseline whatever the shipped default becomes.
+	cons0: { ...DEFAULT_TUNING, consolidateFloor: 0 },
+	cons08: { ...DEFAULT_TUNING, consolidateFloor: 0.8 },
+	cons12: { ...DEFAULT_TUNING, consolidateFloor: 1.2 },
+	cons16: { ...DEFAULT_TUNING, consolidateFloor: 1.6 },
+	cons20: { ...DEFAULT_TUNING, consolidateFloor: 2 },
+	cons24: { ...DEFAULT_TUNING, consolidateFloor: 2.4 },
+	cons30: { ...DEFAULT_TUNING, consolidateFloor: 3 }
 };
 const tuning = VARIANTS[variantName];
 if (!tuning) throw new Error(`unknown variant ${variantName}`);

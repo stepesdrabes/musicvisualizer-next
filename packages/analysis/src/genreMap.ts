@@ -88,7 +88,12 @@ export function mapGenres(strings: readonly string[], weights?: readonly number[
 	let total = 0;
 
 	for (let i = 0; i < strings.length; i++) {
-		const s = strings[i].toLowerCase();
+		// Discogs' "Folk, World, & Country" parent is a catch-all whose children run from
+		// Soukous to Celtic, and the parent's own words vote ballad at weight 2 - it filed
+		// a 116 bpm funk record as a ballad. The parent is struck and the style keeps its
+		// own say; every other parent (Hip Hop, Rock, Reggae...) is informative and stays,
+		// because stripping them all turned "Hip Hop Trap" into a bass vote.
+		const s = strings[i].toLowerCase().replace(/folk,\s*world,?\s*&\s*country/g, ' ');
 		const scale = weights?.[i] ?? 1;
 		for (const rule of RULES) {
 			if (!rule.match.test(s)) continue;

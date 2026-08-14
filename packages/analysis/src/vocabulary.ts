@@ -42,15 +42,25 @@ const CLUB_FAMILIES: ReadonlySet<GenreFamily> = new Set([
 	'ambient'
 ] as GenreFamily[]);
 
+/**
+ * The kick rate under which a club-family verdict is not believed. The drop vocabulary
+ * is a claim about how the record moves, and a genre tag cannot outvote a floor that
+ * never kicks: a piano ballad the audio model filed as house (0.0 kicks/beat) got six
+ * "drop" sections, while every genuinely club track in the judged round measures 0.5+
+ * even at half-time. Sits well under fourOnFloor's 0.8 so halftime bass keeps its drops.
+ */
+const CLUB_KICK_FLOOR = 0.4;
+
 export function speaksClub(
 	family: GenreFamily | null,
-	fourOnFloorEvidence: boolean
+	loudKicksPerBeat: number
 ): boolean {
-	if (family) return CLUB_FAMILIES.has(family);
+	// A club family speaks club only where the record corroborates it - see the floor.
+	if (family) return CLUB_FAMILIES.has(family) && loudKicksPerBeat >= CLUB_KICK_FLOOR;
 	// No metadata: a relentless four-on-the-floor kick is the one audio signature that
 	// separates the two vocabularies without a genre tag. Defaulting the unknown to song
 	// errs toward blooms over strobes, which is the survivable direction.
-	return fourOnFloorEvidence;
+	return loudKicksPerBeat >= 0.8;
 }
 
 /** Re-read club labels as song labels, in place. The grid and grouping are untouched. */
@@ -341,18 +351,18 @@ export function snapToHooks(
 	return moves;
 }
 
-/** Kicks per beat across the loud half of the track: the four-on-the-floor signature. */
-export function fourOnFloor(
+/** Kicks per beat across the loud half of the track: what the floor is actually doing. */
+export function loudKickRate(
 	kicksPerBar: Int32Array,
 	energy: Float32Array,
 	beatsPerBar: number
-): boolean {
+): number {
 	const count = Math.min(kicksPerBar.length, energy.length);
-	if (count === 0) return false;
+	if (count === 0) return 0;
 	const sorted = Float32Array.from(energy.subarray(0, count)).sort();
 	const median = sorted[sorted.length >> 1];
 	const loud: number[] = [];
 	for (let b = 0; b < count; b++) if (energy[b] >= median) loud.push(kicksPerBar[b]);
-	if (loud.length === 0) return false;
-	return mean(Float32Array.from(loud)) / Math.max(1, beatsPerBar) >= 0.8;
+	if (loud.length === 0) return 0;
+	return mean(Float32Array.from(loud)) / Math.max(1, beatsPerBar);
 }

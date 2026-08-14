@@ -385,6 +385,11 @@ export interface StructureTuning {
 	rephaseMinPins: number;
 	/** Share of pins that must share the winning phase. */
 	rephaseAgreement: number;
+	/**
+	 * Arrival score below which a seam between two same-kind sections is a DP artefact
+	 * rather than structure, and the sections merge. 0 disables consolidation.
+	 */
+	consolidateFloor: number;
 }
 
 /**
@@ -401,11 +406,20 @@ export const DEFAULT_TUNING: StructureTuning = {
 	pinScore: 2,
 	rephaseReach: 1,
 	rephaseMinPins: 3,
-	rephaseAgreement: 0.8
+	rephaseAgreement: 0.8,
+	// The 2026-08-14 sweep (60 Harmonix + 60 Raveform, material gate on): 1.6 was
+	// best-or-tied on both corpora - Raveform F3 0.521 -> 0.552 with sections 20.0 ->
+	// 17.2, Harmonix within noise (0.530 -> 0.526, sections 10.4 vs 10.1 annotated).
+	// Arrival-only merging (no material gate) paid 1.7-2.2 points of Harmonix F3 for
+	// the same floors: soft real boundaries between different material must survive.
+	consolidateFloor: 1.6
 };
 
-/** Per-bar arrival strengths, for the bench to look at. Not part of the pipeline. */
-export function debugArrivals(
+/**
+ * Per-bar arrival strengths: the same evidence `refineBoundaries` weighs, as an array,
+ * for the consolidation pass and the bench.
+ */
+export function arrivalStrengths(
 	bars: BarFeatures,
 	kicksPerBar: Int32Array | null,
 	vocal: Float64Array | null = null,

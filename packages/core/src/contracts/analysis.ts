@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 16;
+export const ANALYSIS_VERSION = 17;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -215,6 +215,14 @@ export interface TrackAnalysis {
 	key: KeyEstimate;
 	bars: BarRow[];
 	sections: SectionSpan[];
+	/**
+	 * How many sections the segmenter emitted BEFORE same-material consolidation. The
+	 * fragmentation trust gate reads this one: a wrong-grid wreck chops into homogeneous
+	 * same-kind runs, which is exactly what consolidation merges, and a wreck must not
+	 * merge its way past the lounge routing that exists to catch it. Absent on analyses
+	 * older than v17.
+	 */
+	rawSectionCount?: number;
 	moments: Moment[];
 	/** Every tracked beat, seconds. Exact even where the constant grid is only a fit. */
 	beats: number[];

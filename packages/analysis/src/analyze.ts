@@ -22,8 +22,10 @@ import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
 import { barGroups, quantiseOnsets } from './quantise.ts';
 import { analyseStereo } from './stereo.ts';
+import { consolidateSections } from './consolidate.ts';
 import {
 	DEFAULT_TUNING,
+	arrivalStrengths,
 	barSynchronous,
 	groupSegments,
 	refineBoundaries,
@@ -36,9 +38,9 @@ import {
 import {
 	chorusSpansFromLyrics,
 	demoteVersesFromLyrics,
-	fourOnFloor,
 	hookBars,
 	hookStarts,
+	loudKickRate,
 	promoteChorusesFromLyrics,
 	snapToHooks,
 	speaksClub,
@@ -286,7 +288,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// as chorus/verse, and synced lyrics then settle which loud section is THE chorus.
 	const club = speaksClub(
 		input.context?.genreFamily ?? null,
-		fourOnFloor(kicks, plan.energy, meter.beatsPerBar)
+		loudKickRate(kicks, plan.energy, meter.beatsPerBar)
 	);
 	if (input.sectionPosteriors) {
 		if (!club) toSongVocabulary(plan.segments);
@@ -312,9 +314,26 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// arrange() emitted them while every boundary was still where the energy alone put
 	// it, and a drop downbeat left at a bar its section has moved off - or been demoted
 	// off - fires the show's biggest cue in the wrong section.
-	if (lyricLines && lyricLines.length > 0) {
-		snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count);
-	}
+	const snapMoves =
+		lyricLines && lyricLines.length > 0
+			? snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count)
+			: [];
+	// The last structural word: seams between same-kind sections that nothing arrives on
+	// are DP artefacts, and each one downstream is a cue change and a punctuated false
+	// arrival. Read with the same evidence the refiner uses, after every pass that can
+	// move or rename a boundary has had its say - and forbidden from undoing any of them:
+	// the pinned arrivals and the bars the hook snap just placed are not up for review.
+	const rawSectionCount = plan.segments.length;
+	const preConsolidation = plan.segments.map((s) => ({ ...s }));
+	consolidateSections(
+		plan.segments,
+		arrivalStrengths(bars, rawKicks, vocal, hooks),
+		sim,
+		bars.count,
+		tuning.consolidateFloor,
+		plan.energy,
+		new Set([...pinned, ...snapMoves.map((m) => m.to)])
+	);
 	placeEvents(plan.segments, plan.bands, kicks, snares, bars.count, plan.events);
 
 	// One array decides where every bar is. `bars[].t` is written from it below rather than
@@ -342,9 +361,11 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// earlier ones - so a bridge that wanders somewhere harmonic cannot fake it, and only
 	// when both readings are confident: a chroma correlation under 0.55 is a guess, and a
 	// palette answering a guessed modulation is worse than one answering nothing.
+	// Read off the PRE-consolidation table: a merged final statement can span both keys,
+	// which drags its correlation under the confidence bar on exactly the songs that lift.
 	let keyChangeBar = -1;
 	{
-		const dropish = plan.segments.filter(
+		const dropish = preConsolidation.filter(
 			(s) => s.kind === 'drop' || s.kind === 'chorus'
 		);
 		const last = dropish[dropish.length - 1];
@@ -494,6 +515,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		},
 		bars: barRows,
 		sections,
+		rawSectionCount,
 		moments: buildMoments(barRows, sections),
 		beats: Array.from(grid.beats, round3),
 		envelopes: {

@@ -347,7 +347,12 @@ export function arrange(
 		biggestStep = Math.max(biggestStep, segEnergy[i] - segEnergy[i - 1]);
 		biggestKickStep = Math.max(biggestKickStep, kit[i].kick - kit[i - 1].kick);
 	}
-	const hasDrops = biggestStep >= DROP_STEP || (audible && biggestKickStep >= DROP_KICK_STEP);
+	// Both arms behind `audible`, not just the kick one: a drop is a rhythmic impact, and
+	// a track the drum detector heard NOTHING in cannot have one however its strings swell
+	// - a beatless ambient piece with 18 energy-stepped "drops" was the judged failure.
+	// `audible` is the q90-based reading above; a single hallucinated onset stays false.
+	const hasDrops =
+		audible && (biggestStep >= DROP_STEP || biggestKickStep >= DROP_KICK_STEP);
 
 	const body = median(segEnergy);
 	const loudLevel = Math.max(quantile(segEnergy, 0.7), Math.max(...segEnergy) * 0.82);
@@ -835,10 +840,10 @@ function snapToPhrases(
 	for (let i = segments.length - 1; i > 0; i--) {
 		if (segments[i].kind !== segments[i - 1].kind) continue;
 		if (segments[i].group !== segments[i - 1].group) continue;
-		// And never past this, however alike two neighbours are. A passage that runs longer
-		// than four phrases is an arrangement rather than a section, and handing the show one
-		// cue for it means the room does not move for ninety seconds. The engine re-subdivides
-		// at sixteen bars anyway, so a longer span only removes the analyser's say in where.
+		// And never past this here: this early merge runs before the vocabulary settles, so
+		// it only reunites confident repeat-group halves. The consolidation pass at the end
+		// of the pipeline is the one allowed to read a longer run as one section, because it
+		// weighs seam arrivals and cross-seam material, which do not exist yet at this point.
 		if (segments[i].endBar - segments[i - 1].startBar > MAX_MERGED_BARS) continue;
 		segments[i - 1].endBar = segments[i].endBar;
 		segments.splice(i, 1);

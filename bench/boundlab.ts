@@ -15,7 +15,7 @@ import {
 	similarityMatrix,
 	type BoundaryMove
 } from '../packages/analysis/src/structure.ts';
-import { debugArrivals } from '../packages/analysis/src/structure.ts';
+import { arrivalStrengths } from '../packages/analysis/src/structure.ts';
 
 /**
  * Show the segmenter's boundaries next to the per-bar arrival evidence, so a boundary that
@@ -83,7 +83,7 @@ console.log('refined bounds:', refined.join(' '));
 console.log('moves:', moves.map((m) => `${m.from}->${m.to}`).join(' ') || '(none)');
 console.log('');
 console.log('bar  arrival   rms    floor  kicks');
-const arrivals = debugArrivals(bars, rawKicks);
+const arrivals = arrivalStrengths(bars, rawKicks);
 for (let b = Math.max(1, from); b < Math.min(bars.count, to); b++) {
 	const mark = refined.includes(b) ? ' <== boundary' : rough.includes(b) ? ' (rough)' : '';
 	console.log(

@@ -41,12 +41,16 @@ const MIN_SECTIONS = 10;
 
 export function gridTrust(analysis: TrackAnalysis): GridTrust {
 	const minutes = analysis.duration / 60;
+	// The PRE-consolidation count where the analysis carries one: fragmentation is a fact
+	// about what the segmenter heard, and a wreck that merged into a tidy table is still
+	// a wreck - the merge hid the symptom, not the broken grid underneath it.
+	const sectionCount = analysis.rawSectionCount ?? analysis.sections.length;
 	// Too short to fragment meaningfully, and too short for lounge to improve on anything.
-	if (minutes < 1 || analysis.sections.length < MIN_SECTIONS) {
+	if (minutes < 1 || sectionCount < MIN_SECTIONS) {
 		return { trusted: true, reasons: [] };
 	}
 
-	const perMinute = analysis.sections.length / minutes;
+	const perMinute = sectionCount / minutes;
 	const meter = analysis.tempo.meterConfidence;
 	const halfBars = analysis.tempo.beatsPerBar === 2;
 

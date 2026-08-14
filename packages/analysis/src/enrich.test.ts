@@ -78,6 +78,24 @@ describe('mapGenres', () => {
 	it('answers null when nothing matches', () => {
 		expect(mapGenres(['Spoken Word']).family).toBeNull();
 	});
+
+	it('strikes the Folk, World, & Country parent but keeps every informative one', () => {
+		// The judged failure: effnet heard Get Lucky as African/Soukous and the PARENT
+		// voted the funk record into the ballad drawer (flash budget zero, half motion).
+		const gotLucky = mapGenres([
+			'Pop',
+			'Folk, World, & Country African',
+			'Folk, World, & Country Soukous',
+			'Reggae Reggae-Pop'
+		]);
+		expect(gotLucky.family).not.toBe('ballad');
+		// "Hip Hop Trap" must keep its parent: stripped to "Trap" it votes bass.
+		expect(mapGenres(['Hip Hop Trap', 'Hip Hop Cloud Rap', 'Hip Hop Gangsta']).family).toBe(
+			'hiphop'
+		);
+		// A genuine folk tag without the Discogs parent still reads ballad.
+		expect(mapGenres(['Folk']).family).toBe('ballad');
+	});
 });
 
 describe('publishedLevel', () => {

@@ -14,16 +14,24 @@ import {
 } from './vocabulary.ts';
 
 describe('speaksClub', () => {
-	it('follows the genre family when there is one', () => {
-		expect(speaksClub('techno', false)).toBe(true);
-		expect(speaksClub('bass', false)).toBe(true);
-		expect(speaksClub('pop', true)).toBe(false);
-		expect(speaksClub('rock', true)).toBe(false);
+	it('follows the genre family when the record corroborates it', () => {
+		expect(speaksClub('techno', 1.0)).toBe(true);
+		// Halftime bass sits near half the four-on-the-floor rate and keeps its drops.
+		expect(speaksClub('bass', 0.5)).toBe(true);
+		expect(speaksClub('pop', 1.0)).toBe(false);
+		expect(speaksClub('rock', 1.0)).toBe(false);
+	});
+
+	it('refuses the club vocabulary when the floor never kicks, whatever the tag says', () => {
+		// The judged failure: a piano ballad filed as house got six kickless "drops".
+		expect(speaksClub('house', 0.0)).toBe(false);
+		expect(speaksClub('ambient', 0.0)).toBe(false);
+		expect(speaksClub('ambient', 0.55)).toBe(true);
 	});
 
 	it('falls back to the four-on-the-floor signature when unidentified', () => {
-		expect(speaksClub(null, true)).toBe(true);
-		expect(speaksClub(null, false)).toBe(false);
+		expect(speaksClub(null, 0.85)).toBe(true);
+		expect(speaksClub(null, 0.5)).toBe(false);
 	});
 });
 
