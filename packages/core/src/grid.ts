@@ -128,13 +128,3 @@ export function nearestPhraseBar(bar: number, anchorBar: number): number {
 	return bar - down <= up - bar ? down : up;
 }
 
-/**
- * The first phrase bar strictly after `bar`.
- *
- * What punctuation inside a long section is counted from. Counting from the section's own start
- * instead puts every hit at the same offset from a boundary that is itself allowed to sit off
- * the grid, so the room answers a downbeat nobody is counting to.
- */
-export function nextPhraseBar(bar: number, anchorBar: number): number {
-	return bar - phraseOffset(bar, anchorBar) + PHRASE_BARS;
-}

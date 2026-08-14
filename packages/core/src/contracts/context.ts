@@ -34,24 +34,6 @@ export type GenreFamily =
 	| 'latin'
 	| 'disco';
 
-export const GENRE_FAMILIES: readonly GenreFamily[] = [
-	'techno',
-	'house',
-	'edm',
-	'trance',
-	'bass',
-	'pop',
-	'rock',
-	'metal',
-	'punk',
-	'hiphop',
-	'rnb',
-	'ballad',
-	'ambient',
-	'latin',
-	'disco'
-];
-
 export interface LyricLine {
 	/** Seconds from the start of the track. */
 	t: number;

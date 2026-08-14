@@ -139,31 +139,3 @@ export function detectMeter(bf: BeatFeatures): Meter {
 	};
 }
 
-/**
- * Which bar index starts a phrase, given where sections actually change.
- *
- * Taken from the boundaries rather than from novelty, because the whole point of the anchor
- * is that the arrangement's own changes land on it; deriving it from anything else leaves
- * every boundary a bar off the grid the cues are held to.
- */
-export function fitPhraseAnchor(
-	boundaryBars: readonly number[],
-	phraseBars: number,
-	barCount: number
-): number {
-	if (boundaryBars.length === 0) return 0;
-	let best = 0;
-	let bestHits = -1;
-	for (let anchor = 0; anchor < phraseBars; anchor++) {
-		let hits = 0;
-		for (const b of boundaryBars) {
-			if (b <= 0 || b >= barCount) continue;
-			if ((((b - anchor) % phraseBars) + phraseBars) % phraseBars === 0) hits++;
-		}
-		if (hits > bestHits) {
-			bestHits = hits;
-			best = anchor;
-		}
-	}
-	return best;
-}

@@ -11,7 +11,6 @@ export type {
 export type { SectionKind, ShowFrame, Band as BandType } from './contracts/frame.ts';
 export {
 	BAND_EDGES_HZ,
-	BAND_NAMES,
 	Band,
 	NUM_BANDS,
 	SECTION_KINDS,
@@ -30,7 +29,7 @@ export type {
 	RenderCtx
 } from './contracts/effect.ts';
 export { LAYER_ROLES } from './contracts/effect.ts';
-export type { Palette, ShowPalette, SlotName } from './contracts/palette.ts';
+export type { Palette, ShowPalette } from './contracts/palette.ts';
 export { PALETTE_ANCHORS, SLOT } from './contracts/palette.ts';
 export type {
 	BarRow,
@@ -47,7 +46,7 @@ export type {
 } from './contracts/analysis.ts';
 export { ANALYSIS_VERSION } from './contracts/analysis.ts';
 export type { GenreFamily, LyricLine, TrackContext } from './contracts/context.ts';
-export { CONTEXT_VERSION, GENRE_FAMILIES, emptyContext } from './contracts/context.ts';
+export { CONTEXT_VERSION, emptyContext } from './contracts/context.ts';
 export { decodeBase64, encodeBase64 } from './base64.ts';
 export type {
 	Cue,
@@ -83,7 +82,6 @@ export {
 	barTimeAt,
 	hitSeconds,
 	nearestPhraseBar,
-	nextPhraseBar,
 	onPhraseGrid,
 	phraseOffset
 } from './grid.ts';

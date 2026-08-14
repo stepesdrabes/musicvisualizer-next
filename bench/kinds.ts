@@ -85,39 +85,6 @@ export const KIND_SONG: Record<string, SectionKind> = {
 	silence: 'void'
 };
 
-/** The seven club kinds, in a fixed order so a confusion matrix means the same thing everywhere. */
-export const KINDS_CLUB: SectionKind[] = [
-	'intro',
-	'groove',
-	'build',
-	'drop',
-	'breakdown',
-	'void',
-	'outro'
-];
-
-/** The nine, with the song kinds beside their club ancestors. */
-export const KINDS_SONG: SectionKind[] = [
-	'intro',
-	'groove',
-	'verse',
-	'build',
-	'drop',
-	'chorus',
-	'breakdown',
-	'void',
-	'outro'
-];
-
-/** Strip Harmonix's repeat suffixes: `verse3`, `chorus2` and `inst2` are all the same function. */
-export function kindOf(label: string, table: Record<string, SectionKind> = KIND_CLUB): SectionKind | null {
-	const base = label.toLowerCase().replace(/[0-9]+$/, '').trim();
-	return table[base] ?? null;
-}
-
-/** Below this the offset peak is not distinct and the upload is probably a different edit. */
-export const MIN_SHARPNESS = 1.15;
-
 /**
  * How far the decoded audio may differ in length from the master that was annotated.
  *

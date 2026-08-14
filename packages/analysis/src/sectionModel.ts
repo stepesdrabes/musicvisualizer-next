@@ -41,7 +41,3 @@ export function dropMargin(x: readonly number[]): number {
 	return z;
 }
 
-/** True when this section reads as a drop rather than a groove. */
-export function readsAsDrop(x: readonly number[]): boolean {
-	return dropMargin(x) > 0;
-}

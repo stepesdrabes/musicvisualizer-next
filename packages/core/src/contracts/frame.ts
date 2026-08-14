@@ -49,7 +49,6 @@ export type Band = (typeof Band)[keyof typeof Band];
 
 export const NUM_BANDS = 4;
 export const BAND_EDGES_HZ = [20, 100, 400, 2600, 16000] as const;
-export const BAND_NAMES = ['sub', 'low', 'mid', 'air'] as const;
 
 /**
  * How many log-spaced bands the per-frame spectrum carries.
@@ -119,7 +118,6 @@ export interface ShowFrame {
 	 */
 	pan: number;
 	panWidth: number;
-
 
 	kick: boolean;
 	snare: boolean;

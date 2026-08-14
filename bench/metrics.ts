@@ -194,17 +194,6 @@ export function continuity(ref: readonly number[], est: readonly number[]): Cont
  */
 const METRICAL_FACTORS = [1 / 3, 1 / 2, 2 / 3, 1, 3 / 2, 2, 3];
 
-export function tempoAccuracy(
-	refBpm: number,
-	estBpm: number,
-	tol = TEMPO_TOL
-): { acc1: boolean; acc2: boolean } {
-	if (!(refBpm > 0) || !(estBpm > 0)) return { acc1: false, acc2: false };
-	const acc1 = Math.abs(estBpm - refBpm) / refBpm <= tol;
-	const acc2 = METRICAL_FACTORS.some((m) => Math.abs(estBpm - refBpm * m) / (refBpm * m) <= tol);
-	return { acc1, acc2 };
-}
-
 export interface BeatScores {
 	f: number;
 	cmlC: number;

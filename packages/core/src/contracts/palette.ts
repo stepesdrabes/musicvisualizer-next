@@ -33,8 +33,6 @@ export const SLOT = {
 	accentDeep: 0.94
 } as const;
 
-export type SlotName = keyof typeof SLOT;
-
 /** Hues in HSV degrees. Two hues 150-180 apart plus white; a third competing hue muds. */
 export interface ShowPalette {
 	name?: string;
