@@ -147,6 +147,55 @@ Wait for 2-3 more examples before changing the rule; the judge files name the ex
   but it does not measure per-family saturation - the scratch usage probe should graduate
   into bench/ if saturation work continues.
 
+## Tried and rolled back: the learned section labeller (2026-08-14)
+
+Section 2 above describes the head as remaining work. It was built, shipped behind a
+background re-read, judged in the room against two other builds, and **rolled back**. Do not
+re-propose it from corpus scores alone.
+
+What it did to a trance track, same grid both ways:
+
+- head: `breakdown x6, groove x3` - no intro, no build, no drop anywhere
+- rules: `intro, groove, breakdown, build, drop, groove, breakdown, build, drop`
+
+Per track against annotated ground truth it cut single-label dominance 58.1% -> 43.7% on club
+material with nothing degenerate in 25, and did the reverse on song material, 43.7% -> 51.9%,
+two of 25 coming back one label end to end.
+
+**Why the bench said otherwise, which is the part worth keeping:**
+
+- `structscore`'s `base=` column collapses verse onto groove and chorus onto drop, so it is
+  structurally blind to a verse/chorus error. It read 53.1 -> 71.1. The EXACT figure was 22.5%
+  on song material against 87.1% on club, in the same output all along.
+- `structscore` passes no `TrackContext`, so its rules baseline runs with **no lyrics** where
+  the app has them, and `speaksClub` falls back to a kick heuristic that reads much of a pop
+  corpus as club. The head was measured against a crippled arm on the families it hurt.
+- Turning the head on turned the lyric promote/demote off - both lived in one branch in
+  `analyze.ts`. What names a chorus is the words repeating.
+
+The work is recoverable at tag `grok-work` and `origin/grok-work-branch`. What was kept from it:
+the sACN sink and the `packages/transport` rename, `bench/beatscore.ts` and
+`bench/export-beatthis.py`, and the `adtof.ts` onnxruntime fix.
+
+### Two checkpoint decisions, measured
+
+- **Keep Beat This `final0`, refuse the distilled `small0`.** On the 100-track GTZAN slice:
+  beat F 0.884 -> 0.873, downbeat F 0.722 -> 0.704, downbeat **CMLt 0.605 -> 0.558**. The
+  continuity number decides it - a constant grid fit and a bar phase are built on it, and every
+  cue here is addressed by bar. The measured gap is three times the paper's published one, so
+  quoting that figure would have undersold the cost. Re-ask with `bench/beatscore.ts --model`.
+- **If MusicFM is ever revisited, int8 (246 MB) is enough**: Harmonix 68.9 against fp32's 69.3,
+  Raveform 85.6 against 88.3, n=10 each.
+
+### Considered and not built
+
+Named so nobody proposes them cold: `bridge`/`inst`/`solo` as first-class kinds (a retrain, and
+`bench/kinds.ts` already maps `bridge -> breakdown` for song families on purpose); a tempo
+classifier as a third octave vote; N-bar autoloops when `gridTrust` fails; guided/template
+authoring modes ("change only the chorus" - author-ai has no scoping at all, the most
+interesting unbuilt item); a per-section colour script as an editable object; Key-CNN, refused
+on its AGPL-3.0 licence; a pooled MusicFM embedding as a continuous taste vector.
+
 ## Operational knowhow
 
 - **The full deploy loop** (any engine/effect change): quit app, `npm run bundle -w

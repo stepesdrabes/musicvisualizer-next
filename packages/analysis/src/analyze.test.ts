@@ -627,3 +627,32 @@ describe('trailing silence', () => {
 		expect(a.sections.some((s) => s.kind === 'void' && s.startBar >= 28)).toBe(false);
 	});
 });
+
+describe('re-reading a settled grid', () => {
+	/**
+	 * `reanalyse` re-runs the whole analysis rather than editing the stored table, because the
+	 * section kinds decide where events and moments are placed. That is only safe while feeding
+	 * the settled grid back reproduces it exactly: if this ever drifts, a re-read at a corrected
+	 * metrical level would silently change more than the level it was asked to change.
+	 */
+	it('reproduces itself from its own beats and bar times', () => {
+		const again = analyzeTrack({
+			mono: fixture.mono,
+			sampleRate: fixture.sampleRate,
+			duration: fixture.duration,
+			hash: 'test',
+			trackId: 'file-000000000000',
+			title: 'Synthetic Arrangement',
+			beats: analysis.beats,
+			downbeats: analysis.tempo.barTimes,
+			octaveGuard: false
+		});
+
+		expect(again.tempo.bpm).toBeCloseTo(analysis.tempo.bpm, 9);
+		expect(again.tempo.beatsPerBar).toBe(analysis.tempo.beatsPerBar);
+		expect(again.tempo.barTimes.length).toBe(analysis.tempo.barTimes.length);
+		expect(again.sections.map((s) => `${s.startBar}:${s.kind}`)).toEqual(
+			analysis.sections.map((s) => `${s.startBar}:${s.kind}`)
+		);
+	});
+});
