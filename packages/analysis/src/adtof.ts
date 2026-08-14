@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import * as ort from 'onnxruntime-node';
 import { RealFft } from './dsp/fft.ts';
 import { MODEL_DIR } from './paths.ts';
 import type { DrumStream } from './drums.ts';
@@ -154,14 +154,42 @@ function pickActivationPeaks(
 	return { frames: kept, heights: proc };
 }
 
+interface Session {
+	run(feeds: Record<string, unknown>): Promise<Record<string, { data: Float32Array }>>;
+	release?(): Promise<void>;
+}
+type TensorCtor = new (type: string, data: Float32Array, dims: number[]) => unknown;
+
+interface Ort {
+	InferenceSession: { create(path: string, opts: unknown): Promise<Session> };
+	Tensor: TensorCtor;
+}
+
+/**
+ * Resolve onnxruntime-node at runtime, out of a bundler's reach - the seam `beatthis.ts` and
+ * `genreModel.ts` already open, and for the same reason.
+ *
+ * A static import is analysable, and a bundler that inlines the package rewrites the require
+ * of its native addon into a stub that throws. Here that is silent rather than loud: `ingest`
+ * catches it, logs a fallback and analyses the kit with the band-flux detector instead, so a
+ * build that lost the drum model still produces a show - one whose kick and snare streams the
+ * picker, the hit placer and every `taste.kit` filter then read as the truth.
+ */
+function loadOrt(): Ort {
+	const require = createRequire(import.meta.url);
+	return require('onnxruntime-node') as Ort;
+}
+
 export class Adtof {
-	private readonly session: ort.InferenceSession;
+	private readonly session: Session;
+	private readonly Tensor: TensorCtor;
 	private readonly filters: Float32Array;
 	private readonly nBins: number;
 	private readonly fftBins: number;
 
-	private constructor(session: ort.InferenceSession) {
+	private constructor(session: Session, Tensor: TensorCtor) {
 		this.session = session;
+		this.Tensor = Tensor;
 		const fb = buildFilterbank();
 		this.filters = fb.filters;
 		this.nBins = fb.nBins;
@@ -172,16 +200,17 @@ export class Adtof {
 	static async create(): Promise<Adtof | null> {
 		const path = join(MODEL_DIR, MODEL_FILE);
 		if (!existsSync(path)) return null;
+		const ort = loadOrt();
 		const session = await ort.InferenceSession.create(path, {
 			// One analysis at a time, always: the beat tracker already takes every core it
 			// is offered, and two saturating graphs are slower than the same two in turn.
 			intraOpNumThreads: 0
 		});
-		return new Adtof(session);
+		return new Adtof(session, ort.Tensor);
 	}
 
 	async close(): Promise<void> {
-		await this.session.release();
+		await this.session.release?.();
 	}
 
 	/** `mono` must be 44.1 kHz: the filterbank is a property of the training frontend. */
@@ -205,7 +234,7 @@ export class Adtof {
 		}
 
 		const result = await this.session.run({
-			spectrogram: new ort.Tensor('float32', spec, [1, frames, this.nBins, 1])
+			spectrogram: new this.Tensor('float32', spec, [1, frames, this.nBins, 1]) as never
 		});
 		const act = result.activations.data as Float32Array;
 
