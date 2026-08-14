@@ -10,9 +10,11 @@ import { MODEL_DIR } from './paths.ts';
  *
  * Measured against the in-repo tracker on the same 100 annotated GTZAN tracks and the same
  * metrics: beat F 0.884 against 0.781, CMLt 0.805 against 0.627, downbeat F 0.722 against
- * 0.498. That downbeat figure is the reason it is here - the hand-built path tops out around
- * 0.64 even with perfect weights, because the bar phase is 97% of its headroom and no
- * reweighting of band energies reaches it.
+ * 0.498. Re-derive with `node bench/beatscore.ts` - these figures once outlived the harness
+ * that produced it and spent a while as a claim nothing could check. That downbeat figure is
+ * the reason it is here - the hand-built path tops out around 0.64 even with perfect
+ * weights, because the bar phase is 97% of its headroom and no reweighting of band
+ * energies reaches it.
  *
  * What it does NOT decide is the metrical level. On this project's own repertoire it and the
  * local tracker disagree about the tempo octave on seven of fifteen tracks, and a listening
@@ -231,10 +233,14 @@ export class BeatThis {
 	private session!: Session;
 	private Tensor!: TensorCtor;
 
-	static async create(): Promise<BeatThis> {
-		if (!modelsPresent()) await ensureModels();
+	/**
+	 * `file` is for the bench alone: an alternative checkpoint exported to the same graph, so
+	 * a swap can be measured rather than argued. Only the shipped name is ever fetched.
+	 */
+	static async create(file = 'beat_this.onnx'): Promise<BeatThis> {
+		if (file === 'beat_this.onnx' && !modelsPresent()) await ensureModels();
 		const ort = loadOrt();
-		const session = await ort.InferenceSession.create(join(modelDir(), 'beat_this.onnx'), {
+		const session = await ort.InferenceSession.create(join(modelDir(), file), {
 			executionProviders: ['cpu'],
 			graphOptimizationLevel: 'all'
 		});
