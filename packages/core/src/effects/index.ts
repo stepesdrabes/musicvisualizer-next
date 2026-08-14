@@ -68,6 +68,7 @@ import { riser } from './riser.ts';
 import { rollerChase } from './rollerChase.ts';
 import { shockwave } from './shockwave.ts';
 import { shutterCut } from './shutterCut.ts';
+import { silhouette } from './silhouette.ts';
 import { sineRoll } from './sineRoll.ts';
 import { slam } from './slam.ts';
 import { snareBlade } from './snareBlade.ts';
@@ -182,6 +183,7 @@ export const BUILT_IN_EFFECTS: readonly EffectDef[] = [
 	slam,
 	strobe,
 	chromaBurst,
+	silhouette,
 	colorBump,
 	shutterCut,
 	tideBloom

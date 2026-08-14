@@ -2,7 +2,7 @@ import type { EffectDef } from '../contracts/effect.ts';
 import { SLOT } from '../contracts/palette.ts';
 import { setSample } from '../color/palette.ts';
 import { clamp, lerp } from '../dsl/math.ts';
-import { BeatHold, PulseEnv } from '../dsl/env.ts';
+import { BeatHold, Presence, PulseEnv } from '../dsl/env.ts';
 import { INTENSITY, param } from './helpers.ts';
 
 /**
@@ -19,7 +19,10 @@ export const heartbeat: EffectDef = {
 		sections: ['groove', 'breakdown', 'build', 'drop'],
 		minBars: 4,
 		maxBars: 32,
-		peakReserved: false
+		peakReserved: false,
+		// A chest pulse is a kick gesture: over a passage whose floor is silent it reads
+		// as a metronome arguing with the record - two judged tracks said exactly that.
+		kit: 'kick'
 	},
 	params: [INTENSITY, param('depth', 'Pulse depth', 0.6)],
 	create(g) {
@@ -28,6 +31,10 @@ export const heartbeat: EffectDef = {
 		// The passage's own level, latched on the beat: `f.energy` is beat-resolution data the
 		// player interpolates per frame, so a brightness multiplied by it slides continuously.
 		const passage = new BeatHold(0.45);
+		// Timing stays on the bar grid; the kick grants permission to beat at all, and the
+		// pulse rises only to the envelope's own level, so a half-time floor gets a half-
+		// strength chest and a dropped-out kick rests the room within a couple of bars.
+		const kit = new Presence();
 		let lastBar = Number.NaN;
 		let firedDub = false;
 
@@ -36,21 +43,23 @@ export const heartbeat: EffectDef = {
 				lub.reset();
 				dub.reset();
 				passage.reset();
+				kit.reset();
 				lastBar = Number.NaN;
 				firedDub = false;
 			},
 			render(out, ctx) {
 				const { f, p, palette, hueShift, motion } = ctx;
 
+				const playing = kit.update(f.kickEnv, f.dt, f.beatPeriod);
 				if (f.barIndex !== lastBar) {
 					lastBar = f.barIndex;
 					firedDub = false;
-					lub.fire(0.65);
+					if (playing > 0.08) lub.fire(0.65 * playing);
 				}
 				// The second, stronger beat lands three 16ths in: the "BUM".
 				if (!firedDub && f.barPhase >= 0.1875) {
 					firedDub = true;
-					dub.fire(1);
+					if (playing > 0.08) dub.fire(playing);
 				}
 				const v = Math.max(
 					lub.decay(f.dt, f.beatPeriod, 1.2 / Math.max(0.05, motion)),
