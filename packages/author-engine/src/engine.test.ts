@@ -160,6 +160,55 @@ describe('punctuation', () => {
 		}
 	});
 
+	it('lets the outro keep the bed it inherited, thinned to nothing else', () => {
+		// An ending is a release, not a scene change: the outro wears the previous cue's
+		// bed and everything else leaves.
+		const outro = analysis.sections[analysis.sections.length - 1];
+		expect(outro.kind).toBe('outro');
+		const cue = show.cues.find((c) => c.bar === outro.startBar)!;
+		const before = [...show.cues].reverse().find((c) => c.bar < outro.startBar)!;
+		expect(cue.layers.bed?.effect).toBe(before.layers.bed?.effect);
+		expect(cue.layers.rhythm).toBeUndefined();
+		expect(cue.layers.transient).toBeUndefined();
+	});
+
+	it('the button lints on a final section that is not a whole number of phrases', () => {
+		// The American Idiot shape: a cold ending whose final bar sits on no phrase grid.
+		// The finish line is an anchor - a lint rejection here deletes the whole show.
+		const cold: TrackAnalysis = structuredClone(analysis);
+		const outro = cold.sections.pop()!;
+		const last = cold.sections[cold.sections.length - 1];
+		// Trim two bars so the drop runs 96-126: thirty bars, not a phrase multiple, and
+		// 126 is off the mod-4 fallback grid as well.
+		const endBar = outro.endBar - 2;
+		last.endBar = endBar;
+		last.endTime = cold.bars[endBar - 1].t + 1;
+		cold.bars = cold.bars.filter((row) => row.bar < endBar);
+		for (const row of cold.bars) if (row.bar >= outro.startBar) row.section = last.kind;
+		cold.bars[endBar - 1].kicks = 2;
+		const ended = composeShow(cold);
+		expect(ended.hits.some((h) => h.bar === endBar - 1)).toBe(true);
+		const coldVerdict = lintShow(ended, { analysis: cold, effects });
+		expect(coldVerdict.errors).toEqual([]);
+	});
+
+	it('marks a cold ending with the button, in rhythm and kit-honest', () => {
+		// Surgery: delete the outro so the track ends inside its loudest material.
+		const cold: TrackAnalysis = structuredClone(analysis);
+		const outro = cold.sections.pop()!;
+		const last = cold.sections[cold.sections.length - 1];
+		last.endBar = outro.endBar;
+		last.endTime = outro.endTime;
+		for (const row of cold.bars) if (row.bar >= outro.startBar) row.section = last.kind;
+		const finalBar = last.endBar - 1;
+		cold.bars[finalBar].kicks = 2;
+		const ended = composeShow(cold);
+		const button = ended.hits.find((h) => h.bar === finalBar);
+		expect(button?.kind).toBe('slam');
+		// And the fixture's own outro ending plans no button: a release is not a hit.
+		expect(show.hits.some((h) => h.bar >= outro.startBar - 1)).toBe(false);
+	});
+
 	it('spends one flash in the whole show, and spends it late', () => {
 		const flashes = show.hits.filter((h) => h.kind === 'strobe' || h.kind === 'blackout');
 		expect(flashes.length).toBeLessThanOrEqual(1);

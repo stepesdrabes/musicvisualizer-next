@@ -224,7 +224,17 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 					cue.bar
 				);
 			}
+			// An outro keeps the bed the room was already wearing - the thinning is the
+			// gesture, and demanding outro eligibility of it would force the look-change
+			// the inheritance exists to prevent. Only the bed, and only when it really is
+			// the previous cue's: anything else in an outro still answers for its sections.
+			const inheritedOutroBed =
+				cue.section === 'outro' &&
+				role === 'bed' &&
+				i > 0 &&
+				cues[i - 1].layers.bed?.effect === spec.effect;
 			if (
+				!inheritedOutroBed &&
 				!def.taste.sections.includes(cue.section) &&
 				!def.taste.sections.includes(sectionBase(cue.section))
 			) {
@@ -277,8 +287,11 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 		}
 	}
 
-	// Your best trick loses value with every repeat.
+	// Your best trick loses value with every repeat. Except on the way out: an outro's
+	// sameness IS the gesture - the look thins and holds - and warning on it pushes an
+	// agent toward exactly the look-change the inheritance forbids.
 	for (let i = 1; i < stacks.length; i++) {
+		if (cues[i].section === 'outro' && cues[i - 1].section === 'outro') continue;
 		if (stacks[i] && stacks[i] === stacks[i - 1]) {
 			warn(
 				'repeated-stack',
@@ -534,6 +547,11 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 			onPhrase(hit.bar) ||
 			onPhrase(end) ||
 			anchoredStart.has(end) ||
+			// The finish line: a hit that ends exactly where the record does is anchored to
+			// the one boundary every listener hears, whatever the phrase arithmetic says of
+			// a final partial phrase. This is what lets the button exist on a track whose
+			// last section is not a whole number of phrases.
+			end >= analysis.bars.length ||
 			(analysis.bars[hit.bar]?.events.includes('crash') ?? false);
 		if (ok) anchoredStart.add(hit.bar);
 		else {

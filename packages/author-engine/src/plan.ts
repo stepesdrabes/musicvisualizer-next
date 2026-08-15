@@ -197,7 +197,19 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		// the first time the seed reshuffled that way. The peak-only version of this rule
 		// was the same lesson learned half-way.
 		const carrier = bare || slot.span === peakSpan || sectionBase(slot.section) === 'drop';
-		add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid, exclude }));
+		// An ending is a release, not a scene change: no documented practice makes the
+		// ENTRY into an outro an event, and the judged word for the fresh-look version was
+		// "cut in way too aggresively". The outro keeps the bed the room was already
+		// wearing and everything else leaves - the change IS the thinning. Fresh draws
+		// only when there is nothing to inherit, or the inherited bed cannot hold a room
+		// alone (beds are written to sit under something).
+		const inheritedBed =
+			slot.section === 'outro' && cues.length > 0 ? cues[cues.length - 1].layers.bed : undefined;
+		if (inheritedBed) {
+			layers.bed = { ...inheritedBed };
+		} else {
+			add('bed', picker.pick({ drums, role: 'bed', section: slot.section, lengthBars: length, energy: bedEnergy, mustCarry: carrier, bare, group: slot.index === 0 ? slot.span.group : undefined, prefer: signatures, avoid, exclude }));
+		}
 		switch (sectionBase(slot.section)) {
 			case 'void':
 				break;
@@ -211,6 +223,16 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 				// This used to be unfiltered, because requiring it once left most of these cues
 				// with no accent at all: only a single accent in the catalog qualified. There are
 				// now enough that the rule can be what it should always have been.
+				//
+				// An outro wearing an inherited bed that can hold the room takes nothing new at
+				// all: the thinning is the gesture, and a fresh texture would be the look-change
+				// the inheritance exists to prevent.
+				if (
+					inheritedBed &&
+					effects.find((e) => e.id === inheritedBed.effect)?.taste.carries !== false
+				) {
+					break;
+				}
 				add('accent', picker.pick({ drums, role: 'accent', section: slot.section, lengthBars: length, energy: slot.energy, mustCarry: true, bare, prefer: signatures, avoid, exclude }));
 				break;
 
@@ -925,6 +947,38 @@ function planHits(
 						? 'the drop lands'
 						: 'the arrival, in colour - the kit sat this one out'
 		});
+	}
+
+	// The button: a track that ends cold inside loud material gets its last downbeat
+	// marked - hold the look, hit the final bar, and the show is OVER rather than merely
+	// out of bars. Theatre practice, and the judged word for its absence was "no outro".
+	// Only for cold endings: a carved outro or a quiet tail is a release already, and a
+	// button on top of a decay is a hit after the band has left. Placed BEFORE the
+	// flashes and the phrase punctuation, because everything later yields through its own
+	// clear() - placed last, a routine phrase bump two bars out suppressed the one hit
+	// the ending exists for. Kit honesty as everywhere, and anthem honesty too: a chorus
+	// that arrives by lift ends by lift, so only slam treatments slam the button.
+	const last = analysis.sections[analysis.sections.length - 1];
+	if (last && peakTreatment !== 'swell') {
+		const lastBars = Math.max(1, last.endBar - last.startBar);
+		const pounding =
+			analysis.bars
+				.slice(last.startBar, last.endBar)
+				.reduce((a, row) => a + row.kicks, 0) /
+				(lastBars * beatsPerBar) >=
+			0.8;
+		const cold = sectionBase(last.kind) === 'drop' || (sectionBase(last.kind) === 'groove' && pounding);
+		const finalBar = last.endBar - 1;
+		if (cold && clear(finalBar, finalBar + 1)) {
+			const lands = (analysis.bars[finalBar]?.kicks ?? 0) > 0;
+			const anthem = last.kind === 'chorus' && peakTreatment !== 'slam';
+			hits.push({
+				bar: finalBar,
+				kind: lands && !anthem ? 'slam' : 'bump',
+				beats: bars(1),
+				note: 'the button - the record ends and the room says so'
+			});
+		}
 	}
 
 	// The peak first, then by how loud the passage is, so the flashes land on the biggest
