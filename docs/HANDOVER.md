@@ -45,12 +45,24 @@ Shipped at ANALYSIS_VERSION 17 + SHOW_VERSION 13 (2026-08-14 late, not yet judge
   practice). It wins 4 of 28 mastered peaks on the judged corpus by seed tie-break
   alone, no preference wiring.
 
-Round 2, designed but NOT started: the early-boundary skew (22 early vs 7 late notes;
-fill-vs-arrival scoring in `arrivalStrength`, the hook snap's -2/+1 asymmetry - see
-diagnosis.md RC2) paired with endings (finish-line anchoring, button/decay/fade by
-terminal envelope, afterglow, no look-change at outro start - research-endings.md).
-Round 3 candidates: lyric-assertive chorus naming (RC5 - the hook windows measure
-better than the 0.12 demotion threshold uses), context provenance, exposure damper.
+Round 2 SHIPPED at v18/v14 (2026-08-15, gate green: 0/0/100% over regenerated
+cache114, 46/46 library tracks lint-clean): the snap physics veto (EARFQUAKE's 2-bar
+early drags fixed; earlybars instrument with 15 complaint pairs + 10 sentinels is
+permanent), peakStyle treatment matching on masters (Až na měsíc's blinder punch
+restored; pool membership pinned by test), outro bed inheritance + the cold-ending
+button (finish-line anchor taught to the linter after an adversarial review caught the
+button lint-rejecting its own flagship tracks - see round2-record.md for all 14
+findings and dispositions). settleWeight ships 0: a documented negative with the
+coupled-thresholds warning in the docblock.
+
+Round 3 queue, in order: the remaining 13 marked pairs (refine-margin and DP class;
+instrument ready), relative arrival floor AFTER a metrical-level check on Back In
+Black (its cache grid is double-time - the over-sectioning may be grid-class), ballad
+endings (T2 ring-out decay, T3 fade tracking, T4 afterglow - T5's queue seam is
+app-side), lyric-assertive chorus naming (RC5), context provenance + CONTEXT_VERSION,
+the peak-section ACCENT pool (Safír's discoBall half of the peak cluster), exposure
+damper. Named risks with fixtures wanted: band-lags-singer veto inversion, ring-out
+kick pollution, swell cold endings.
 
 ## Where things stand
 
