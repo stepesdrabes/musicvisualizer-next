@@ -12,6 +12,7 @@
 	import type {
 		AuthorEffort,
 		AuthorEvent,
+		JudgedSection,
 		Judgement,
 		LibraryEntry,
 		LoadState,
@@ -103,6 +104,14 @@
 	/** By track id. Loaded once when the panel first opens; writes go through saveJudgement. */
 	let judgements = $state<Record<string, Judgement>>({});
 	let judgementsLoaded = false;
+	/** Hand-drawn section editing: the drawer's section lane grows handles while armed. */
+	let sectionEditing = $state(false);
+	let sectionDraft = $state<JudgedSection[] | null>(null);
+	/** The show composed from the hand-drawn map while previewing it; null otherwise. */
+	let previewShow = $state<Show | null>(null);
+	/** Where the real show waits while the preview is on stage. Not reactive: only restore reads it. */
+	let shelvedShow: Show | null = null;
+	let previewFetching = false;
 
 	// Read once: the shell injects it before any of this runs and never changes it.
 	const shell = readShell();
@@ -279,9 +288,8 @@
 		return pick(libraryToCandidate(entry), how);
 	}
 
-	async function toggleJudge(open: boolean) {
-		judgeOpen = open;
-		if (!open || judgementsLoaded) return;
+	async function loadJudgements() {
+		if (judgementsLoaded) return;
 		const res = await fetch('/api/judge');
 		if (!res.ok) return;
 		const data = (await res.json()) as { judgements: Judgement[] };
@@ -289,14 +297,136 @@
 		judgementsLoaded = true;
 	}
 
+	async function toggleJudge(open: boolean) {
+		judgeOpen = open;
+		if (open) await loadJudgements();
+	}
+
 	async function saveJudgement(j: Judgement) {
-		judgements = { ...judgements, [j.trackId]: j };
+		// Two writers share the file: the panel never carries `sections`, the section editor
+		// carries only it. Merging through the map keeps either from erasing the other's
+		// field - which requires the map to actually hold what is on disk, so a save racing
+		// the first load waits for it rather than merging against nothing.
+		await loadJudgements();
+		const prev = judgements[j.trackId];
+		const merged: Judgement = { ...j, sections: j.sections !== undefined ? j.sections : (prev?.sections ?? null) };
+		judgements = { ...judgements, [j.trackId]: merged };
 		await fetch('/api/judge', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ judgement: j })
+			body: JSON.stringify({ judgement: merged })
 		});
 	}
+
+	/** The draft the editor starts from: the saved hand-drawn map, else the analysis as-is. */
+	function seedSections(): JudgedSection[] | null {
+		const saved = trackId ? judgements[trackId]?.sections : null;
+		if (saved?.length) return saved.map((s) => ({ ...s }));
+		return seedFromAnalysis();
+	}
+
+	async function armSectionEdit(on: boolean) {
+		if (!on) {
+			sectionEditing = false;
+			sectionDraft = null;
+			return;
+		}
+		await loadJudgements();
+		sectionDraft = seedSections();
+		if (!sectionDraft) return;
+		sectionEditing = true;
+		timelineOpen = true;
+	}
+
+	function saveSections(list: JudgedSection[]) {
+		if (!trackId) return;
+		sectionDraft = list;
+		const prev = judgements[trackId];
+		void saveJudgement({
+			trackId,
+			title: meta?.title ?? prev?.title ?? '',
+			rating: prev?.rating ?? null,
+			tags: prev?.tags ?? [],
+			notes: prev?.notes ?? [],
+			comment: prev?.comment ?? '',
+			sections: list,
+			analysisHash: analysis?.hash ?? prev?.analysisHash ?? null,
+			showSeed: show?.seed ?? prev?.showSeed ?? null,
+			authoredBy: show?.authoredBy ?? prev?.authoredBy ?? null,
+			updatedAt: 0
+		});
+	}
+
+	function discardSections() {
+		if (!trackId) return;
+		// The preview's toggle lives on the hand-drawn row, which a discard removes; left
+		// armed it would play a show whose map no longer exists, with no way back.
+		void togglePreview(false);
+		const prev = judgements[trackId];
+		if (prev) void saveJudgement({ ...prev, sections: null });
+		sectionDraft = sectionEditing ? seedFromAnalysis() : null;
+	}
+
+	function seedFromAnalysis(): JudgedSection[] | null {
+		if (!analysis) return null;
+		return analysis.sections.map((s) => ({
+			kind: s.kind,
+			startTime: s.startTime,
+			endTime: s.endTime,
+			startBar: s.startBar,
+			endBar: s.endBar
+		}));
+	}
+
+	/**
+	 * Hear the show the hand-drawn map would produce. The server composes it from the
+	 * judgement's sections and nothing is written, so arming swaps the show on stage and
+	 * disarming puts the cached one back; the viz applies either mid-play, the same way a
+	 * reroll does.
+	 */
+	async function togglePreview(on: boolean) {
+		if (!viz) return;
+		if (!on) {
+			if (!previewShow) return;
+			// Something else may have replaced the show while previewing; only put the
+			// shelved one back when the preview is still the one on stage.
+			if (show === previewShow) {
+				show = shelvedShow;
+				if (show && analysis) viz.loadShow(analysis, show);
+				else viz.clearShow();
+			}
+			previewShow = null;
+			shelvedShow = null;
+			return;
+		}
+		if (!trackId || !analysis || previewShow || previewFetching) return;
+		previewFetching = true;
+		try {
+			const res = await fetch(`/api/track/${trackId}/preview-arrangement`);
+			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
+			const data = (await res.json()) as { show: Show };
+			shelvedShow = show;
+			previewShow = data.show;
+			show = data.show;
+			viz.loadShow(analysis, data.show);
+			note(`previewing the hand-drawn arrangement: ${data.show.cues.length} cues`);
+		} catch (e) {
+			note(`ERROR ${(e as Error).message}`);
+		} finally {
+			previewFetching = false;
+		}
+	}
+
+	// A hand-drawn map belongs to one track; the mode does not survive a track change.
+	// Neither does the preview: the incoming track's own show is already on stage, so only
+	// the bookkeeping is dropped here.
+	$effect(() => {
+		void trackId;
+		sectionEditing = false;
+		sectionDraft = null;
+		previewShow = null;
+		shelvedShow = null;
+	});
 
 	/**
 	 * The next analysed library track without a verdict, oldest first, so working the corpus
@@ -956,9 +1086,14 @@
 				judgement={trackId ? (judgements[trackId] ?? null) : null}
 				judged={Object.keys(judgements).length}
 				total={library.filter((e) => e.analysed).length}
+				editingSections={sectionEditing}
+				previewingArrangement={previewShow !== null}
 				onsave={(j) => void saveJudgement(j)}
 				onnext={nextUnjudged}
 				onseek={(t) => viz?.seek(t)}
+				oneditsections={(on) => void armSectionEdit(on)}
+				ondiscardsections={discardSections}
+				onpreviewarrangement={(on) => void togglePreview(on)}
 				onclose={() => (judgeOpen = false)} />
 		{:else if rightOpen}
 			<Inspector
@@ -1010,7 +1145,10 @@
 			position={readout.position}
 			duration={readout.duration}
 			bind:view={laneView}
-			onseek={(t) => viz?.seek(t)} />
+			onseek={(t) => viz?.seek(t)}
+			editing={sectionEditing}
+			sections={sectionDraft}
+			onsections={saveSections} />
 	{/if}
 </div>
 

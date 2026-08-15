@@ -14,7 +14,30 @@ export interface MomentNote {
 	t: number;
 	/** The bar under the playhead at that moment; null when no analysis was loaded. */
 	bar: number | null;
+	/**
+	 * A hard hit belongs at (or was wrong at) this moment. Absent on a plain mark; the free
+	 * text says which way the complaint runs, the kind makes it minable.
+	 */
+	hit?: 'strobe' | 'slam' | 'blackout' | null;
 	text: string;
+}
+
+/**
+ * One section of the owner's hand-drawn ground-truth map.
+ *
+ * Times are the authoritative coordinates: a re-analysis moves every bar, and the whole
+ * point of a hand-drawn map is to outlive the grid it corrects. Bars are carried beside
+ * them, computed on the grid named by the judgement's `analysisHash`, so a mining session
+ * can read the map against the blob it was drawn over without redoing the arithmetic.
+ */
+export interface JudgedSection {
+	/** Section vocabulary word; a plain string so old maps survive vocabulary changes. */
+	kind: string;
+	startTime: number;
+	endTime: number;
+	/** Fractional bars on the pinned grid - a hand mark is allowed to sit mid-bar. */
+	startBar: number;
+	endBar: number;
 }
 
 /**
@@ -33,6 +56,8 @@ export interface Judgement {
 	tags: string[];
 	notes: MomentNote[];
 	comment: string;
+	/** The hand-drawn section map, when the owner has adjusted one; absent otherwise. */
+	sections?: JudgedSection[] | null;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;

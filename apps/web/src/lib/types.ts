@@ -160,7 +160,17 @@ export type AuthorEvent =
 export interface MomentNote {
 	t: number;
 	bar: number | null;
+	hit?: 'strobe' | 'slam' | 'blackout' | null;
 	text: string;
+}
+
+/** Mirrors $lib/server/judge JudgedSection. Times are authoritative; bars are fractional. */
+export interface JudgedSection {
+	kind: string;
+	startTime: number;
+	endTime: number;
+	startBar: number;
+	endBar: number;
 }
 
 /** Mirrors $lib/server/judge Judgement. */
@@ -171,6 +181,7 @@ export interface Judgement {
 	tags: string[];
 	notes: MomentNote[];
 	comment: string;
+	sections?: JudgedSection[] | null;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;

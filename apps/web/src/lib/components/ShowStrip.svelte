@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import type { Show, TrackAnalysis } from '@mv/core';
+	import { SECTION_KINDS, barAtTime, barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
 	import {
 		FULL_WINDOW,
 		buildTimeline,
@@ -15,6 +15,7 @@
 		type TimeWindow
 	} from '$lib/timeline.ts';
 	import { clock, titleCase } from '$lib/format.ts';
+	import type { JudgedSection } from '$lib/types.ts';
 	import Icon from '$lib/ui/Icon.svelte';
 
 	let {
@@ -23,7 +24,10 @@
 		position,
 		duration,
 		view = $bindable(FULL_WINDOW),
-		onseek
+		onseek,
+		editing = false,
+		sections = null,
+		onsections = () => {}
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
@@ -32,6 +36,11 @@
 		/** Bound, because the scrubber above draws the same range and the drawer unmounts. */
 		view?: TimeWindow;
 		onseek: (t: number) => void;
+		/** Section editing: the lane grows handles and the draft below replaces the analysis. */
+		editing?: boolean;
+		/** The hand-drawn draft being edited; owned by the page, committed via onsections. */
+		sections?: JudgedSection[] | null;
+		onsections?: (s: JudgedSection[]) => void;
 	} = $props();
 
 	let host: HTMLDivElement | undefined = $state();
@@ -119,6 +128,104 @@
 		tip = { x: e.clientX - rect.left, title, lines };
 	}
 
+	// ---- Section editing ------------------------------------------------------------------
+	// The draft is owned by the page; a gesture works on local state for smoothness and
+	// commits once on release, so each drag is one save rather than a stream of them.
+
+	let drag = $state<{ boundary: number; t: number } | null>(null);
+	let picker = $state<{ index: number; x: number } | null>(null);
+
+	/** Snap to the beat grid: hand marks land on beats, never on wrong-bar rounding. */
+	function snapT(t: number): number {
+		const tempo = analysis?.tempo;
+		if (!tempo) return t;
+		const beats = Math.round(barAtTime(tempo, t) * tempo.beatsPerBar);
+		return barTimeAt(tempo, beats / tempo.beatsPerBar);
+	}
+
+	const beatLen = $derived(analysis ? analysis.tempo.beatPeriod : 0.25);
+
+	function timeFrom(e: { clientX: number }): number {
+		return fractionAt(view, across(e)) * duration;
+	}
+
+	function withBars(s: JudgedSection): JudgedSection {
+		const tempo = analysis?.tempo;
+		const bar = (t: number) => (tempo ? Math.round(barAtTime(tempo, t) * 100) / 100 : 0);
+		return { ...s, startBar: bar(s.startTime), endBar: bar(s.endTime) };
+	}
+
+	function commit(next: JudgedSection[]) {
+		onsections(next.map(withBars));
+	}
+
+	function handleDown(e: PointerEvent, boundary: number) {
+		if (!sections) return;
+		e.stopPropagation();
+		if (e.altKey) {
+			// Merge: the seam disappears and the left section absorbs the right one's span.
+			const next = sections.map((s) => ({ ...s }));
+			next[boundary - 1].endTime = next[boundary].endTime;
+			next.splice(boundary, 1);
+			commit(next);
+			return;
+		}
+		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+		drag = { boundary, t: sections[boundary].startTime };
+	}
+
+	function handleMove(e: PointerEvent) {
+		if (!drag || !sections) return;
+		const lo = sections[drag.boundary - 1].startTime + beatLen;
+		const hi = sections[drag.boundary].endTime - beatLen;
+		drag = { boundary: drag.boundary, t: Math.max(lo, Math.min(hi, snapT(timeFrom(e)))) };
+	}
+
+	function handleUp(e: PointerEvent) {
+		if (!drag || !sections) return;
+		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+		const next = sections.map((s) => ({ ...s }));
+		next[drag.boundary - 1].endTime = drag.t;
+		next[drag.boundary].startTime = drag.t;
+		drag = null;
+		commit(next);
+	}
+
+	function split(e: MouseEvent, index: number) {
+		if (!sections) return;
+		e.stopPropagation();
+		const s = sections[index];
+		const t = snapT(timeFrom(e));
+		if (t < s.startTime + beatLen || t > s.endTime - beatLen) return;
+		const next = sections.map((x) => ({ ...x }));
+		next.splice(index + 1, 0, { ...next[index], startTime: t });
+		next[index] = { ...next[index], endTime: t };
+		commit(next);
+	}
+
+	function pickKind(index: number, kind: string) {
+		if (!sections) return;
+		const next = sections.map((s, i) => (i === index ? { ...s, kind } : { ...s }));
+		picker = null;
+		commit(next);
+	}
+
+	/** The seam positions being rendered: the dragged one follows the pointer. */
+	function boundaryTime(i: number): number {
+		if (!sections) return 0;
+		return drag && drag.boundary === i ? drag.t : sections[i].startTime;
+	}
+
+	function editStart(i: number): number {
+		if (!sections) return 0;
+		return i === 0 ? sections[0].startTime : boundaryTime(i);
+	}
+
+	function editEnd(i: number): number {
+		if (!sections) return 0;
+		return i === sections.length - 1 ? sections[i].endTime : boundaryTime(i + 1);
+	}
+
 	/**
 	 * The drum lane is drawn rather than laid out.
 	 *
@@ -188,19 +295,54 @@
 		ondblclick={reset}
 		onpointerleave={() => (tip = null)}
 		role="presentation">
-		<div class="lane sections" aria-label="Sections">
-			{#each timeline.sections as s (s.index)}
-				<div
-					class="sec"
-					style:left={`${pct(s.start)}%`}
-					style:width={`${widthPct(s.start, s.end)}%`}
-					style:background={`var(--sec-${s.kind})`}
-					onpointerenter={(e) => showTip(e, titleCase(s.title), s.lines)}
-					role="presentation">
-					<span class="label">{titleCase(s.kind)}</span>
-				</div>
-			{/each}
-		</div>
+		{#if editing && sections}
+			<div class="lane sections editing" aria-label="Sections, adjustable">
+				{#each sections as s, i (i)}
+					<div
+						class="sec"
+						style:left={`${pct(editStart(i))}%`}
+						style:width={`${widthPct(editStart(i), editEnd(i))}%`}
+						style:background={`var(--sec-${s.kind})`}
+						onpointerdown={(e) => e.stopPropagation()}
+						onclick={(e) => {
+							e.stopPropagation();
+							picker = picker?.index === i ? null : { index: i, x: e.clientX - (host?.getBoundingClientRect().left ?? 0) };
+						}}
+						ondblclick={(e) => split(e, i)}
+						role="presentation">
+						<span class="label">{titleCase(s.kind)}</span>
+					</div>
+				{/each}
+				{#each sections as s, i (i)}
+					{#if i > 0}
+						<div
+							class="handle"
+							class:held={drag?.boundary === i}
+							style:left={`${pct(boundaryTime(i))}%`}
+							title="Drag to move the boundary. Alt-click merges the two sections."
+							onpointerdown={(e) => handleDown(e, i)}
+							onpointermove={handleMove}
+							onpointerup={handleUp}
+							role="presentation">
+						</div>
+					{/if}
+				{/each}
+			</div>
+		{:else}
+			<div class="lane sections" aria-label="Sections">
+				{#each timeline.sections as s (s.index)}
+					<div
+						class="sec"
+						style:left={`${pct(s.start)}%`}
+						style:width={`${widthPct(s.start, s.end)}%`}
+						style:background={`var(--sec-${s.kind})`}
+						onpointerenter={(e) => showTip(e, titleCase(s.title), s.lines)}
+						role="presentation">
+						<span class="label">{titleCase(s.kind)}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
 		<div class="lane cues" aria-label="Cues">
 			{#each timeline.cues as c (c.bar)}
@@ -249,9 +391,32 @@
 				{/each}
 			</div>
 		{/if}
+
+		{#if picker && sections}
+			<div
+				class="picker"
+				style:left={`${picker.x}px`}
+				class:flip={width > 0 && picker.x > width - 180}
+				onpointerdown={(e) => e.stopPropagation()}
+				role="presentation">
+				{#each SECTION_KINDS as kind (kind)}
+					<button
+						class="kind"
+						class:on={sections[picker.index]?.kind === kind}
+						onclick={() => picker && pickKind(picker.index, kind)}>
+						<i class="swatch" style:background={`var(--sec-${kind})`}></i>
+						{titleCase(kind)}
+					</button>
+				{/each}
+			</div>
+		{/if}
 	</div>
 
 	<div class="legend subtle">
+		{#if editing}
+			<span>drag a boundary · double-click splits · alt-click a handle merges · click a section for its kind</span>
+			<span class="sep">·</span>
+		{/if}
 		<span><i class="swatch kick"></i>Kick</span>
 		<span><i class="swatch snare"></i>Snare</span>
 		<span><i class="swatch hat"></i>Hat</span>
@@ -403,6 +568,77 @@
 		background: var(--foreground);
 		box-shadow: 0 0 5px #ffffff80;
 		pointer-events: none;
+	}
+
+	/* Handles rise above the lane, so the lane must not clip while editing (the .hits precedent). */
+	.sections.editing {
+		overflow: visible;
+	}
+	.sections.editing .sec {
+		cursor: pointer;
+	}
+	.handle {
+		position: absolute;
+		top: -3px;
+		bottom: -3px;
+		width: 9px;
+		transform: translateX(-50%);
+		cursor: col-resize;
+		z-index: 3;
+	}
+	.handle::after {
+		content: '';
+		position: absolute;
+		inset: 0 3px;
+		border-radius: 2px;
+		background: var(--foreground);
+		opacity: 0.55;
+	}
+	.handle:hover::after,
+	.handle.held::after {
+		opacity: 1;
+		box-shadow: 0 0 5px #ffffff80;
+	}
+
+	.picker {
+		position: absolute;
+		bottom: calc(100% + 8px);
+		transform: translateX(-6px);
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: 5px;
+		background: var(--popover);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		box-shadow: var(--shadow-md);
+		z-index: 6;
+	}
+	.picker.flip {
+		transform: translateX(calc(-100% + 6px));
+	}
+	.kind {
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		padding: 4px 9px;
+		border-radius: var(--radius-sm);
+		font-size: 12px;
+		color: var(--muted-foreground);
+		text-align: left;
+	}
+	.kind:hover {
+		background: var(--hover);
+		color: var(--foreground);
+	}
+	.kind.on {
+		color: var(--foreground);
+		background: var(--muted);
+	}
+	.kind .swatch {
+		width: 9px;
+		height: 9px;
+		border-radius: 2px;
 	}
 
 	.tooltip {

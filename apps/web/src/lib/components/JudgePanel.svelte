@@ -14,9 +14,14 @@
 		judgement = null,
 		judged = 0,
 		total = 0,
+		editingSections = false,
+		previewingArrangement = false,
 		onsave,
 		onnext,
 		onseek,
+		oneditsections = () => {},
+		ondiscardsections = () => {},
+		onpreviewarrangement = () => {},
 		onclose
 	}: {
 		trackId: string | null;
@@ -31,9 +36,16 @@
 		judgement?: Judgement | null;
 		judged?: number;
 		total?: number;
+		/** Whether the drawer's section lane is in hand-adjust mode right now. */
+		editingSections?: boolean;
+		/** Whether the room is playing the show composed from the hand-drawn map. */
+		previewingArrangement?: boolean;
 		onsave: (j: Judgement) => void;
 		onnext: () => void;
 		onseek: (t: number) => void;
+		oneditsections?: (on: boolean) => void;
+		ondiscardsections?: () => void;
+		onpreviewarrangement?: (on: boolean) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -110,8 +122,22 @@
 		queueSave();
 	}
 
-	function mark() {
+	type Hit = NonNullable<MomentNote['hit']>;
+
+	/** The glyphs are ShowStrip's hit legend, so a typed mark reads the same in both places. */
+	const HITS: { kind: Hit; glyph: string; label: string }[] = [
+		{ kind: 'strobe', glyph: '⚡', label: 'Strobe' },
+		{ kind: 'blackout', glyph: '■', label: 'Blackout' },
+		{ kind: 'slam', glyph: '▲', label: 'Slam' }
+	];
+
+	function glyphFor(hit: Hit): string {
+		return HITS.find((h) => h.kind === hit)?.glyph ?? '';
+	}
+
+	function mark(hit?: Hit) {
 		const note: MomentNote = { t: Math.round(position * 10) / 10, bar, text: '' };
+		if (hit) note.hit = hit;
 		draft.notes = [...draft.notes, note].sort((a, b) => a.t - b.t);
 		queueSave();
 	}
@@ -184,15 +210,53 @@
 
 			<section>
 				<div class="markrow">
-					<Button variant="outline" size="sm" onclick={mark}>
+					<Button variant={editingSections ? 'primary' : 'outline'} size="sm" onclick={() => oneditsections(!editingSections)}>
+						<Icon name="bands" size={13} />
+						{editingSections ? 'Done adjusting' : 'Adjust sections'}
+					</Button>
+					{#if judgement?.sections?.length}
+						<span class="hint">{judgement.sections.length} hand-drawn</span>
+						<button
+							class="ghost"
+							onclick={ondiscardsections}
+							aria-label="Discard the hand-drawn sections">
+							<Icon name="trash" size={12} />
+						</button>
+					{/if}
+				</div>
+				{#if judgement?.sections?.length}
+					<div class="markrow previewrow">
+						<Button
+							variant={previewingArrangement ? 'primary' : 'outline'}
+							size="sm"
+							onclick={() => onpreviewarrangement(!previewingArrangement)}>
+							<Icon name="play" size={13} />
+							{previewingArrangement ? 'Original show' : 'Preview arrangement'}
+						</Button>
+					</div>
+				{/if}
+			</section>
+
+			<section>
+				<div class="markrow">
+					<Button variant="outline" size="sm" onclick={() => mark()}>
 						<Icon name="pin" size={13} />
 						Mark this moment
 					</Button>
 					<span class="hint">n</span>
 				</div>
+				<div class="hitrow">
+					{#each HITS as h (h.kind)}
+						<button class="hitmark" onclick={() => mark(h.kind)}>
+							<span class="glyph">{h.glyph}</span>
+							{h.label}
+						</button>
+					{/each}
+				</div>
 				{#each draft.notes as note, i (i)}
 					<div class="note">
 						<button class="at mono" onclick={() => onseek(note.t)}>
+							{#if note.hit}<span class="glyph">{glyphFor(note.hit)}</span>{/if}
 							{clock(note.t)}{note.bar !== null ? ` · bar ${note.bar}` : ''}
 						</button>
 						<input
@@ -329,6 +393,32 @@
 		display: flex;
 		align-items: center;
 		gap: 9px;
+	}
+	.previewrow {
+		margin-top: 8px;
+	}
+	.hitrow {
+		display: flex;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.hitmark {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 3px 9px;
+		font-size: 11.5px;
+		border-radius: var(--radius-sm);
+		background: var(--muted);
+		color: var(--muted-foreground);
+	}
+	.hitmark:hover {
+		color: var(--foreground);
+	}
+	.glyph {
+		/* The filled shapes print heavier than digits at equal size, so they sit a step down. */
+		font-size: 11px;
+		line-height: 1;
 	}
 	.note {
 		display: flex;
