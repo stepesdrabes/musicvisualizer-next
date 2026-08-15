@@ -1,296 +1,233 @@
 # Handover
 
-State of the analysis/authoring overhaul as of 2026-08-13 (evening), what remains, and the
-knowhow a continuation needs. `docs/EFFECT_POLISHING.md` carries the method; this file
-carries the open work. The session memory has the same facts with more numbers.
+State as of 2026-08-15, early morning, after three shipped-and-judged rounds against
+the 2026-08-14 judged corpus, written for a session that starts at ROUND 4.
+`docs/EFFECT_POLISHING.md` carries the method (judge loop, cluster-before-fix, the
+kill criterion, bench-vs-room discipline). The complete campaign evidence lives in
+`bench/judged/round-2026-08-14/`:
 
-## Round 1 against the 2026-08-14 judged round (36 judgements, build 337d06f)
+- `snapshot.json` - all 36 original judgements joined against the sections/cues/hits
+  they were made against. Survives every version bump. Never regenerate it.
+- `digest.md` - the human walk of the same. `diagnosis.md` - ranked root causes RC1-6.
+- `adversary-review.md` + `round2-record.md` - every design, every adversarial finding
+  and its disposition, and the room's verdicts per round. READ round2-record.md FIRST:
+  its tail sections carry rounds 2, 3 and the round-4 target.
+- `ab-verdicts.md`, `listening-list*.md`, `research-endings.md` (verified citations),
+  `sweep-record.md` (every corpus sweep number).
 
-Everything about that round lives in `bench/judged/round-2026-08-14/`: `snapshot.json`
-(the full join of every judgement against sections/cues/hits/kit rows - survives version
-bumps), `digest.md`, `diagnosis.md` (ranked root causes RC1-RC6), `adversary-review.md`
-(25 attacks on the designs and their dispositions), `research-endings.md` (verified
-practice for the endings round), `sweep-record.md`. All 36 judged shows recomposed
-bit-identically at 337d06f before any change - every complaint was live.
+The older overhaul history (pre-campaign) is in git at `fd9cbb0` and in the session
+memory; nothing there is needed to start round 4.
 
-Shipped at ANALYSIS_VERSION 17 + SHOW_VERSION 13 (2026-08-14 late, not yet judged):
+## Where the code stands
 
-- **Same-material consolidation** (`consolidate.ts`, floor 1.6 in `StructureTuning`):
-  merges adjacent same-kind sections only when nothing arrives within a bar of the seam
-  AND the material matches across it (groupSegments' 0.92 standard, seam-local) AND the
-  seam is phrase-aligned from the merged start AND it touches neither the loudest
-  segment, a pinned arrival, nor a hook-snap target. Sweep: Raveform F0.5/F3 +1.5/+1.9
-  with sections 20.0 -> 17.9-18.1, Harmonix within 0.2pt of baseline. On the judged 36:
-  conservative by design - 6 tracks changed (No One Knows 17->15, Sandman 13->12 with
-  the phantom slam@79 gone, Self Esteem, Roygbiv, As It Was, Adele), 0 peaks moved,
-  every steelman-watchlist seam survived. Xtal kept its five drops: the evidence says
-  those seams are real; its complaint is now filed under boundary placement (round 2).
-- **Genre trio**: the "Folk, World, & Country" Discogs parent no longer votes (Get
-  Lucky stops being ballad; other parents deliberately kept - stripping "Hip Hop" turns
-  "Trap" into a bass vote); `speaksClub` requires kit corroboration (CLUB_KICK_FLOOR
-  0.4 kicks/beat over the loud half - a house-tagged piano ballad and beatless ambient
-  now speak song vocabulary; halftime bass at ~0.5 keeps its drops); `hasDrops` requires
-  `audible` (a track the drum detector heard nothing in cannot have drops). Someone You
-  Loved: six kickless drops -> verse/chorus, bumps 8 -> 4. An Ending: drops -> calm
-  verse treatment. DEFERRED: per-source context provenance + CONTEXT_VERSION (cached
-  `genres` carry effnet's own echo, so a context re-vote no-ops - see adversary-review
-  finding 17); the ambient-in-CLUB_FAMILIES question (Roygbiv keeps its drops, on
-  purpose).
-- **gridTrust reads `rawSectionCount`** (new optional TrackAnalysis field): a wreck must
-  not merge its way past the lounge gate.
-- **Effects**: heartbeat now declares `taste.kit: 'kick'` and takes strike permission
-  from a kick Presence (two judged tracks heard it fighting the drums); new `silhouette`
-  peak master - figure/ground inversion, ring blazing over a dark centre beam, held for
-  up to 8 bars, from the verified rap-climax research (Saint Pablo / Stormzy silhouette
-  practice). It wins 4 of 28 mastered peaks on the judged corpus by seed tie-break
-  alone, no preference wiring.
+HEAD `6ae3371`, tree clean EXCEPT the owner's own in-flight work: `docs/hardware.html`
+and everything under `packages/preview3d/` (modified + new files). DO NOT touch or
+commit those - preview3d is explicitly out of scope and the owner is working on it.
 
-Round 2 SHIPPED at v18/v14 (2026-08-15, gate green: 0/0/100% over regenerated
-cache114, 46/46 library tracks lint-clean): the snap physics veto (EARFQUAKE's 2-bar
-early drags fixed; earlybars instrument with 15 complaint pairs + 10 sentinels is
-permanent), peakStyle treatment matching on masters (Až na měsíc's blinder punch
-restored; pool membership pinned by test), outro bed inheritance + the cold-ending
-button (finish-line anchor taught to the linter after an adversarial review caught the
-button lint-rejecting its own flagship tracks - see round2-record.md for all 14
-findings and dispositions). settleWeight ships 0: a documented negative with the
-coupled-thresholds warning in the docblock.
+ANALYSIS_VERSION 19, SHOW_VERSION 14. 764 tests green, `npm run check` clean,
+showprobe gate green over cache114 at v19 (0 lint / 0 misfires / 100% quiet coverage;
+the 2 dark bars are the pre-existing lavaBlobs bed-only build pair, on the ledger).
+Commit discipline: Conventional Commits, no co-author trailer, no em-dashes anywhere,
+stage explicit paths, only commit when the owner says so (the pattern each round:
+implement -> gates -> owner listens -> owner says "commit").
 
-Round 3 queue, in order: the remaining 13 marked pairs (refine-margin and DP class;
-instrument ready), relative arrival floor AFTER a metrical-level check on Back In
-Black (its cache grid is double-time - the over-sectioning may be grid-class), ballad
-endings (T2 ring-out decay, T3 fade tracking, T4 afterglow - T5's queue seam is
-app-side), lyric-assertive chorus naming (RC5), context provenance + CONTEXT_VERSION,
-the peak-section ACCENT pool (Safír's discoBall half of the peak cluster), exposure
-damper. Named risks with fixtures wanted: band-lags-singer veto inversion, ring-out
-kick pollution, swell cold endings.
+What shipped, one line each (details in round2-record.md):
 
-## Where things stand
+- R1 (v17/v13): same-material consolidation behind five guards; club vocabulary needs
+  kit corroboration (CLUB_KICK_FLOOR 0.4); hasDrops behind `audible`; the Discogs
+  "Folk, World, & Country" parent no longer votes; heartbeat kick-gated; `silhouette`
+  peak master added. Room: B beat A 3 wins / 5 ties / 1 loss.
+- R2 (v18/v14): hook-snap physics veto (physics-only arrivals - the voice term was
+  grading itself); peakStyle on masters (pools pinned by test: slam = blinderWall,
+  chromaBurst, shutterCut, silhouette; bloom = chromaBurst, tideBloom); outro bed
+  inheritance; the cold-ending button; linter learned the finish-line anchor and the
+  outro repeated-stack exemption. Room: 4 good, 0 regressions.
+- R3 (v19): the ratio form of the snap veto restored (entrance windows ONLY - a
+  restart cannot lag or lead) and the absorb-left move for 2-bar builds. Room:
+  EARFQUAKE went 2* -> 5* ("sectioning is great"); Vitej 3* -> 4*.
 
-Shipped and verified across the overhaul and two judged rounds (analysis v16, show v12,
-nothing regressed - the gate at every step was 0 lint errors, 0 misfires, 100% quiet
-coverage over the 114-track corpus, full suite green; cache114 artifacts regenerated at
-v16 on 2026-08-13):
+The boundary instrument `bench/earlybars.ts` is the campaign's backbone: 17 frozen
+owner-marked pairs + 11 sentinels, scored against whatever analyzer is checked out.
+Current score 15 hit / 0 worse. Run it after ANY analysis change:
+`node bench/earlybars.ts [--variant=NAME] [--no-lyrics]`. First run per track pays
+BeatThis (~15 s each, cached in bench/corpus/.beats). `--no-lyrics` attributes an
+error to the DP/refine vs the hook snap - it found EARFQUAKE.
 
-- Build-labelling discipline: Harmonix 7-way agreement 50.5 -> 53.1, build share on the
-  owner's corpus 17.0 -> 9.6% (annotated 6.1 pop / 9.6 EDM), consecutive-build chains 80 -> 2.
-- ADTOF drum model beside the DSP (model kick+snare, DSP hats - its hat class halves the
-  true rate), ~7 s/track, optional file like the other models.
-- Genre avoid-lists, per-show signature sampling with the undrawn half foreign for the
-  night, crash-answer budget, per-slot bloom->slam aggression, quiet-to-quiet 3-bar fades,
-  wildcard honesty, key-change palette lift, trust gate with a ten-section floor.
-- Judge mode in the app (J / N; verdicts pinned to analysisHash+seed in `<cache>/judge/`).
-- New effects through the full gate; the owner deleted recoil, timedSweep and buildStacker on sight.
-  89 effects. The kick-burst family (shockwave, kickTunnel, kickCannon, ricochet,
-  pyroBursts, splash) is drawn at most ONE per show via PickRequest.exclude - the hard
-  form of avoid, with an empty-pool fallback - after the weighted form still left two
-  members in most shows. Every drop-class bed must carry (generalised from the peak-only rule after a
-  seed reshuffle produced eight dark bars under an all-event stack).
-- The kick-on-switch bug: the anticipation lead consumed boundary hits into the outgoing
-  effect; the player re-asserts fresh edges on the install frame. Test proven both ways.
+## ROUND 4: the downbeat phase (start here)
 
-## Remaining work, in order
+**The finding.** After R3 landed Safir's boundaries EXACTLY on the owner's marked bars
+(breakdown 33, chorus 42, verified in cache-C's v19 blob), the owner still heard it
+wrong and, asked directly, said: sections start "2-4 beats off", and explicitly
+CLEARED the strobe lead as a suspect ("strobe is okay like that before actual drop" -
+do not redesign the strobe-into-drop). Measured: the owner's timestamped marks sit
+1.3 beats (67.1 s vs barTimes[42] = 66.56) and 2.5 beats (54.0 s vs barTimes[33] =
+52.98) AFTER the grid's bar starts, at meterConfidence 0.52 and downbeatPhase 0. The
+bar boundaries are right in bar numbers; the grid's "one" is displaced from the felt
+one, so every cue, slam and strobe fires beats ahead of the music's own count.
 
-### 1. Hook-snap boundaries - SHIPPED 2026-08-13 at ANALYSIS_VERSION 16
+**The hypothesis worth the round**: the stubborn "boundary off" residue on
+low-meterConfidence tracks is PHASE-class, not section-class. The suspects and their
+meterConfidence, all judged tracks with unresolved off-feel: Cigo a kava 0.32,
+Thinkin Bout You 0.36, SICKO MODE 0.39, bad guy 0.47, Killing In the Name 0.47,
+Safir 0.52, Tili Me Pregunto 0.54, Snooze 0.56. The 4-5* cohort sits at 0.75-1.0.
+A half-bar phase error also poisons everything downstream that looked "1 bar early
+or late" at bar resolution - some of the 11 unfixed earlybars pairs may be phase in
+disguise.
 
-Built, but not as diagnosed: the acceptance corpus refuted "the hook bar IS the chorus
-bar" twice before a design survived. Measured across the judged tracks, hook lines sit
-anywhere in the bar before the true downbeat (sung pickups: Svoboda's 5/5 boundaries at
-10/42 against hooks at 9.27/41.28) or bars AFTER it (club vocals entering over a drop
-already running: VYZEE), and in-bar phase cannot split the two (a 0.27 pickup belongs to
-the next bar where a 0.31 belongs to its own). What shipped (`hookStarts` + `snapToHooks`
-in vocabulary.ts, wired post-vocabulary in analyze.ts):
+**Instruments that exist:**
 
-- cycle-restart detection recovers hooks hidden inside merged repeated-line runs (Safír's
-  opening chorus flows straight into the first real one; the restart at bar 8.4 is the
-  only evidence for the true boundary at 9);
-- a hook claims a two-bar WINDOW {bar, bar+1}; a boundary inside any window is evidence
-  and never moves; an outside one moves at most 2 bars EARLIER onto the nearest edge, or
-  exactly 1 bar later and only toward a RESTART hook (an entrance can lag the drop it
-  belongs to, a mid-flow restart cannot); hooks under 4 bars apart are refrain chant and
-  are dropped;
-- events are re-placed from the final table afterwards (`placeEvents`, extracted from
-  arrange.ts) - that resolved the events trap, and also made events honest for
-  promoted/demoted segments.
+- `bench/beatscore.ts` - beat/downbeat F and CMLt on GTZAN. The downbeat columns are
+  the corpus-side gate; the shipped Beat This checkpoint decision (final0 over small0,
+  downbeat CMLt 0.605 vs 0.558) is in round2-record's history and memory.
+- The owner's timestamped marks: every note in snapshot.json carries `t` seconds AND
+  a bar. A phase probe compares `t` against `tempo.barTimes[bar]` per mark - marks
+  carry ~0.5-1 s reaction lag (they drift LATE), so treat deltas under ~1 beat as
+  noise and look for the CONSISTENT 2-beat-class offsets. Safir's two marks and the
+  round-2 mark (67.2 s for bar 42) are the cleanest anchors.
+- `bench/boundlab.ts` prints per-bar arrivals for one track. CAVEAT: it re-runs
+  BeatThis fresh and reads only beatsPerBar/downbeatPhase from the cached blob, so on
+  a track where the cached grid came out at another metrical level (Back In Black)
+  its bar indices disagree with the cache. Align before trusting it there.
 
-Yield on the judged corpus (bench/hooksnap.ts): Safír 11->9, Cikády 23->24, VYZEE 65->63,
-every sentinel and out-of-scope track byte-identical. Gates: structscore bit-identical on
-both corpora (the bench has no lyrics), 702 tests, showprobe 0/0/100% over the
-regenerated cache114. HONEST YIELD WARNING: ~10 of the ~14 marked complaint bars carry no
-lyric evidence at all (no LRCLIB sync, or hooks nowhere near the boundary) - that
-residue is the learned labeller's to fix, not the hook's.
+**Where the phase is decided (read in this order, none of it read this session):**
 
-### 2. P6 production: the learned section labeller - ABANDONED, see the rollback below
+1. `packages/analysis/src/beatthis.ts` - the model emits beats AND downbeats.
+2. `packages/analysis/src/downbeats.ts` - how downbeat phase is chosen from them
+   (and what happens at low agreement; meterConfidence's semantics live here or in
+   `tempo.ts` - "margin over the runner-up", per README).
+3. `packages/analysis/src/beats.ts`, `metricalLevel.ts`, and `analyze.ts` around the
+   `barSynchronous(bf, beatsPerBar, phase)` call - where phase becomes the bar table.
+4. `publishedLevel` in enrich/analyze - corrects the metrical LEVEL from published
+   bpm; it has no phase component.
 
-Everything in this section was built and then rolled back on 2026-08-14 after the owner
-judged it in the room. Read "Tried and rolled back" further down before acting on any of it;
-the three "Remaining" items at the end of this section are moot. It is kept because the
-measurements in it are real and the traps it documents are still traps.
+**First moves, in order:**
 
-### 2 (as written at the time). P6 production: the learned section labeller
+1. Build the phase probe (bench/, ~an hour): for every judged track, every owner mark
+   -> delta between `t` and `barTimes[bar]` in beats, grouped by meterConfidence.
+   If the low-confidence cohort shows consistent ~2-beat deltas and the high-
+   confidence cohort does not, the hypothesis is confirmed before any code changes.
+2. Diagnose Safir specifically: does Beat This's own downbeat stream agree with the
+   shipped phase 0? If the model said the other phase and the local fit overrode it
+   (or vice versa), the fix is about WHO decides at low confidence.
+3. Only then design. Constraints from history: "metrical level cannot be delegated to
+   either tracker, and no local discriminator adjudicates it" (the abandoned
+   metrical-level corrector - do not rebuild it); Beat This final0's downbeat CMLt is
+   the number that must not regress; the beatscore gate must stay flat on the
+   high-confidence majority. A phase fix that helps 8 low-confidence tracks and
+   moves nothing else is the win condition. Sweepable, sentinel-guarded, adversary
+   before shipping - the full R2/R3 loop.
+4. The metrical-level cousin: Back In Black's grid is DOUBLE-TIME because Deezer's
+   published 190.5 is itself the doubled reading, so publishedLevel confirmed the
+   wrong octave (meterConf 1.0!). Owner ground truth on file: "verse 2 should be as
+   verse 1 in length". Parked with the relative-floor idea (task: NOT floor-class);
+   any phase work should at least not make this class worse.
 
-The head is trained and validated: 5-fold grouped CV 66.8% +-1.8 on the nine-way lighting
-vocabulary; Harmonix 62.6 (rules: 53.1 on the easier 7-way), Raveform 69.8 (rules: 33.6).
-EDM drop/breakdown/build is where it doubles the rules - which also covers the judged
-rock/SOPHIE complaints. Artifacts: `bench/corpus/.musicfm/sectionhead.pt` + config;
-embeddings for all 270 annotated tracks in the same dir; checkpoint at
-`bench/.musicfm-weights/` (1.3 GB, MIT); vendored model source at `bench/.musicfm-src/`.
-Training is ~3 min on MPS via `bench/train-sectionhead.py` - iterate freely (layer-10
-fusion and more depth untried).
+## The queue behind round 4, in order
 
-DONE 2026-08-13 - export, TS port, parity, mapping, end-to-end gate:
-- Both graphs exported by `bench/export-musicfm.py` via DYNAMO with dynamic time axes.
-  Two traps paid for: the extraction pieces are variable-length (35 s head, 40 s
-  interior, arbitrary tail), so a static graph would corrupt exactly the intro/outro
-  numerics; and the legacy tracer baked T=400 into the head's attention reshape - the
-  first longer track failed inside the graph. The HF rotary cache is monkey-patched to
-  compute unconditionally before export.
-- TS side in `packages/analysis/src/musicfm.ts` (MusicFm = frontend + encoder + head,
-  MusicFmHead = head alone for embedding-holding callers). Parity
-  (`bench/musicfm-parity.ts`): head exact (2e-6), fp32 encoder 1.6e-5 at two window
-  lengths, mel within torchaudio's OWN run-to-run envelope (~0.1 dB max, 0.02 median -
-  torch disagrees with itself by the same amount, so the head already lives with it).
-  int8 encoder (246 MB): whole-track worst-frame cosine 0.9696, head label agreement
-  95.1% against the stored fp32 embeddings, ~0.6x realtime on a loaded CPU.
-- Mapping: `sectionPosteriors` on AnalyzeInput; `applyHeadLabels` re-reads kinds by mean
-  posterior per DP segment. Rules keep carves (group < 0), the settled-bars drop gate
-  and club vocabulary coercion. Background refine can just re-run analyzeTrack with the
-  posteriors - every downstream artifact (events, moments, spectrum AGC, key change)
-  stays consistent for free, no blob surgery.
-- End-to-end gate (`structscore --head`, posteriors from the stored corpus embeddings):
-  Harmonix base 71.1% vs rules 53.1; Raveform 87.1% vs 33.6, with build F1 2.6 -> 82.7
-  and drop 53.7 -> 90.0. The mapping through DP segments beats the head's own frame CV.
+1. **Ballad/swell endings** - T2 ring-out decay at the audio's own rate, T3 fade
+   tracking, T4 afterglow. Fully designed with verified research in
+   `research-endings.md`; the button and outro inheritance (shipped) cover the cold
+   and carved cases only. T5's queue-seam palette handover is app-side (out of scope).
+2. **The remaining earlybars pairs** (11 "same") - refine-margin and DP class:
+   Titi 53->54 and 73->72, Vitej 81->82 (owner re-marked 81 in R3 - CONTESTED, ask
+   which before fixing), Snooze 17->23 (DP class), KITN 21->22 (needs settle-class
+   evidence; the settle knob at 1.6 fixed it but broke two praised bars - a
+   TRACK-LOCAL or evidence-gated form might thread it), Lose Yourself, HUMBLE,
+   Cigo 50->49, SICKO 12->13, PROVENZA 79->80, Safir 33->34 (may be phase!).
+   Plus the two new R3 pairs: Kisses 61->63, Way Too Self Aware 84->82.
+3. **Peak selection by mean energy** - three complaints on file (Ine Plemena, Self
+   Aware "I would not say this is peak", Hannah Montana tension) PLUS the open
+   EARFQUAKE observation: its peak moved to the first chorus at bar 8, before
+   SETTLE_BARS, so its reserved master is SKIPPED - and the owner's only 5* nit was
+   "effects could be a more lively", which may BE the skipped master. A
+   finalOfGroup-weighted or last-statement-biased rank is the design direction; the
+   house craft says "the first chorus holds its accent back so every return adds".
+4. **Kit false positives** - Self Aware 4*: "drums just A BIT off (taking the
+   bassline as drums I think)". ADTOF/DSP threshold thread.
+5. **RC5 lyric-assertive naming** - Blinding Lights all-chorus; the hook windows
+   measure better than the 0.12 demotion threshold uses (hookcheck output in the
+   round dir). 6. **Context provenance + CONTEXT_VERSION** - cached `genres` carry
+   effnet's own echo (adversary R1 finding 17); Get Lucky still wears `ballad` in
+   the app until contexts re-derive. 7. Exposure damper, peak-section accent pool,
+   relative floor (only after the metrical work).
 
-Remaining, in order:
-1. Serving/refine plumbing in apps/web: track plays on rule labels, MusicFm relabels
-   post-ready (minutes per track on CPU - int8 embed is ~0.6-1x realtime, so this is
-   firmly a background job), analysis + show rewritten through the same stale-version
-   machinery `prepare()` already has. THE OPEN UX QUESTION for the owner: a show
-   changing under a PLAYING track - recompose only if unplayed, or on the next play.
-2. Ship-form decision: int8 (246 MB, 95.1% label agreement) vs fp32 (977 MB, exact).
-   Nothing measured yet says int8 costs accuracy where it matters (the gate above ran
-   fp32 embeddings); either re-run the gate over TS-int8 embeddings for a few tracks or
-   accept the 95% agreement and watch judgements. CoreML EP is the latency lever if the
-   background refine feels slow.
-3. Bump ANALYSIS_VERSION when the head path ships in the app, and re-run the full gate
-   set. The model files live in models/ (musicfm_encoder_int8.onnx, musicfm_encoder.onnx
-   + .data, musicfm_sectionhead.onnx, musicfm_mel_fb.bin, musicfm_config.json) - local
-   artefacts, never committed, fetch story undecided.
+Named risks with fixtures wanted (adversary R2, unfixed by choice): band-lags-singer
+veto inversion (gospel/soul shape), ring-out kick pollution, swell cold endings, the
+veto's edge-bar blind spot, single-raw-kick fragility of the veto, settle-scale
+coupling (five absolute thresholds calibrated on the settle-free scale - the
+structure.ts docblock names them).
 
-### 3. Effect-pool saturation (the owner has now complained twice)
+## The apps and caches (the owner's A/B/C setup)
 
-shockwave/kickCannon read as overused, and it is NOT stale cache - measured presence is
-organic: thin pools at e4-5 mean the same few win everywhere (vortex/pump sit at ~95% of
-all shows the same way). The signature-sampling fix does not apply (they are not
-signatures). The honest fixes, pick one or both:
-- Catalog breadth at the SAME energy distance (the catalog-pairs lesson, paid three
-  times now: newcomers priced below the incumbents change nothing).
-- A global exposure damper: track corpus-wide share per effect (the judging probe in
-  scratch does this in 20 lines) and feed a small negative weight above a threshold -
-  never a filter. No such mechanism exists yet; design carefully against the
-  every-mechanism-becomes-a-mandate history.
-Verdicts pending on: ricochet, snareBlade, counterweight, weave (still pending as of
-2026-08-13 evening - every judge file on disk predates show v11, so nothing has yet been
-heard under the burst cap). Burst-family exposure is
-now structurally capped at one per show; if the owner still sees too many bursts, shrink
-the draw (add a second none slot) rather than re-weighting.
+- `/Applications/LightningStrike.app` = A, the ORIGINAL judged build (337d06f), on
+  `~/Library/Application Support/cz.drabek.lightningstrike/cache` (+ judge/ = the 36
+  original judgements, already fully mined into snapshot.json).
+- `LightningStrike (B).app` = round 1 (v17/v13) on `cache-B` (round-1 A/B verdicts
+  in its judge/).
+- `LightningStrike (C).app` = round 3 (v19/v14) on `cache-C` (round-2 AND round-3
+  verdicts in its judge/ - the R3 notes are mined; future judgements land here).
+- Round 4 hands over by REPLACING C (its verdicts are mined) or adding D - ask.
+- **THE INSTALL TRAP**: `cp -R new.app "/Applications/X.app"` onto an existing bundle
+  NESTS it (X.app/LightningStrike.app) and the old binary keeps launching - one A/B
+  was listened against the wrong build this way. `rm -rf` the target first, then
+  copy, then verify `ls "X.app/"` shows `Contents` and nothing else.
+- Cache clears keep audio/meta/context/judge and delete only `*.analysis.json` +
+  `*.show.json`; stale versions re-derive lazily anyway (~30-60 s per track on first
+  play). `cache114/` (repo, gitignored) is the 114-track gate corpus, regenerated at
+  v19 - do not wipe. The judged-36 scratch copies in the session scratchpad are GONE
+  (session temp); recreate from the desktop cache if needed (copy audio+meta+context,
+  run `MV_CACHE_DIR=<dir> node bench/reanalyse.ts`).
 
-### 4. Peak selection
+## Gates and probes (run all before any handover)
 
-Two judged complaints ("peak has no kick" on Ine Plemena, "I would not say this is peak"
-on Self Aware). energyRank is by mean energy; the peak master and treatment hang off it.
-Wait for 2-3 more examples before changing the rule; the judge files name the exact bars.
+1. `npm test` (764) and `npm run check`. If check errors with TS6305 after deleting
+   dist/, `npx tsc --build --force packages/analysis` (stale tsbuildinfo).
+2. `node bench/earlybars.ts` - 15 hit / 0 worse is the floor; any WORSE is a stop.
+3. `node bench/structscore.ts --dataset raveform|harmonix --limit 60 --variant current`
+   after analyser changes (baselines in sweep-record.md; label columns are BLIND to
+   same-kind merges and lyric effects - read F0.5/F3/sections).
+4. Judged-36 recompose readout: `node bench/judged-after.ts <scratch>` AFTER a scratch
+   reanalyse - it diffs sections/phantoms/peaks/hits vs snapshot.json. IT DOES NOT
+   LINT: the R2 ship-blocker (the button lint-deleting shows) was invisible to it.
+   Always ALSO compose+lint the full library (the 46-track sweep in round2-record's
+   gates section - inline node script, 46/46 lint-clean, and remember the app fails
+   DARK on lint errors).
+5. `MV_CACHE_DIR=.../cache114 node bench/reanalyse.ts` then
+   `MV_CACHE_DIR=... node bench/showprobe.ts` - 0 lint / 0 misfires / 100% quiet
+   coverage, dark bars <= 2 (the known pair). Env var must prefix EACH command
+   (an `&&` chain does not inherit it - this bit once).
+6. Versions: ANY analyser change bumps ANALYSIS_VERSION, ANY composition change bumps
+   SHOW_VERSION, in the same change. cache114 must be regenerated before showprobe
+   means anything at the new version.
+7. Build: `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app` from
+   apps/desktop (DMG fails on this machine; --bundles app is the path). ~4 min.
 
-### 5. Smaller open threads
+## Method invariants this campaign proved again (beyond EFFECT_POLISHING)
 
-- Two pre-existing dark bars on cache114 (Eternal Youth bar 7, Shalom Margaret bar 20,
-  verified present under the pre-round catalog too): a build cue carried by a lone
-  `lavaBlobs` bed goes near-black for a bar at audible energy. A bed-only build cue is
-  the suspect, not the analysis. Quiet-passages round material.
+- **Instrument first, sentinels included, and prove a new test fails against its
+  bug.** Four snap-veto designs died on the instrument before one shipped; the
+  cheapest of those deaths cost minutes.
+- **Sentinels built from silence are weaker than sentinels built from praise.** The
+  old Praha-63 "sentinel" (uncomplained, not praised) wrongly killed the ratio veto
+  for a round; the owner's "maybe 64" note overturned it. Mark tentative vs hard.
+- **Evidence on trial must not grade itself**: the snap veto reads PHYSICS-ONLY
+  arrivals because the hook's voice term was lifting its own edge over the floor.
+- **Restart vs entrance is a real asymmetry**: an entrance can lead the beat, a
+  restart cannot lag or lead. It is encoded in the veto and in a Le Freak sentinel.
+- **The owner's ear outranks the pairs**: "2-4 beats off" reframed bar-perfect
+  boundaries as a phase problem no bar-resolution instrument could see.
+- **Adversary before shipping, and have it EXECUTE repros** - the R2 reviewer found
+  a show-deleting blocker by composing and linting the real library, which no test
+  and no readout covered.
+- Ask the owner in small pieces; they answer fast and their one-line answers have
+  twice redirected a round ("strobe is okay", "maybe 64").
 
-- boundlab still calls refineBoundaries with the old default floor (0.6), so its printout
-  disagrees with the shipped pipeline (floor 2 via tuning); align when next used.
-- quietprobe numbers were refreshed 2026-08-12; re-run after any quiet-pool/spectrum/floor
-  change and paste back (nothing asserts them).
-- The DMG bundling step of `tauri build` fails on this machine; `--bundles app` is the
-  working path and the .app is all that is needed locally.
-- JUST DANCE-class short tracks: watch the ten-section floor holds once more short edits
-  arrive.
-- `varietyprobe` predates the avoid/sampling mechanisms; its Jaccard held (0.200 -> 0.204)
-  but it does not measure per-family saturation - the scratch usage probe should graduate
-  into bench/ if saturation work continues.
+## Owner's standing taste verdicts (unchanged, do not re-propose)
 
-## Tried and rolled back: the learned section labeller (2026-08-14)
-
-Section 2 above describes the head as remaining work. It was built, shipped behind a
-background re-read, judged in the room against two other builds, and **rolled back**. Do not
-re-propose it from corpus scores alone.
-
-What it did to a trance track, same grid both ways:
-
-- head: `breakdown x6, groove x3` - no intro, no build, no drop anywhere
-- rules: `intro, groove, breakdown, build, drop, groove, breakdown, build, drop`
-
-Per track against annotated ground truth it cut single-label dominance 58.1% -> 43.7% on club
-material with nothing degenerate in 25, and did the reverse on song material, 43.7% -> 51.9%,
-two of 25 coming back one label end to end.
-
-**Why the bench said otherwise, which is the part worth keeping:**
-
-- `structscore`'s `base=` column collapses verse onto groove and chorus onto drop, so it is
-  structurally blind to a verse/chorus error. It read 53.1 -> 71.1. The EXACT figure was 22.5%
-  on song material against 87.1% on club, in the same output all along.
-- `structscore` passes no `TrackContext`, so its rules baseline runs with **no lyrics** where
-  the app has them, and `speaksClub` falls back to a kick heuristic that reads much of a pop
-  corpus as club. The head was measured against a crippled arm on the families it hurt.
-- Turning the head on turned the lyric promote/demote off - both lived in one branch in
-  `analyze.ts`. What names a chorus is the words repeating.
-
-The work is recoverable at tag `grok-work` and `origin/grok-work-branch`. What was kept from it:
-the sACN sink and the `packages/transport` rename, `bench/beatscore.ts` and
-`bench/export-beatthis.py`, and the `adtof.ts` onnxruntime fix.
-
-### Two checkpoint decisions, measured
-
-- **Keep Beat This `final0`, refuse the distilled `small0`.** On the 100-track GTZAN slice:
-  beat F 0.884 -> 0.873, downbeat F 0.722 -> 0.704, downbeat **CMLt 0.605 -> 0.558**. The
-  continuity number decides it - a constant grid fit and a bar phase are built on it, and every
-  cue here is addressed by bar. The measured gap is three times the paper's published one, so
-  quoting that figure would have undersold the cost. Re-ask with `bench/beatscore.ts --model`.
-- **If MusicFM is ever revisited, int8 (246 MB) is enough**: Harmonix 68.9 against fp32's 69.3,
-  Raveform 85.6 against 88.3, n=10 each.
-
-### Considered and not built
-
-Named so nobody proposes them cold: `bridge`/`inst`/`solo` as first-class kinds (a retrain, and
-`bench/kinds.ts` already maps `bridge -> breakdown` for song families on purpose); a tempo
-classifier as a third octave vote; N-bar autoloops when `gridTrust` fails; guided/template
-authoring modes ("change only the chorus" - author-ai has no scoping at all, the most
-interesting unbuilt item); a per-section colour script as an editable object; Key-CNN, refused
-on its AGPL-3.0 licence; a pooled MusicFM embedding as a continuous taste vector.
-
-## Operational knowhow
-
-- **The full deploy loop** (any engine/effect change): quit app, `npm run bundle -w
-  @mv/desktop`, `npx tauri build --bundles app` from apps/desktop, replace
-  /Applications/LightningStrike.app, sync artifacts if regenerating them, relaunch, then
-  curl the app's own `/api/library` and read the `current` count. The app build must be
-  at least as new as any artifacts handed to it.
-- **Replacing an installed .app needs `rm -rf` FIRST.** `cp -R src.app dst.app` onto an
-  existing bundle copies the new app INTO it (dst.app/LightningStrike.app) and the old
-  binary keeps launching - an A/B round was listened against the wrong build this way,
-  and every in-app symptom (cleared cache, "unchanged" tracks) pointed elsewhere.
-  Verify after any install: `ls "<dst>.app/"` must show Contents and nothing else.
-- **Caches**: desktop app `~/Library/Application Support/cz.drabek.lightningstrike/cache`
-  (the owner's library + judge/ verdicts - 2026-08-13 wipe kept audio/meta/context and
-  deleted analysis/show blobs, so everything regenerates lazily); repo `cache/` (dev);
-  `cache114/` (gitignored bench corpus, full artifacts at v16 - do NOT wipe, the probes
-  and sweeps run against it).
-- **Versions**: analyser changes bump ANALYSIS_VERSION, engine/effect changes bump
-  SHOW_VERSION, every time - the wipe does not remove the need, it only clears the current
-  backlog once.
-- **Judging**: verdicts land in the DESKTOP cache's judge/ dir (the owner judges in the
-  app). Aggregate with a python one-liner over the JSONs; each is pinned to
-  analysisHash+seed so stale complaints are detectable. Chips aggregate, notes diagnose.
-- **The owner's standing taste verdicts**: no whole-field displacement (recoil), no
-  fill-and-drain wipes (timedSweep), no strobing accents in rap verses, buildStrobe only
-  in a build's back half, one wave-effect family at ~50-60% of its genre is the ceiling.
+No whole-field displacement; no fill-and-drain wipes; no strobing accents in rap
+verses; buildStrobe only in a build's back half; 8 Hz strobe ceiling; kick-burst
+family drawn at most one per show; one wave-family at ~50-60% of its genre is the
+ceiling; exact-arrival gestures need the shape between arrivals to be worth watching.
+PLUS, new this campaign: the strobe-before-a-drop is explicitly endorsed ("strobe is
+okay like that before actual drop"); outros keep their look and thin; endings are
+anchored to the finish line, not the outro boundary.
