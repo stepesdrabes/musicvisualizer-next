@@ -132,3 +132,34 @@ Final ladder: 15 hit, 0 worse of 26. Suite 764. Readout collateral, flagged for 
 listening list: EARFQUAKE's corrected first chorus now outranks by mean energy, so the
 peak moved to bar 8 (before SETTLE_BARS, so its reserved master is skipped) - the third
 data point for the queued peak-selection-by-mean redesign, not fixed here.
+
+## Round-3 room verdict (same night, after the nested-bundle fix)
+
+- **EARFQUAKE 2* -> 5***, tags cleared: "sectioning is great". The campaign's
+  worst-complained hip-hop track, fixed by the boundary rounds; the peak-front-loading
+  worry did not materialise ("maybe effects could be a more lively" only).
+- Vítej 3* -> 4*; Praha's old rating and effects chip withdrawn (reset to unrated).
+- Safír: analysis verified EXACTLY on the owner's marks (breakdown 33, chorus 42) -
+  the residual complaint is hypothesised to be the one-bar strobe at 41 rolling into
+  the slam at 42, reading as a false start. Vítej's note (drop "should start" at 81,
+  where it IS, with the strobe at 80) fits the same shape. AWAITING the owner's answer
+  before designing: is the pre-arrival strobe the thing that reads early?
+- New boundary pairs into earlybars: Kisses 61 -> 63, Way Too Self Aware 84 -> 82.
+- Back In Black: "verse 2 should be as verse 1 in length" - structure ground truth for
+  the parked metrical-level thread (double-time grid).
+- Self Aware 4*: "drums just A BIT off (taking the bassline as drums)" - kit
+  false-positive thread, recorded.
+
+## Round-4 headline target: downbeat phase (found via the owner's strobe answer)
+
+The owner cleared the strobe lead ("strobe is okay like that before actual drop") and
+named the real error: sections start "2-4 beats off". Measured on Safir's fresh v19
+blob: the marked moments sit 1.3 and 2.5 beats AFTER the barTimes the grid uses, at
+meter confidence 0.52 - the bar boundaries are correct in bar numbers while the
+downbeat PHASE is displaced roughly half a bar from the felt one. Every gesture on the
+track fires beats ahead of the music's own count. Hypothesis to test next: the
+remaining "boundary off" residue on low-meterConf tracks (Cigo 0.32, Thinkin 0.36,
+SICKO 0.39, Safir 0.52) is phase-class, not section-class - which would also explain
+why bar-level fixes kept reading "a bit off" to the ear. Instruments: beatscore's
+downbeat metrics (GTZAN), and a per-track phase probe against the owner's timestamped
+marks (marks carry ~0.5-1 s reaction lag; the 2-4-beat report is the owner's own).

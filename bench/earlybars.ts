@@ -57,6 +57,8 @@ const TARGETS: Target[] = [
 	{ id: '6JHu3b-pbh8', title: 'Thinkin Bout You', judged: 2, trueBar: 1, note: 'chorus starts too late; voice enters bar 1', tentative: true },
 	{ id: 'i9gxO_5vA-Q', title: 'PROVENZA', judged: 79, trueBar: 80, note: 'last chorus missed (too early)', tentative: true },
 	{ id: 'rgN9j5WQVdc', title: 'Cígo a káva', judged: 50, trueBar: 49, note: 'chorus missed (too late); owner marks 49', tentative: true },
+	{ id: 'V2W9QCfYOGU', title: 'Kisses', judged: 61, trueBar: 63, note: 'round-3 note: last drop should start at 63; v19 has it at 61' },
+	{ id: 'f0pPL5nrFz8', title: 'Way Too Self Aware', judged: 84, trueBar: 82, note: 'round-3 note: chorus should start at 82; v19 has build 80-84, chorus 84' },
 	// Sentinels: verified-good boundaries (praised, or window-confirmed on well-rated
 	// tracks). judged == trueBar, so any drift at all prints WORSE.
 	{ id: 'RAYQTfFh4xk', title: 'Le Freak', judged: 45, trueBar: 45, note: 'SENTINEL: restart window, lyric overlap 1.00 - the veto must not touch restarts' },
