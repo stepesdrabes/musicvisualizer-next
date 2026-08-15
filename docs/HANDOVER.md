@@ -78,6 +78,20 @@ plurality phase itself being wrong on low-conf tracks - untestable from marks; w
 need the owner tapping "one" per suspect track (a which-beat-is-one question, one
 track at a time). Do not rebuild a local discriminator (history below).
 
+Also in this slice (0e6e3c4): the scrubber and timeline playhead led the ear by the
+audio OUTPUT LATENCY - the readout published the raw clock while the room and the
+hardware sync already rendered `heardPosition` (raw minus outputLatency). Fixed at
+the readout, so judge timestamps now land on the heard moment too, which makes every
+FUTURE owner mark slightly more accurate than the ones already mined (do not
+re-litigate old marks against the new clock). App-chrome change, made on the owner's
+explicit ask - the chrome stays out of scope otherwise.
+
+**ROUND-4 STATE AT SESSION END: code complete, commits through 0e6e3c4, all gates
+green, the final build installed as C. AWAITING the owner's listening verdict on the
+two seams (Safir ~1:07, Vitej ~2:38 - does the arrival now land ON the bar?) and the
+playhead feel. Round 4 closes when those verdicts are mined from cache-C/judge; if
+the seams still read early, open the model-plurality path above.**
+
 ## The original phase brief (kept for the evidence and the code map; hypothesis REFUTED)
 
 **The finding.** After R3 landed Safir's boundaries EXACTLY on the owner's marked bars
