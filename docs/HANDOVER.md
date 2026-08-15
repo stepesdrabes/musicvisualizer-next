@@ -122,34 +122,85 @@ disguise.
    verse 1 in length". Parked with the relative-floor idea (task: NOT floor-class);
    any phase work should at least not make this class worse.
 
-## The queue behind round 4, in order
+**Design-space notes for the fix (written before reading the phase code - verify):**
+`downbeatPhase` is the beat offset (0..beatsPerBar-1) at which bars start on the beat
+stream; a "2-beat" error is a HALF-BAR phase flip, the classic weak-backbeat
+ambiguity. Candidate shapes, cheapest first: (a) at low meterConfidence, trust Beat
+This's own downbeat stream over the local fit (or vice versa - the diagnosis says
+which side Safir's error came from); (b) an arrival-evidence vote: the pipeline's own
+decisive arrivals (the pin class) overwhelmingly land on true downbeats, so their
+beat-phase distribution is a cheap discriminator that does NOT rebuild the abandoned
+level corrector (it adjudicates PHASE, not level, and only at low confidence);
+(c) expose the half-bar alternative the way tempo.alternativeBpm exposes octaves, and
+let reanalyse/research flip it. Guard rails: never touch tracks above ~0.7
+meterConfidence; beatscore downbeat F/CMLt flat; earlybars 15/0 floor holds (bar
+INDICES shift when phase flips - the probe's pairs are bar-numbered, so re-derive
+expected bars from the owner's `t` marks, not from stored bar numbers, for any track
+whose phase changes).
 
-1. **Ballad/swell endings** - T2 ring-out decay at the audio's own rate, T3 fade
-   tracking, T4 afterglow. Fully designed with verified research in
-   `research-endings.md`; the button and outro inheritance (shipped) cover the cold
-   and carved cases only. T5's queue-seam palette handover is app-side (out of scope).
-2. **The remaining earlybars pairs** (11 "same") - refine-margin and DP class:
-   Titi 53->54 and 73->72, Vitej 81->82 (owner re-marked 81 in R3 - CONTESTED, ask
-   which before fixing), Snooze 17->23 (DP class), KITN 21->22 (needs settle-class
-   evidence; the settle knob at 1.6 fixed it but broke two praised bars - a
-   TRACK-LOCAL or evidence-gated form might thread it), Lose Yourself, HUMBLE,
-   Cigo 50->49, SICKO 12->13, PROVENZA 79->80, Safir 33->34 (may be phase!).
-   Plus the two new R3 pairs: Kisses 61->63, Way Too Self Aware 84->82.
-3. **Peak selection by mean energy** - three complaints on file (Ine Plemena, Self
-   Aware "I would not say this is peak", Hannah Montana tension) PLUS the open
-   EARFQUAKE observation: its peak moved to the first chorus at bar 8, before
-   SETTLE_BARS, so its reserved master is SKIPPED - and the owner's only 5* nit was
-   "effects could be a more lively", which may BE the skipped master. A
-   finalOfGroup-weighted or last-statement-biased rank is the design direction; the
-   house craft says "the first chorus holds its accent back so every return adds".
-4. **Kit false positives** - Self Aware 4*: "drums just A BIT off (taking the
-   bassline as drums I think)". ADTOF/DSP threshold thread.
-5. **RC5 lyric-assertive naming** - Blinding Lights all-chorus; the hook windows
-   measure better than the 0.12 demotion threshold uses (hookcheck output in the
-   round dir). 6. **Context provenance + CONTEXT_VERSION** - cached `genres` carry
-   effnet's own echo (adversary R1 finding 17); Get Lucky still wears `ballad` in
-   the app until contexts re-derive. 7. Exposure damper, peak-section accent pool,
-   relative floor (only after the metrical work).
+## The rounds beyond 4, each with its design direction and instrument
+
+**R5 candidate: ballad/swell endings** (T2/T3/T4 from `research-endings.md`, all
+citations verified). T2 ring-out decay: the outro cue's intensity tracks a level
+follower on the audio tail instead of holding 0.5 - engine-side, needs the outro cue
+to read the spectrum envelope it already has; select by terminal envelope (the carve
+already distinguishes ringing tails). T3 fade tracking: monotonic level decline with
+pattern unchanged -> brightness follows, motion slows. T4 afterglow: after
+button/decay, a low warm still wash instead of zero (between-track form is short;
+end-of-queue lingers - the lounge dissolve partly covers this, check what the app
+already does before building). Measure: recomposed outro cue intensity curves on the
+5 ending-chip tracks + KITN/Gojira; the button/outro tests extend naturally. T5
+(queue-seam palette handover in the dark) is app-side: out of scope, note for owner.
+
+**The remaining earlybars pairs** (11 "same") - but FIRST subtract whatever round 4's
+phase work resolves; several may be phase in disguise (Safir 33->34 especially, and
+any pair on the low-meterConf suspects). What is left splits: refine-margin class
+(Titi 53->54 and 73->72, Cigo 50->49, PROVENZA 79->80, Lose Yourself 22->23 - the
+fill-vs-arrival fight at margin 1.45; the settle knob at 1.6 fixed KITN 21 but broke
+two praised bars, so a track-local or evidence-gated settle is the unexplored move),
+DP class (Snooze 17->23, six bars - needs the lyric window used ASSERTIVELY, see
+RC5), and CONTESTED (Vitej 81 vs 82: the owner marked both directions in two rounds -
+ask which before touching). New pairs Kisses 61->63 and Way Too Self Aware 84->82 are
+undiagnosed: run boundlab on each first.
+
+**Peak selection by mean energy** - three complaints on file (Ine Plemena, Self Aware
+"I would not say this is peak", Hannah Montana tension drop) PLUS EARFQUAKE: its peak
+now sits on the FIRST chorus at bar 8, before SETTLE_BARS, so the reserved master is
+SKIPPED - and the owner's only nit on the 5* was "effects could be a more lively",
+which may BE that skipped master. Design direction: bias the rank toward the LAST
+statement of the loudest group (finalOfGroup already exists; the house craft says the
+first chorus holds back so every return adds), or rank groups pooled and pick the
+final member. Instrument: peak bars across the judged 36 + cache114 before/after,
+plus the three complaint tracks' peaks specifically. Engine-side, SHOW_VERSION bump.
+
+**RC5 lyric-assertive naming** - Blinding Lights "almost the whole track is chorus";
+demotion needs overlap < 0.12 while misplaced boundaries hold overlap at 0.27-0.31;
+the hook windows land on the TRUE choruses (33/72/104 - hookcheck output in the round
+dir). Direction: let strong hook windows PLACE chorus starts on song-family tracks
+(not just nudge existing chorus-class boundaries), and loosen demotion where a
+better-overlapping sibling exists. This is the assertive step the v16 snap
+deliberately did not take; sentinel-heavy territory (Hannah, KITN, Praha all
+lyric-good today). Snooze 17->23 is the same fix seen from the other side.
+
+**Kit false positives** - Self Aware 4*: "drums just A BIT off (taking the bassline
+as drums I think)". The kick detector's bass-subtraction exists precisely for this
+(removing it once cost fixture precision 1.000 -> 0.529, in memory); suspect ADTOF's
+kick head or the DSP threshold on bass-heavy mixes. Instrument: the drum fixtures +
+spot-listening; low stakes, one track so far.
+
+**Context provenance + CONTEXT_VERSION** - cached `genres` carry effnet's own echo
+(adversary R1 finding 17), so a context re-vote no-ops; Get Lucky still wears
+`ballad` in the app until its context re-derives. Fix shape: store effnet labels in
+their own field, bump CONTEXT_VERSION, re-enrich lazily like analyses. Touches
+ingest/enrich + the contract; cheap but wide - own round.
+
+**Parked with reasons**: relative arrival floor (its poster child Back In Black is
+metrical-class; risks the confirmed second-drop seams), exposure damper (design
+against the every-mechanism-becomes-a-mandate history; the scratch usage probe's
+share-per-family numbers are the instrument), peak-section ACCENT pool (Safir's
+discoBall - the picker fills peak-span slots from thinned pools; an energy floor
+with fallback is the shape), in-window hook edge choice (EARFQUAKE's 6-vs-8 resolved
+via the veto instead; revisit only if a new in-window complaint lands).
 
 Named risks with fixtures wanted (adversary R2, unfixed by choice): band-lags-singer
 veto inversion (gospel/soul shape), ring-out kick pollution, swell cold endings, the
@@ -178,6 +229,28 @@ structure.ts docblock names them).
   (session temp); recreate from the desktop cache if needed (copy audio+meta+context,
   run `MV_CACHE_DIR=<dir> node bench/reanalyse.ts`).
 
+## Mining a new judged round (the workflow, refined over three rounds)
+
+Verdicts land in the JUDGING app's cache: `cache-C/judge/*.json` for anything judged
+in C. To mine: diff each file against the round's prior state (snapshot.json holds the
+originals; per-file `updatedAt` and note lists say what changed - a python join, see
+the mining scripts' shape in git history at 7ee7b3f's digest generator). Rules the
+rounds taught:
+
+- **A cleared rating + cleared tags is a RESET, not a bad verdict** - the owner wipes
+  a track's old judgement before re-marking it (Praha, Safir in R3).
+- **The note's `bar` field TRUNCATES from `t`.** EARFQUAKE's mark at 23.3 s printed
+  bar 7 but 23.3 s is bar 7.87 - the intended bar was 8. Always recompute from `t`
+  against `tempo.barTimes`; at fast tempos the field is off-by-one half the time.
+- **Marks carry ~0.5-1 s reaction lag** (late). The owner's PROSE ("2-4 beats off")
+  outranks the millisecond arithmetic.
+- **Notes are usually dropped at the TRUE moment** ("this is where X should start"),
+  not at the wrong one - but confirmations exist too ("correct chorus"), so read the
+  text before the number.
+- Join every new mark against the CURRENT analysis (sections + barTimes + arrivals)
+  before believing any interpretation - R3's "Safir still wrong" dissolved into the
+  phase finding only because the blob showed the bars already exactly on the marks.
+
 ## Gates and probes (run all before any handover)
 
 1. `npm test` (764) and `npm run check`. If check errors with TS6305 after deleting
@@ -189,9 +262,8 @@ structure.ts docblock names them).
 4. Judged-36 recompose readout: `node bench/judged-after.ts <scratch>` AFTER a scratch
    reanalyse - it diffs sections/phantoms/peaks/hits vs snapshot.json. IT DOES NOT
    LINT: the R2 ship-blocker (the button lint-deleting shows) was invisible to it.
-   Always ALSO compose+lint the full library (the 46-track sweep in round2-record's
-   gates section - inline node script, 46/46 lint-clean, and remember the app fails
-   DARK on lint errors).
+   Always ALSO run `node bench/lintsweep.ts` (composes + lints the whole library;
+   46/46 lint-clean is the floor, and the app fails DARK on lint errors).
 5. `MV_CACHE_DIR=.../cache114 node bench/reanalyse.ts` then
    `MV_CACHE_DIR=... node bench/showprobe.ts` - 0 lint / 0 misfires / 100% quiet
    coverage, dark bars <= 2 (the known pair). Env var must prefix EACH command
@@ -201,6 +273,11 @@ structure.ts docblock names them).
    means anything at the new version.
 7. Build: `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app` from
    apps/desktop (DMG fails on this machine; --bundles app is the path). ~4 min.
+8. Background-run hygiene: a running structscore/reanalyse loads code per PROCESS at
+   start - editing packages/analysis or core mid-sweep contaminates the variants that
+   have not started yet (one sweep was killed and rerun for this). Land edits between
+   runs. And if two desktop apps are open with the room wired, only one may stream to
+   the board or it flickers between shows.
 
 ## Method invariants this campaign proved again (beyond EFFECT_POLISHING)
 
