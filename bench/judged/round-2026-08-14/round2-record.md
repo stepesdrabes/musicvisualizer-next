@@ -163,3 +163,16 @@ SICKO 0.39, Safir 0.52) is phase-class, not section-class - which would also exp
 why bar-level fixes kept reading "a bit off" to the ear. Instruments: beatscore's
 downbeat metrics (GTZAN), and a per-track phase probe against the owner's timestamped
 marks (marks carry ~0.5-1 s reaction lag; the 2-4-beat report is the owner's own).
+
+## Round 4, first slice (v19/v15, same session)
+
+The phase probe (bench/phaseprobe.ts) REFUTED the downbeat-phase hypothesis before
+any code changed: model downbeats agree with the shipped grid everywhere (the
+disagreement % just re-derives meterConfidence), and owner marks are lag-dominated
+(~1.5-2 s) - mid-bar positions appear on conf-1.00 praised tracks too. The real
+"2-4 beats off": shapeApproaches' breath cue re-STAGED the room (bed-only) a bar
+before each arrival; both owner marks sat exactly on it. Fixed with the owner's
+delegated call: the breath keeps the full look and only dims (x0.6, 2-beat settle).
+SHOW_VERSION 15. Verified on Safir 41 / Vitej 80 recompose, lintsweep 15/15 clean on
+cache-C, suite 764. The listening question for the next A/B: do those two seams now
+read as arriving ON the bar?

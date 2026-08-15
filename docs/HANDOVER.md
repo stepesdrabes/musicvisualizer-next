@@ -53,7 +53,32 @@ Current score 15 hit / 0 worse. Run it after ANY analysis change:
 BeatThis (~15 s each, cached in bench/corpus/.beats). `--no-lyrics` attributes an
 error to the DP/refine vs the hook snap - it found EARFQUAKE.
 
-## ROUND 4: the downbeat phase (start here)
+## ROUND 4, first slice: SHIPPED same session - read this before the phase brief
+
+The phase hypothesis below was TESTED AND REFUTED by `bench/phaseprobe.ts` before any
+code changed: (B) Beat This's own downbeats agree with the shipped grid at +0.00
+beats on EVERY track - the "% agree" column reproduces meterConfidence, i.e. low-conf
+tracks have INTERNALLY inconsistent model downbeats, not wrongly-chosen ones; and
+(A) the owner's marks sit mid-bar even on conf-1.00 praised tracks (EARFQUAKE 5* at
+~2.8 beats), so note lag (~1.5-2 s, half a bar at these tempos) swamps sub-bar
+reading. Marks cannot resolve phase; the prose can.
+
+What the "2-4 beats off" actually was: `shapeApproaches` in plan.ts - "the breath
+before it lands" - inserted a one-bar cue before every drop-class arrival that
+STRIPPED the look to its bed and dimmed. Both owner marks (Safir 41, Vitej 80) sat
+exactly on it: a re-staged room reads as the next section arriving. On Safir it was
+newly exposed because R3's absorb removed the 2-bar build whose climb used to occupy
+that bar. FIXED at SHOW_VERSION 15, owner delegating the call ("decide for the best
+look"): the breath now keeps the FULL outgoing look and only dims (intensity x0.6,
+fadeBeats 2 so it settles by mid-bar and HOLDS). Verified: Safir 41 and Vitej 80
+recompose with identical layer stacks to their predecessors; lintsweep clean; 764.
+
+If the next A/B still reads "off" at these seams, the remaining suspect is the model
+plurality phase itself being wrong on low-conf tracks - untestable from marks; would
+need the owner tapping "one" per suspect track (a which-beat-is-one question, one
+track at a time). Do not rebuild a local discriminator (history below).
+
+## The original phase brief (kept for the evidence and the code map; hypothesis REFUTED)
 
 **The finding.** After R3 landed Safir's boundaries EXACTLY on the owner's marked bars
 (breakdown 33, chorus 42, verified in cache-C's v19 blob), the owner still heard it

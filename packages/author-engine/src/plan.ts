@@ -771,14 +771,20 @@ function shapeApproaches(cues: Cue[], profile: GenreProfile): void {
 		// A short predecessor has no room to give a bar away.
 		if (opener.bar - prev.bar < 3) continue;
 		if (!prev.layers.bed) continue;
+		// The breath dims the rig; it does not strike the set. The first version stripped
+		// the look to its bed, and the owner located two "starts 2-4 beats early" marks
+		// exactly on the dip bar: a re-staged room reads as the next section arriving,
+		// however dim. The full look stays; only the level exhales - down by mid-bar
+		// (fadeBeats 2), then HELD hollow, so the slam fires out of a breath instead of
+		// out of a scene change.
 		cues.splice(i, 0, {
 			bar: opener.bar - 1,
 			section: prev.section,
-			layers: { bed: prev.layers.bed },
+			layers: { ...prev.layers },
 			palette: prev.palette,
 			intensity: (prev.intensity ?? 0.7) * 0.6,
 			motion: prev.motion,
-			fadeBeats: 4,
+			fadeBeats: 2,
 			note: 'the breath before it lands'
 		});
 	}
