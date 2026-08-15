@@ -17,6 +17,7 @@ import { chromagram, estimateKey, estimateKeySpan } from './chroma.ts';
 import { detectDrums, snapTimesToOnsets, type DrumStream } from './drums.ts';
 import { extractFeatures } from './features.ts';
 import { detectMeter, type Meter } from './downbeats.ts';
+import { barStartsAtCuts, deriveGridCuts } from './gridedits.ts';
 import { applyHeadLabels, type SectionPosteriors } from './headLabels.ts';
 import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
@@ -27,6 +28,7 @@ import {
 	DEFAULT_TUNING,
 	arrivalStrengths,
 	barSynchronous,
+	barSynchronousAt,
 	groupSegments,
 	refineBoundaries,
 	rephaseToPins,
@@ -111,6 +113,21 @@ export interface AnalyzeInput {
 	 * apply: positions and silence are facts, and facts outrank predictions.
 	 */
 	sectionPosteriors?: SectionPosteriors;
+	/**
+	 * Moments, seconds, where the record inserts half a bar: the grid absorbs each as one
+	 * SHORT bar ending at the cut, so every mark the listener made lands on a bar line
+	 * and pre-arrival gestures keep their true length. This is the owner-supplied form of
+	 * the half-bar class, and it outranks the automatic detector the same way a
+	 * listener's metrical correction outranks the trackers.
+	 */
+	gridCuts?: readonly number[];
+	/**
+	 * The internal boundaries of a hand-drawn section map, seconds. Cuts are derived from
+	 * the residues these carry against the uniform grid - a map drawn over a correct grid
+	 * implies nothing - so a caller with a map does not need to know the meter. Explicit
+	 * `gridCuts` win when both are given.
+	 */
+	sectionMapBoundaries?: readonly number[];
 }
 
 const TARGET_LUFS = -14;
@@ -179,7 +196,35 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	) {
 		return analyzeTrack({ ...input, metricalLevel: 1 / 3, octaveGuard: false });
 	}
-	const bars = barSynchronous(beatFeatures, meter.beatsPerBar, meter.phase);
+	// A uniform grid cannot serve a track that inserts half a bar - Safir sat at meter
+	// confidence 0.52 through three correct uniform fixes while the owner kept hearing
+	// "still early". LISTENER-supplied cuts are the only trusted form of the correction:
+	// an automatic plateau detector was built, measured, and killed the same evening -
+	// the broadband onset vote cannot see a half-bar flip past a backbeat (snares are
+	// symmetric under it), it declined on the one track with verified edits and
+	// hallucinated one on a praised sentinel. Its postmortem lives in the round record;
+	// it may return only with an asymmetric voter, and behind the same instruments.
+	let bars = null as ReturnType<typeof barSynchronous> | null;
+	const beatAt = (t: number): number => {
+		let best = 0;
+		for (let i = 1; i < grid.beats.length; i++) {
+			if (Math.abs(grid.beats[i] - t) < Math.abs(grid.beats[best] - t)) best = i;
+		}
+		return best;
+	};
+	const cuts =
+		input.gridCuts && input.gridCuts.length > 0
+			? input.gridCuts.map((t) => grid.beats[beatAt(t)])
+			: input.sectionMapBoundaries && input.sectionMapBoundaries.length > 0
+				? deriveGridCuts(input.sectionMapBoundaries, grid.beats, meter.beatsPerBar, meter.phase)
+				: [];
+	if (cuts.length > 0) {
+		bars = barSynchronousAt(
+			beatFeatures,
+			barStartsAtCuts(grid.beats.length, meter.beatsPerBar, meter.phase, cuts.map(beatAt))
+		);
+	}
+	bars ??= barSynchronous(beatFeatures, meter.beatsPerBar, meter.phase);
 
 	// Detection before structure, because a boundary is refined onto the bar the kit returns
 	// at. Only the QUANTISE step needs to know which bars repeat which, and it still runs

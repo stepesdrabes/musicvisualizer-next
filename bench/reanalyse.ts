@@ -87,7 +87,8 @@ for (const f of metas) {
 			downbeats: tracked.downbeats,
 			drums,
 			metricalLevel,
-			context
+			context,
+			sectionMapBoundaries: await handMapBoundaries(meta.id)
 		});
 		await writeFile(analysisPath(meta.id), JSON.stringify(analysis, null, '\t'));
 		console.log(
@@ -102,3 +103,15 @@ for (const f of metas) {
 await model.close();
 await drumModel?.close();
 console.log('reanalyse complete');
+
+/** The hand-drawn map's internal boundaries, when the cache's judge dir carries one. */
+async function handMapBoundaries(id: string): Promise<number[] | undefined> {
+	try {
+		const raw = await readFile(join(CACHE_DIR, 'judge', `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`), 'utf8');
+		const j = JSON.parse(raw) as { sections?: { startTime: number }[] | null };
+		if (!j.sections || j.sections.length < 2) return undefined;
+		return j.sections.slice(1).map((s) => s.startTime);
+	} catch {
+		return undefined;
+	}
+}

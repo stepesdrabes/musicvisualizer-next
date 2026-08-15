@@ -40,6 +40,21 @@ export interface BarFeatures {
  */
 export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: number): BarFeatures {
 	const count = Math.max(0, Math.floor((bf.count - phase) / beatsPerBar));
+	const starts = new Array<number>(count + 1);
+	for (let b = 0; b <= count; b++) starts[b] = phase + b * beatsPerBar;
+	return barSynchronousAt(bf, starts);
+}
+
+/**
+ * The bar table over explicit bar-start beat indices, so a grid can absorb a half-bar
+ * edit as one SHORT bar. A track that inserts two beats has no uniform reading: every
+ * phase choice is wrong on one side of the edit (Safir's chorus was heard "still early"
+ * through three uniform fixes), and absorbing the edit as a LONG bar stretches whatever
+ * gesture lands in it (the staged strobe led its slam by six real beats). `starts` has
+ * one entry per bar plus the end boundary, ascending, in beat indices.
+ */
+export function barSynchronousAt(bf: BeatFeatures, starts: readonly number[]): BarFeatures {
+	const count = Math.max(0, starts.length - 1);
 	const patternDim = SUB_FRAMES * TIMBRE_BANDS;
 
 	const time = new Float64Array(count + 1);
@@ -54,15 +69,16 @@ export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: num
 	const group = Math.max(1, Math.floor(bf.bands / TIMBRE_BANDS));
 
 	for (let b = 0; b < count; b++) {
-		const first = phase + b * beatsPerBar;
+		const first = starts[b];
+		const beatsInBar = Math.max(1, starts[b + 1] - first);
 		time[b] = bf.time[first];
-		time[b + 1] = bf.time[Math.min(first + beatsPerBar, bf.count)];
+		time[b + 1] = bf.time[Math.min(first + beatsInBar, bf.count)];
 
 		let norm = 0;
 		for (let s = 0; s < SUB_FRAMES; s++) {
 			// Sub-frame s of the bar maps onto a beat and a fraction of it; sampling the beat's
 			// spectrum is enough because a beat is already the finest row we kept.
-			const u = (s / SUB_FRAMES) * beatsPerBar;
+			const u = (s / SUB_FRAMES) * beatsInBar;
 			const beat = Math.min(bf.count - 1, first + Math.floor(u));
 			for (let k = 0; k < TIMBRE_BANDS; k++) {
 				let acc = 0;
@@ -82,11 +98,11 @@ export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: num
 		let cn = 0;
 		for (let p = 0; p < PITCH_CLASSES; p++) {
 			let acc = 0;
-			for (let k = 0; k < beatsPerBar; k++) {
+			for (let k = 0; k < beatsInBar; k++) {
 				const beat = Math.min(bf.count - 1, first + k);
 				acc += bf.chroma[beat * PITCH_CLASSES + p];
 			}
-			const v = acc / beatsPerBar;
+			const v = acc / beatsInBar;
 			chroma[b * PITCH_CLASSES + p] = v;
 			cn += v * v;
 		}
@@ -98,7 +114,7 @@ export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: num
 		let accMid = 0;
 		let accHigh = 0;
 		let quietest = Infinity;
-		for (let k = 0; k < beatsPerBar; k++) {
+		for (let k = 0; k < beatsInBar; k++) {
 			const beat = Math.min(bf.count - 1, first + k);
 			accRms += bf.rms[beat];
 			accLow += bf.low[beat];
@@ -106,16 +122,22 @@ export function barSynchronous(bf: BeatFeatures, beatsPerBar: number, phase: num
 			accHigh += bf.high[beat];
 			if (bf.rms[beat] < quietest) quietest = bf.rms[beat];
 		}
-		rms[b] = accRms / beatsPerBar;
-		low[b] = accLow / beatsPerBar;
-		mid[b] = accMid / beatsPerBar;
-		high[b] = accHigh / beatsPerBar;
+		rms[b] = accRms / beatsInBar;
+		low[b] = accLow / beatsInBar;
+		mid[b] = accMid / beatsInBar;
+		high[b] = accHigh / beatsInBar;
 		floor[b] = Number.isFinite(quietest) ? quietest : rms[b];
 	}
 
 	return { count, time, pattern, patternDim, chroma, rms, low, mid, high, floor };
 }
 
+/**
+ * Physics under which the settling-contrast term is allowed to vote: the decisive class
+ * (the pin threshold) needs no second witness, and boosting it is how a fill's echo
+ * once outbid the owner's bar.
+ */
+const SETTLE_GATE = 2;
 /**
  * Under this the track has no dynamics to read and a level term would only amplify noise.
  * Six dB is about the range a heavily limited master still has left between its verse and its
@@ -366,9 +388,22 @@ function arrivalStrength(
 	// predecessor, while a fill resembles neither - the drum fill before a slam scores
 	// kit and novelty exactly like the slam does, and this is the term that tells them
 	// apart. The judged round's boundary errors ran three-to-one EARLY, onto fills.
-	const settling = settle && settleWeight > 0 ? settleWeight * Math.max(0, settle[b]) : 0;
+	//
+	// EVIDENCE-GATED: the term votes only where the physics are indecisive. Ungated at
+	// weight 1.2 it fixed a voice-led seam (KITN 21 -> 22, vocal 0.26 -> 1.0, physics
+	// 0.89) and broke a physics-led one (Titi 73 -> 74, where 74's own 2.43 needed no
+	// help and the boost pushed the boundary past the owner's bar). Where the physics
+	// already speak, settling has nothing to add; where they cannot, it is the only
+	// witness left. The gate also keeps every absolute threshold calibrated on the
+	// settle-free scale honest for decisive bars: pins, the snap's cuts and the
+	// consolidation floor all read decisive arrivals exactly as before.
+	const physics = step + kit + 0.8 * dip + 1.5 * novelty;
+	const settling =
+		settle && settleWeight > 0 && physics < SETTLE_GATE
+			? settleWeight * Math.max(0, settle[b])
+			: 0;
 
-	return step + kit + voice + 0.8 * dip + 1.5 * novelty + settling;
+	return physics + voice + settling;
 }
 
 /**
@@ -455,6 +490,11 @@ export const DEFAULT_TUNING: StructureTuning = {
 	// Arrival-only merging (no material gate) paid 1.7-2.2 points of Harmonix F3 for
 	// the same floors: soft real boundaries between different material must survive.
 	consolidateFloor: 1.6,
+	// Still 0, now with the gate measured too: ungated, 1.2 fixed one tentative bar and
+	// broke a hard one; GATED (physics < 2, and < 2.4), it fixes and breaks nothing at
+	// all - the one gain travelled through a decisive bar the gate rightly silences.
+	// The term, the gate and this negative result are all kept; the next candidate
+	// weight starts from here instead of rediscovering the trade.
 	settleWeight: 0,
 	refineReach: 1,
 	// The on-file cases split wide: legitimate stays tower (5.9, 6.0, 7.2 - Vitej's and

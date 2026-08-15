@@ -104,6 +104,24 @@ export async function readMeta(id: string): Promise<TrackMeta | null> {
 }
 
 /** yt-dlp errors are paragraphs; a row has one line. */
+/**
+ * The internal boundaries of a hand-drawn section map, from the judgement file the judge
+ * panel keeps beside this cache. Read as data rather than imported as code - the app owns
+ * the judgement's full shape, this side needs only the map's times - and tolerated
+ * missing or malformed the way every judgement read is: a broken file is one lost map,
+ * not a broken analysis.
+ */
+async function handMapBoundaries(id: string): Promise<number[] | undefined> {
+	try {
+		const raw = await readFile(join(CACHE_DIR, 'judge', `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`), 'utf8');
+		const j = JSON.parse(raw) as { sections?: { startTime: number }[] | null };
+		if (!j.sections || j.sections.length < 2) return undefined;
+		return j.sections.slice(1).map((s) => s.startTime);
+	} catch {
+		return undefined;
+	}
+}
+
 function firstLine(message: string): string {
 	const line = message.split('\n').find((l) => l.includes('ERROR')) ?? message.split('\n')[0];
 	return line.replace(/^.*ERROR:\s*/, '').trim().slice(0, 90);
@@ -172,10 +190,7 @@ export async function refineGenreFromAudio(
 				...context,
 				genreFamily: vote.family,
 				genreConfidence: Math.round(vote.confidence * 100) / 100,
-				genres: [
-					...context.genres,
-					...result.top.slice(0, 3).map((t) => t.label.replace('---', ' '))
-				],
+				audioGenres: result.top.slice(0, 3).map((t) => t.label.replace('---', ' ')),
 				sources: [...context.sources, 'effnet']
 			};
 		} finally {
@@ -451,7 +466,8 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		downbeats: tracked?.downbeats,
 		drums,
 		metricalLevel,
-		context
+		context,
+		sectionMapBoundaries: await handMapBoundaries(id)
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));

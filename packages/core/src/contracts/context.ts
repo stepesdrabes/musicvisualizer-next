@@ -10,7 +10,7 @@
  * one place with network access.
  */
 
-export const CONTEXT_VERSION = 1;
+export const CONTEXT_VERSION = 2;
 
 /**
  * The lighting vocabulary of genres, not the record shop's. Each family names a distinct
@@ -54,7 +54,15 @@ export interface TrackContext {
 	 */
 	publishedBpm: number | null;
 	/** Raw genre strings as the sources gave them, for the inspector and for re-mapping. */
+	/**
+	 * Genre names from METADATA sources only (Discogs, Deezer, YouTube). The audio
+	 * classifier's labels live in `audioGenres`, never here: mixing them let a context
+	 * re-vote read the model's own echo back as evidence, so the vote could never change
+	 * its mind (Get Lucky wore "ballad" for a week on its own reflection).
+	 */
 	genres: string[];
+	/** The audio classifier's own top labels, kept apart from the metadata's - see `genres`. */
+	audioGenres: string[];
 	genreFamily: GenreFamily | null;
 	/** 0..1, share of the genre evidence that voted for the winning family. */
 	genreConfidence: number;
@@ -78,6 +86,7 @@ export function emptyContext(): TrackContext {
 		isrc: null,
 		publishedBpm: null,
 		genres: [],
+		audioGenres: [],
 		genreFamily: null,
 		genreConfidence: 0,
 		lyrics: null,
