@@ -271,6 +271,10 @@ export class EffectPicker {
 				// A bloom family's peak arrives as light, not as interruption: a shutter or a
 				// strobe winning it is the rig malfunction the profile exists to prevent.
 				!(peak === 'bloom' && e.taste.character === 'flash') &&
+				// And a master that declares a peak style serves only that treatment: the draw
+				// is a seed-broken tie, and without this a bloom look lands on a rap climax
+				// the moment any new master reshuffles the ties.
+				!(e.taste.peakStyle && e.taste.peakStyle !== peak) &&
 				!(this.vetoCharacter && e.taste.character) &&
 				(e.taste.sections.includes(section) ||
 					e.taste.sections.includes(sectionBase(section))) &&

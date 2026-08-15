@@ -22,7 +22,10 @@ export const shutterCut: EffectDef = {
 		minBars: 0,
 		maxBars: 2,
 		peakReserved: false,
-		character: 'flash'
+		character: 'flash',
+		// Redundant with the bloom-excludes-flash veto today, declared so the exclusion
+		// survives anyone refactoring that veto away.
+		peakStyle: 'slam'
 	},
 	params: [INTENSITY, param('trigger', 'Trigger', 0, 0, 1, 1)],
 	create(g) {

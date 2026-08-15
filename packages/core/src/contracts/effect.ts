@@ -91,6 +91,14 @@ export interface EffectTaste {
 	 */
 	character?: 'flash' | 'impact';
 	/**
+	 * Which peak treatment a master serves, absent when it serves either. A slam peak is
+	 * an impact and a bloom peak is a lift, and the reserved-master draw is a seed-broken
+	 * tie - without this, adding any master reshuffles the ties and a bloom look can land
+	 * on a rap climax, which the room reads as the punch going missing. Only read for the
+	 * peak-master choice; ordinary layers never consult it.
+	 */
+	peakStyle?: 'slam' | 'bloom';
+	/**
 	 * The drum stream this effect IS the answer to, declared only where that is the whole
 	 * gesture: an effect that spawns on `f.kick` renders black in a passage with no kicks,
 	 * and a grid pulse that reads as the kit keeps pounding through a sung verse the drums

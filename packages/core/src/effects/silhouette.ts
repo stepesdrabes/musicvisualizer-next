@@ -29,7 +29,10 @@ export const silhouette: EffectDef = {
 		// Held, not burst: this is the whole point against chromaBurst's two bars. The
 		// peak's opening cue takes this length, so the inversion owns the phrase.
 		maxBars: 8,
-		peakReserved: true
+		peakReserved: true,
+		// The rap-climax look serves the impact treatment; an anthem chorus that arrives
+		// as light wants its centre lit, not withheld.
+		peakStyle: 'slam'
 	},
 	params: [INTENSITY, param('depth', 'Contrast depth', 0.85)],
 	create(g) {

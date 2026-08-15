@@ -26,7 +26,10 @@ export const tideBloom: EffectDef = {
 		sections: ['drop', 'chorus'],
 		minBars: 0,
 		maxBars: 2,
-		peakReserved: false
+		peakReserved: false,
+		// A tide is a lift by definition; on a slam peak it reads as the punch going
+		// missing - the A/B round's one regression was exactly this draw.
+		peakStyle: 'bloom'
 	},
 	params: [
 		INTENSITY,

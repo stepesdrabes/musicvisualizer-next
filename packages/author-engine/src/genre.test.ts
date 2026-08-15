@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BUILT_IN_EFFECTS, emptyContext, sectionBase, type TrackContext } from '@mv/core';
+import { BUILT_IN_EFFECTS, Rng, emptyContext, sectionBase, type TrackContext } from '@mv/core';
 import { composeShow } from './plan.ts';
 import { lintShow } from './lint.ts';
 import { allowedFlashes, profileFor } from './genre.ts';
+import { EffectPicker } from './select.ts';
 import { fixture } from './fixture.ts';
 
 function contextFor(family: TrackContext['genreFamily']): TrackContext {
@@ -85,6 +86,35 @@ describe('genre-shaped shows', () => {
 		const verdict = lintShow(show, { analysis, effects, context: contextFor('rnb') });
 		expect(verdict.ok).toBe(false);
 		expect(verdict.errors.some((e) => e.rule === 'flash-character')).toBe(true);
+	});
+
+	it('a peak master serves the treatment it declares, at every seed', () => {
+		// The reserved draw is a seed-broken tie, so adding any master reshuffles who wins;
+		// without the style match a bloom look landed on a rap climax (the A/B round's one
+		// regression). Sixty seeds, both treatments, no crossover.
+		for (let seed = 1; seed <= 60; seed++) {
+			const slam = new EffectPicker(BUILT_IN_EFFECTS, new Rng(seed)).strongest('master', 'drop', 1, 'slam');
+			const bloom = new EffectPicker(BUILT_IN_EFFECTS, new Rng(seed)).strongest('master', 'chorus', 1, 'bloom');
+			expect(slam?.taste.peakStyle ?? 'slam').toBe('slam');
+			expect(bloom?.taste.peakStyle ?? 'bloom').toBe('bloom');
+		}
+		// And the pools are what the round decided, member by member, so a new master or a
+		// nature change is a deliberate edit here rather than a silent reshuffle: blooms
+		// arrive as light (tideBloom, chromaBurst's burst is the generic biggest thing),
+		// slams as impact - silhouette's withheld centre and shutterCut's hard frames
+		// belong to the impact side only.
+		const eligible = (peak: 'slam' | 'bloom') =>
+			BUILT_IN_EFFECTS.filter(
+				(e) =>
+					e.role === 'master' &&
+					!e.taste.hitOnly &&
+					!(peak === 'bloom' && e.taste.character === 'flash') &&
+					!(e.taste.peakStyle && e.taste.peakStyle !== peak)
+			)
+				.map((e) => e.id)
+				.sort();
+		expect(eligible('slam')).toEqual(['blinderWall', 'chromaBurst', 'shutterCut', 'silhouette']);
+		expect(eligible('bloom')).toEqual(['chromaBurst', 'tideBloom']);
 	});
 
 	it('every signature resolves to a catalog effect the picker can actually prefer', () => {

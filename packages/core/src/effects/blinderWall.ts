@@ -23,7 +23,8 @@ export const blinderWall: EffectDef = {
 		minBars: 0,
 		maxBars: 2,
 		peakReserved: false,
-		character: 'impact'
+		character: 'impact',
+		peakStyle: 'slam'
 	},
 	params: [
 		INTENSITY,
