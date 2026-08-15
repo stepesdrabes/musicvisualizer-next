@@ -38,3 +38,13 @@ cons0/current     raveform   n=60  F0.5=0.368  F3=0.521  label=32.6%  base=33.6%
 cons12/current    raveform   n=60  F0.5=0.382  F3=0.539  label=32.6%  base=33.6%  sections=18.3/9.4
 cons16/current    raveform   n=60  F0.5=0.383  F3=0.540  label=32.6%  base=33.6%  sections=18.1/9.4
 cons20/current    raveform   n=60  F0.5=0.384  F3=0.542  label=32.6%  base=33.6%  sections=17.9/9.4
+
+## round-5 boundary slice (v20: stay-pins physics-only@3 vote-split, restart noise floor, pin-aware fold)
+current/current   raveform   n=60  F0.5=0.394  F3=0.540  label=32.6%  base=33.6%  sections=18.1/9.4
+current/current   harmonix   n=60  F0.5=0.202  F3=0.532  label=10.5%  base=53.0%  sections=10.7/10.1
+(v19 reference = sweep3 cons16: raveform 0.383/0.540/18.1, harmonix 0.196/0.528/10.7 - F0.5 up on both, F3 flat/up, sections flat)
+
+## ponyboy slice (v21: pounding arm on hasDrops, club-family gated)
+current/current   raveform   n=60  F0.5=0.394  F3=0.540  label=32.6%  base=33.6%  sections=18.1/9.4
+current/current   harmonix   n=60  F0.5=0.202  F3=0.532  label=10.5%  base=53.0%  sections=10.7/10.1
+(identical to v20 - the arm has zero corpus footprint; its effect is Ponyboy-specific by construction)

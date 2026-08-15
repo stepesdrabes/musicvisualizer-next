@@ -1,9 +1,10 @@
 # Handover
 
-State as of 2026-08-15, after FOUR shipped rounds against the 2026-08-14 judged
-corpus (round 4 code-complete, awaiting the owner's listening verdict), written for
-the session that closes round 4 and continues. Start at "If you are the next
-session" near the end, then come back to the top.
+State as of 2026-08-15 (afternoon session), after round 4 CLOSED on the room's
+verdict and the ROUND-5 BOUNDARY SLICE landed code-complete at v20 - uncommitted,
+awaiting the owner's listening pass and the word "commit". Safir's phase question
+is open in parallel (tap protocol asked, taps not yet given). Start at "If you are
+the next session" near the end, then come back to the top.
 `docs/EFFECT_POLISHING.md` carries the method (judge loop, cluster-before-fix, the
 kill criterion, bench-vs-room discipline). The complete campaign evidence lives in
 `bench/judged/round-2026-08-14/`:
@@ -22,15 +23,25 @@ memory; nothing there is needed to start round 4.
 
 ## Where the code stands
 
-HEAD `fc72407`, tree clean EXCEPT the owner's own in-flight work: `docs/hardware.html`
-and everything under `packages/preview3d/` (modified + new files). DO NOT touch or
-commit those - preview3d is explicitly out of scope and the owner is working on it.
+Round-5 work COMMITTED on the owner's word (2026-08-15 late evening) in four
+chunks: the v20+v21 analyser slice, the bench instruments (stagetrace, phasepick,
+phaseflip, gridedit, judgemap + the earlybars scorer), the judge trio (section
+editor, typed hit marks, arrangement preview), and these records. The owner's own
+in-flight work stays uncommitted: `docs/hardware.html` and everything under
+`packages/preview3d/` - DO NOT touch or commit those; stage explicit paths only.
+The sectioning-model memo was moved OUT of the repo by the owner on purpose
+(a second research agent must not read it) - do not recreate it here.
 
-ANALYSIS_VERSION 19, SHOW_VERSION 15. 764 tests green, `npm run check` clean,
-showprobe gate green over cache114 at v19/v15 (0 lint / 0 misfires / 100% quiet
-coverage; contrast mean 2.86, hue jumps 2962 - current baselines, drift from these
-is signal; the 2 dark bars are the pre-existing lavaBlobs bed-only build pair, on
-the ledger).
+ANALYSIS_VERSION 21 (v20 = the boundary slice, v21 = + the Ponyboy pounding arm),
+SHOW_VERSION 15. 769 tests green, `npm run check` clean. earlybars at v21: 20 hit /
+0 closer / 8 same / 0 worse of 28 - THE FLOOR (WTSA true bar ear-confirmed at 83).
+structscore v21 identical to v20: raveform F0.5 0.394 / F3 0.540, harmonix 0.202 /
+0.532 (sweep-record.md). Judged-after at v21 byte-identical to v20 - the pounding
+arm's only corpus effect is Ponyboy itself (drop@72 now). showprobe baselines from
+the v20 run: 0 lint / 0 misfires / 100% quiet, contrast 2.84, hue jumps 2894, dark
+bars 2 (the lavaBlobs pair); the v21 cache114 regen re-verifies on ship. Room
+verdicts on file: Vitej GOOD, EARFQUAKE GOOD, WTSA GOOD, SAFIR piecewise staging
+CONFIRMED ("now looks correct").
 Commit discipline: Conventional Commits, no co-author trailer, no em-dashes anywhere,
 stage explicit paths, only commit when the owner says so (the pattern each round:
 implement -> gates -> owner listens -> owner says "commit").
@@ -49,15 +60,27 @@ What shipped, one line each (details in round2-record.md):
 - R3 (v19): the ratio form of the snap veto restored (entrance windows ONLY - a
   restart cannot lag or lead) and the absorb-left move for 2-bar builds. Room:
   EARFQUAKE went 2* -> 5* ("sectioning is great"); Vitej 3* -> 4*.
+- R4 (v19/v15 + playhead): the breath dims instead of re-staging; indicators mark
+  the heard instant. Room: playhead CONFIRMED; both seams still early -> reclassified
+  (Vitej bar-class, Safir phase-class). Round 4 closed in the round record.
+- R5 boundary slice (v20, UNCOMMITTED): stay-pins (physics-only, stayPinScore 3,
+  protect-not-vote), pin-aware fold with the void guard, restart noise floor on the
+  snap veto, earlybars scores non-build starts, bench/stagetrace.ts instrument.
+  Fixes on the ladder: Vitej 82, Kisses 63, Titi 54, Lose Yourself 23, WTSA 83
+  (closer). Awaiting the room.
 
 The boundary instrument `bench/earlybars.ts` is the campaign's backbone: 18 frozen
 owner-marked pairs + 10 sentinels (28 rows), scored against whatever analyzer is
-checked out. Last full score 15 hit / 0 worse of 26, BEFORE the two round-3 pairs
-(Kisses 61->63, Way Too Self Aware 84->82) were added - the first run of a new
-session re-baselines at 28 rows and both new pairs are expected 'same'. Run it after ANY analysis change:
-`node bench/earlybars.ts [--variant=NAME] [--no-lyrics]`. First run per track pays
-BeatThis (~15 s each, cached in bench/corpus/.beats). `--no-lyrics` attributes an
-error to the DP/refine vs the hook snap - it found EARFQUAKE.
+checked out. Current full score 19 hit / 1 closer / 8 same / 0 worse of 28 (the
+v20 floor). Run it after ANY analysis change - with MV_CACHE_DIR pointed at a
+cache that has Kisses/WTSA audio (cache-C today; the primary cache lacks those
+two): `MV_CACHE_DIR=... node bench/earlybars.ts [--variant=NAME] [--no-lyrics]`.
+First run per track pays BeatThis (~15 s each, cached in bench/corpus/.beats).
+`--no-lyrics` attributes an error to the DP/refine vs the hook snap - it found
+EARFQUAKE. The scorer reads non-build section starts (a build is the approach, not
+the seam). Its sibling `bench/stagetrace.ts` (round 5) replays the structure stages
+one call at a time in cache coordinates and self-checks against a real analyzeTrack
+run - the instrument that named every mechanism this round.
 
 ## ROUND 4, first slice: SHIPPED same session - read this before the phase brief
 
@@ -92,11 +115,14 @@ FUTURE owner mark slightly more accurate than the ones already mined (do not
 re-litigate old marks against the new clock). App-chrome change, made on the owner's
 explicit ask - the chrome stays out of scope otherwise.
 
-**ROUND-4 STATE AT SESSION END: code complete, commits through 0e6e3c4, all gates
-green, the final build installed as C. AWAITING the owner's listening verdict on the
-two seams (Safir ~1:07, Vitej ~2:38 - does the arrival now land ON the bar?) and the
-playhead feel. Round 4 closes when those verdicts are mined from cache-C/judge; if
-the seams still read early, open the model-plurality path above.**
+**ROUND 4 CLOSED (2026-08-15 afternoon).** The owner listened: playhead confirmed;
+both seams STILL EARLY, and the fresh marks split them - Vitej resolved to bar 82
+(bar-class, fixed in the round-5 slice), Safir confirmed as the phase suspect
+(third press on the same instant, half-bar-flip line inside the cluster). The
+model-plurality path is OPEN: the owner was asked for tap-protocol marks
+(EARFQUAKE ~0:25-0:50 as lag calibration, Safir ~0:50-1:15, live presses on the
+felt "one"); taps had not landed by session end. Full verdicts + diagnoses in
+round2-record.md.
 
 ## The original phase brief (kept for the evidence and the code map; hypothesis REFUTED)
 
@@ -197,16 +223,16 @@ already does before building). Measure: recomposed outro cue intensity curves on
 5 ending-chip tracks + KITN/Gojira; the button/outro tests extend naturally. T5
 (queue-seam palette handover in the dark) is app-side: out of scope, note for owner.
 
-**The remaining earlybars pairs** (11 "same") - but FIRST subtract whatever round 4's
-phase work resolves; several may be phase in disguise (Safir 33->34 especially, and
-any pair on the low-meterConf suspects). What is left splits: refine-margin class
-(Titi 53->54 and 73->72, Cigo 50->49, PROVENZA 79->80, Lose Yourself 22->23 - the
-fill-vs-arrival fight at margin 1.45; the settle knob at 1.6 fixed KITN 21 but broke
-two praised bars, so a track-local or evidence-gated settle is the unexplored move),
-DP class (Snooze 17->23, six bars - needs the lyric window used ASSERTIVELY, see
-RC5), and CONTESTED (Vitej 81 vs 82: the owner marked both directions in two rounds -
-ask which before touching). New pairs Kisses 61->63 and Way Too Self Aware 84->82 are
-undiagnosed: run boundlab on each first.
+**The remaining earlybars pairs after the v20 slice** (8 "same" + WTSA at closer):
+refine-margin class (Titi 73->72, Cigo 50->49, PROVENZA 79->80, bad guy 23->24,
+KITN 21->22, Thinkin 2->1 - the fill-vs-arrival fight; the settle knob history says
+a track-local or evidence-gated settle is the unexplored move), DP class (Snooze
+17->23, six bars - needs the lyric window used ASSERTIVELY, see RC5), phase-suspect
+(Safir 33->34 - waits on the tap verdict), and WTSA 83-vs-82 (the stay-pin landed
+83 on the huge arrival; whether the owner's 82 or the physics' 83 is the felt bar
+is a listening question, not a code one). Vitej 82, Kisses 63, Titi 54 and Lose
+Yourself 23 are DONE at v20. Unmarked v20 collateral to listen for: Praha chorus
+39 -> 41 (the restart floor holding the band's bar - 1:26.8 vs 1:30.5).
 
 **Peak selection by mean energy** - three complaints on file (Ine Plemena, Self Aware
 "I would not say this is peak", Hannah Montana tension drop) PLUS EARFQUAKE: its peak
@@ -371,15 +397,34 @@ this call and it shipped at v15).
 
 ## If you are the next session: the first hour
 
-1. Read this file to the end, then round2-record.md's tail (rounds 2-4 + verdicts).
-2. Mine cache-C/judge for new marks (rules under "Mining a new judged round"; diff
-   against snapshot.json). The round-4 closing question: do Safir ~1:07 and Vitej
-   ~2:38 arrive ON the bar now, and does the playhead feel right?
-3. Verdict good -> commit anything the owner approves, close round 4 in the round
-   record, start ROUND 5 (ballad endings, design below, research verified). Verdict
-   still-off -> the model-plurality phase path in the round-4 section (owner taps
-   "one"; never a local discriminator).
-4. Before ANY change: run `node bench/earlybars.ts` for the fresh baseline (28 rows),
-   and keep every gate in "Gates and probes" green behind each slice.
-5. One question is waiting on the owner regardless: Vitej 81 vs 82 (marked both ways
-   in two rounds) - ask before touching that pair.
+1. Read this file to the end, then round2-record.md's tail (round-4 close + the
+   round-5 boundary-slice diagnoses and implementation - the freshest evidence).
+2. Mine cache-C/judge for new marks (rules under "Mining a new judged round"; the
+   v20 build IS app C now, and it carries the SECTION-EDITING UI - the owner can
+   hand-draw a track's section map in the judge panel; it saves into the
+   judgement as `sections` with authoritative TIMES + fractional bars on the
+   pinned grid. Mine those as ground truth before anything else). Open with the
+   owner: (a) SAFIR - a PIECEWISE grid staged in cache-C (gridedit.ts, cuts at
+   53.8 and 106.8 from the owner's five-mark prescription; .orig backup,
+   `restore` mode) - the track carries TWO half-bar edits and no single phase
+   serves it (the round record's "piecewise-phase track" section); does the
+   staged version land every seam?; (b) Kisses 1:47.8, Titi 1:59.0, Praha 1:30.5
+   verdicts; (c) the commit word; (d) PONYBOY - the kick-blindness diagnosis was
+   RETRACTED (an undefined-read artifact); the measured mechanism is hasDrops
+   starving on step-less wall-to-wall bangers, fix design A in the round record
+   (third hasDrops arm: club + sustained pounding); implement behind judged-36
+   zero-drift.
+3. The v20 slice is UNCOMMITTED - if the owner said "commit", stage the explicit
+   paths in "Where the code stands" (never the preview3d files or hardware.html).
+4. Taps landed -> compute per-tap offsets vs the shipped grid, subtract the
+   EARFQUAKE median lag, read Safir's phase (~0 = grid right, ~2 beats = half-bar
+   flip confirmed -> design the low-meterConf phase fix; guard rails in the phase
+   brief above; NEVER a local discriminator).
+5. Before ANY further analyser change: `MV_CACHE_DIR=<cache with Kisses/WTSA audio>
+   node bench/earlybars.ts` - the floor is 20 hit / 0 worse of 28. Keep every gate
+   in "Gates and probes" green behind each slice; `bench/stagetrace.ts <id> [from]
+   [to]` names the stage that moved any boundary (MATCH line must hold; it prints
+   the real analyzeTrack table - compare FINALS, a mid-pipeline line once read as
+   the final cost an hour).
+6. Ballad endings (the old R5 candidate above) is the next queued round AFTER the
+   phase question and the v20 room verdict settle.
