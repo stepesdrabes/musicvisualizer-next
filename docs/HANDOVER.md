@@ -1,10 +1,11 @@
 # Handover
 
-State as of 2026-08-15 (afternoon session), after round 4 CLOSED on the room's
-verdict and the ROUND-5 BOUNDARY SLICE landed code-complete at v20 - uncommitted,
-awaiting the owner's listening pass and the word "commit". Safir's phase question
-is open in parallel (tap protocol asked, taps not yet given). Start at "If you are
-the next session" near the end, then come back to the top.
+State as of 2026-08-15 (end of the marathon session): round 4 closed, the ROUND-5
+FINISHING WAVE shipped and committed through v22 / SHOW 16 / CONTEXT 2 - the
+boundary fixes, the listener-cut grids, the engine round, the judge tooling trio,
+and every gate green. Safir's grid is room-confirmed via the cuts path; the one
+deferred package is lyric-assertive placement (C), which opens the next session.
+Start at "If you are the next session" near the end, then come back to the top.
 `docs/EFFECT_POLISHING.md` carries the method (judge loop, cluster-before-fix, the
 kill criterion, bench-vs-room discipline). The complete campaign evidence lives in
 `bench/judged/round-2026-08-14/`:
@@ -23,25 +24,28 @@ memory; nothing there is needed to start round 4.
 
 ## Where the code stands
 
-Round-5 work COMMITTED on the owner's word (2026-08-15 late evening) in four
-chunks: the v20+v21 analyser slice, the bench instruments (stagetrace, phasepick,
-phaseflip, gridedit, judgemap + the earlybars scorer), the judge trio (section
-editor, typed hit marks, arrangement preview), and these records. The owner's own
-in-flight work stays uncommitted: `docs/hardware.html` and everything under
-`packages/preview3d/` - DO NOT touch or commit those; stage explicit paths only.
-The sectioning-model memo was moved OUT of the repo by the owner on purpose
-(a second research agent must not read it) - do not recreate it here.
+Everything through the finishing wave is COMMITTED (seven commits 2026-08-15,
+b5c3fbc..49bf891): the v20+v21 analyser slices, the bench instruments, the judge
+trio (section editor, typed hit marks, arrangement preview), the v22 cuts path +
+settle gate + SOPHIE fixture + genre provenance, the engine round (SHOW 16), and
+the records. The owner's own in-flight work stays uncommitted: `docs/hardware.html`
+and everything under `packages/preview3d/` - DO NOT touch or commit those; stage
+explicit paths only. The sectioning-model memo was moved OUT of the repo by the
+owner on purpose (a second research agent must not read it) - do not recreate it.
 
-ANALYSIS_VERSION 21 (v20 = the boundary slice, v21 = + the Ponyboy pounding arm),
-SHOW_VERSION 15. 769 tests green, `npm run check` clean. earlybars at v21: 20 hit /
-0 closer / 8 same / 0 worse of 28 - THE FLOOR (WTSA true bar ear-confirmed at 83).
-structscore v21 identical to v20: raveform F0.5 0.394 / F3 0.540, harmonix 0.202 /
-0.532 (sweep-record.md). Judged-after at v21 byte-identical to v20 - the pounding
-arm's only corpus effect is Ponyboy itself (drop@72 now). showprobe baselines from
-the v20 run: 0 lint / 0 misfires / 100% quiet, contrast 2.84, hue jumps 2894, dark
-bars 2 (the lavaBlobs pair); the v21 cache114 regen re-verifies on ship. Room
-verdicts on file: Vitej GOOD, EARFQUAKE GOOD, WTSA GOOD, SAFIR piecewise staging
-CONFIRMED ("now looks correct").
+ANALYSIS_VERSION 22, SHOW_VERSION 16, CONTEXT_VERSION 2 (the finishing wave:
+v20 boundary slice, v21 pounding arm, v22 listener-cut grids + settle gate +
+audioGenres; SHOW 16 = group-final peaks + the leaving pass). 778 tests green,
+`npm run check` clean. earlybars at v22: 20 hit / 0 closer / 8 same / 0 worse of
+28 - THE FLOOR. structscore v22 identical to v20/21 (sweep-record.md). Judged-36
+analysis-side ZERO drift from v21 on frozen code; composition side moved by
+design: peaks Vitej 81->82, Titi 37->54 (EARFQUAKE stays 8 - its choruses do not
+group as kin, a GROUPING question on the ledger), and five fade-class tracks
+gained decline steps (Thinkin, Self Esteem, Blinding Lights, Someone You Loved,
+Cigo). Room verdicts on file: Vitej GOOD, EARFQUAKE GOOD, WTSA GOOD, SAFIR
+piecewise CONFIRMED including the healed strobe edge, Ponyboy labelled correct
+by hand map. The cuts loop is CLOSED: a hand-drawn map re-grids its track on the
+next analysis automatically.
 Commit discipline: Conventional Commits, no co-author trailer, no em-dashes anywhere,
 stage explicit paths, only commit when the owner says so (the pattern each round:
 implement -> gates -> owner listens -> owner says "commit").
@@ -63,16 +67,18 @@ What shipped, one line each (details in round2-record.md):
 - R4 (v19/v15 + playhead): the breath dims instead of re-staging; indicators mark
   the heard instant. Room: playhead CONFIRMED; both seams still early -> reclassified
   (Vitej bar-class, Safir phase-class). Round 4 closed in the round record.
-- R5 boundary slice (v20, UNCOMMITTED): stay-pins (physics-only, stayPinScore 3,
-  protect-not-vote), pin-aware fold with the void guard, restart noise floor on the
-  snap veto, earlybars scores non-build starts, bench/stagetrace.ts instrument.
-  Fixes on the ladder: Vitej 82, Kisses 63, Titi 54, Lose Yourself 23, WTSA 83
-  (closer). Awaiting the room.
+- R5, the finishing wave (v20 -> v22 / SHOW 16, COMMITTED): stay-pins + vote split
+  + pin-aware fold + restart noise floor (v20); the pounding drops arm (v21);
+  listener-cut grids with true short bars, the settle gate's measured negative,
+  the SOPHIE kit fixture, audioGenres provenance (v22); group-final peaks and the
+  leaving pass (SHOW 16); the judge trio (section editor, typed hit marks,
+  arrangement preview). Room: Vitej/EARFQUAKE/WTSA GOOD, Safir confirmed via cuts,
+  Ponyboy fixed and hand-mapped. Ladder floor 20 hit / 0 worse of 28.
 
 The boundary instrument `bench/earlybars.ts` is the campaign's backbone: 18 frozen
 owner-marked pairs + 10 sentinels (28 rows), scored against whatever analyzer is
-checked out. Current full score 19 hit / 1 closer / 8 same / 0 worse of 28 (the
-v20 floor). Run it after ANY analysis change - with MV_CACHE_DIR pointed at a
+checked out. Current full score 20 hit / 0 closer / 8 same / 0 worse of 28 (the
+v22 floor; WTSA ear-confirmed at 83). Run it after ANY analysis change - with MV_CACHE_DIR pointed at a
 cache that has Kisses/WTSA audio (cache-C today; the primary cache lacks those
 two): `MV_CACHE_DIR=... node bench/earlybars.ts [--variant=NAME] [--no-lyrics]`.
 First run per track pays BeatThis (~15 s each, cached in bench/corpus/.beats).

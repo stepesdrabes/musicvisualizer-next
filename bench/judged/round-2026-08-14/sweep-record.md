@@ -48,3 +48,9 @@ current/current   harmonix   n=60  F0.5=0.202  F3=0.532  label=10.5%  base=53.0%
 current/current   raveform   n=60  F0.5=0.394  F3=0.540  label=32.6%  base=33.6%  sections=18.1/9.4
 current/current   harmonix   n=60  F0.5=0.202  F3=0.532  label=10.5%  base=53.0%  sections=10.7/10.1
 (identical to v20 - the arm has zero corpus footprint; its effect is Ponyboy-specific by construction)
+
+## finishing wave final (v22 / SHOW 16)
+current/current   raveform   n=60  F0.5=0.394  F3=0.540  label=32.6%  base=33.6%  sections=18.1/9.4
+current/current   harmonix   n=60  F0.5=0.202  F3=0.532  label=10.5%  base=53.0%  sections=10.7/10.1
+showprobe cache114: 0 lint / 0 misfires / 100% quiet / dark 2 · contrast 2.76 (was 2.84) · hue jumps 2585 (was 2894)
+(the contrast/jump softening is the leaving pass stepping fade tails down - coverage holds; judged-36 analysis-side zero drift, composition moved by design)

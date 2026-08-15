@@ -552,3 +552,13 @@ contaminated - its reanalyse process started during the settle-1.2 experiment
 window, exactly the background-run hygiene the handover warns about. The chain
 was killed and both batteries re-run on frozen code. The invariant stands: land
 edits BETWEEN runs, always.
+
+## Finishing-wave gates: ALL GREEN (final, on frozen code after the contamination redo)
+
+Suite 778, typecheck clean, earlybars 20/0 of 28, structscore both corpora
+identical, judged-36 analysis-side zero drift vs v21 with the composition moved
+by design (peaks Vitej 82 and Titi 54; EARFQUAKE stays 8 - the choruses do not
+group as kin, a grouping-question ledger entry; decline steps on the five
+fade-class tracks), 36/36 + cache114 lint-clean, showprobe 0/0/100% with the two
+ledger dark bars, contrast 2.76 / hue jumps 2585 (softened by the leaving pass;
+coverage holds). Committed b5c3fbc..49bf891 plus this record.
