@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { carveRingOut, type Segment } from './arrange.ts';
+import { carveRingOut, snapToPhrases, type Segment } from './arrange.ts';
 
 /** A 16-bar final drop whose last `ring` bars have the kick out and the level collapsed. */
 function ringOut(ring: number): { segments: Segment[]; energy: Float32Array; kicks: Int32Array } {
@@ -51,5 +51,56 @@ describe('carveRingOut', () => {
 		];
 		carveRingOut(segments, energy, kicks, 16);
 		expect(segments).toHaveLength(2);
+	});
+});
+
+describe('snapToPhrases', () => {
+	it('yields to a pinned startBar one bar off the grid', () => {
+		const make = (): Segment[] => [
+			{ startBar: 0, endBar: 40, kind: 'groove', group: 0 },
+			{ startBar: 40, endBar: 82, kind: 'groove', group: 1 },
+			{ startBar: 82, endBar: 98, kind: 'drop', group: 2 }
+		];
+		const free = make();
+		snapToPhrases(free, 98, 1, new Set());
+		expect(free[2].startBar).toBe(81);
+		const held = make();
+		snapToPhrases(held, 98, 1, new Set([82]));
+		expect(held[2].startBar).toBe(82);
+	});
+
+	it('prefers moving a pin over growing a void across a played bar', () => {
+		// A one-bar sliver between a short void and a long pinned drop: redirecting the
+		// fold into the void would black out a played bar in the room, which is worse
+		// than the drop's cue starting one bar early. The length rule stands here.
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 4, kind: 'void', group: -1 },
+			{ startBar: 4, endBar: 5, kind: 'build', group: -1 },
+			{ startBar: 5, endBar: 98, kind: 'drop', group: 2 }
+		];
+		snapToPhrases(segments, 98, 1, new Set([5]));
+		expect(segments).toEqual([
+			{ startBar: 0, endBar: 4, kind: 'void', group: -1 },
+			{ startBar: 4, endBar: 98, kind: 'drop', group: 2 }
+		]);
+	});
+
+	it('folds a snapped-empty sliver away from a pinned boundary', () => {
+		// The Vitej shape: the 2-bar kickless cut before the last drop. Snapping pulls the
+		// cut's start onto the phrase line, leaving a one-bar sliver whose LONGER neighbour
+		// is the drop - and folding into the longer side would drag the drop's pinned start
+		// back onto a bar nothing arrives at, undoing the pin the arrival earned.
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 73, kind: 'groove', group: 0 },
+			{ startBar: 73, endBar: 80, kind: 'groove', group: 1 },
+			{ startBar: 80, endBar: 82, kind: 'build', group: -1 },
+			{ startBar: 82, endBar: 98, kind: 'drop', group: 2 }
+		];
+		snapToPhrases(segments, 98, 1, new Set([82]));
+		expect(segments).toEqual([
+			{ startBar: 0, endBar: 73, kind: 'groove', group: 0 },
+			{ startBar: 73, endBar: 82, kind: 'groove', group: 1 },
+			{ startBar: 82, endBar: 98, kind: 'drop', group: 2 }
+		]);
 	});
 });

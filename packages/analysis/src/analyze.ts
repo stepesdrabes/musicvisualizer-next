@@ -41,6 +41,7 @@ import {
 	demoteVersesFromLyrics,
 	hookBars,
 	hookStarts,
+	isClubFamily,
 	loudKickRate,
 	promoteChorusesFromLyrics,
 	snapToHooks,
@@ -248,11 +249,18 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	);
 	// Only the decisive arrivals earn pin status; a marginal move may correct its own
 	// boundary without getting a vote over everyone else's.
-	const pinned = new Set(moves.filter((m) => m.score >= tuning.pinScore).map((m) => m.to));
+	const movePinned = new Set(moves.filter((m) => m.score >= tuning.pinScore).map((m) => m.to));
+	// A boundary the segmenter got right from birth records no move, so it earned no pin,
+	// and the phrase snap downstream was free to round it off the very arrival it stands
+	// on - Vitej's last drop shipped a bar early, on a kickless bar, exactly this way.
+	// Physics-only and at stayPinScore, not pinScore: see the tuning docblock.
+	const physical = arrivalStrengths(bars, rawKicks, null, null, settle, tuning.settleWeight);
+	const pinned = new Set(movePinned);
+	for (const b of rough) if (b > 0 && b < bars.count && physical[b] >= tuning.stayPinScore) pinned.add(b);
 	// The pinned arrivals know the track's phrase phase; boundaries that had only mush to
 	// stand on are re-read onto it. This is what was arriving a bar early at the top of a
 	// track whose own drop later proved where the phrases actually sit.
-	const bounds = rephaseToPins(rough, pinned, bars.count, tuning);
+	const bounds = rephaseToPins(rough, pinned, bars.count, tuning, movePinned);
 	const groups = groupSegments(sim, bars.count, bounds);
 	const barGroup = barGroups(bounds, groups.group, bars.count);
 
@@ -284,7 +292,8 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		kicks,
 		snares,
 		pinned,
-		input.labels
+		input.labels,
+		isClubFamily(input.context?.genreFamily ?? null)
 	);
 
 	// The vocabulary is chosen per track, after labelling: the structural machinery only
@@ -320,10 +329,9 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// it, and a drop downbeat left at a bar its section has moved off - or been demoted
 	// off - fires the show's biggest cue in the wrong section.
 	const arrivals = arrivalStrengths(bars, rawKicks, vocal, hooks, settle, tuning.settleWeight);
-	// The snap's veto reads arrivals WITHOUT the voice term: the sung evidence is the very
-	// thing under adjudication, and with it in the score a hook bar can never read as
-	// "nothing arrives here" - which is exactly what a pickup sung over silence is.
-	const physical = arrivalStrengths(bars, rawKicks, null, null, settle, tuning.settleWeight);
+	// The snap's veto reads the physics-only arrivals computed above: the sung evidence is
+	// the very thing under adjudication, and with it in the score a hook bar can never read
+	// as "nothing arrives here" - which is exactly what a pickup sung over silence is.
 	const snapMoves =
 		lyricLines && lyricLines.length > 0
 			? snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count, 2, physical)

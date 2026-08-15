@@ -400,6 +400,16 @@ export interface StructureTuning {
 	refineFloor: number;
 	/** Arrival score below which a refined move may not become a phase pin. */
 	pinScore: number;
+	/**
+	 * PHYSICS-ONLY arrival score at which a boundary that never moved earns a pin anyway.
+	 * Higher than pinScore on purpose: a moved pin proved itself against its neighbours
+	 * under the refine margin, a stayed bound was never contested, so it pins only where
+	 * no contest is conceivable. Physics-only because the hook term lifted a weak bar
+	 * (0.89) over pinScore on Killing In the Name and the false pin then held off the
+	 * phrase snap that kept the praised bar - the lyric evidence cannot vouch for the
+	 * bar the lyric stages downstream are still adjudicating.
+	 */
+	stayPinScore: number;
 	/** 0 disables re-phasing entirely. Bars a boundary may be dragged onto the pinned phase. */
 	rephaseReach: number;
 	/** Fewest pins whose phase agreement is trusted. */
@@ -446,7 +456,11 @@ export const DEFAULT_TUNING: StructureTuning = {
 	// the same floors: soft real boundaries between different material must survive.
 	consolidateFloor: 1.6,
 	settleWeight: 0,
-	refineReach: 1
+	refineReach: 1,
+	// The on-file cases split wide: legitimate stays tower (5.9, 6.0, 7.2 - Vitej's and
+	// Way Too Self Aware's drops, Titi's slam) while the stays that displaced praised or
+	// marked bars sat at 2.4 and below (Titi 74, KITN 50). 3 sits in the gap.
+	stayPinScore: 3
 };
 
 /**
@@ -530,10 +544,17 @@ export function rephaseToPins(
 	bounds: number[],
 	pinned: Set<number>,
 	barCount: number,
-	tuning: StructureTuning = DEFAULT_TUNING
+	tuning: StructureTuning = DEFAULT_TUNING,
+	/**
+	 * The pins whose phase agreement is trusted, when narrower than `pinned`. A moved pin
+	 * proved the track's phase against a contested neighbour; a stayed pin is decisive
+	 * about its own bar only - letting stays vote diluted a unanimous phase vote below
+	 * agreement on Killing In the Name and switched the praised re-phasing off track-wide.
+	 */
+	voting: ReadonlySet<number> = pinned
 ): number[] {
 	if (tuning.rephaseReach <= 0) return bounds;
-	const pins = bounds.filter((b) => pinned.has(b) && b > 0 && b < barCount);
+	const pins = bounds.filter((b) => voting.has(b) && b > 0 && b < barCount);
 	if (pins.length < tuning.rephaseMinPins) return bounds;
 
 	const votes = new Int32Array(4);

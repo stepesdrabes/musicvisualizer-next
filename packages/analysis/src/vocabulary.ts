@@ -51,12 +51,17 @@ const CLUB_FAMILIES: ReadonlySet<GenreFamily> = new Set([
  */
 const CLUB_KICK_FLOOR = 0.4;
 
+/** Whether the genre family is one whose records are built around the drop. */
+export function isClubFamily(family: GenreFamily | null): boolean {
+	return family !== null && CLUB_FAMILIES.has(family);
+}
+
 export function speaksClub(
 	family: GenreFamily | null,
 	loudKicksPerBeat: number
 ): boolean {
 	// A club family speaks club only where the record corroborates it - see the floor.
-	if (family) return CLUB_FAMILIES.has(family) && loudKicksPerBeat >= CLUB_KICK_FLOOR;
+	if (family) return isClubFamily(family) && loudKicksPerBeat >= CLUB_KICK_FLOOR;
 	// No metadata: a relentless four-on-the-floor kick is the one audio signature that
 	// separates the two vocabularies without a genre tag. Defaulting the unknown to song
 	// errs toward blooms over strobes, which is the survivable direction.
@@ -283,6 +288,15 @@ const SNAP_REACH_EARLIER = 2;
  */
 const SNAP_KEEP_DECISIVE = 2;
 const SNAP_DOMINANCE = 1.45;
+/**
+ * Below this, a window edge is a bar the record has not arrived at. A restart is exempt
+ * from the ratio veto - it cannot lag or lead - but a "restart" onto silence while the
+ * incumbent is decisive is a repeated line mid-flow, not a section the band knows about:
+ * the singer runs unbroken through Kisses' last groove, and the snap dragged the pinned
+ * drop two bars back onto the voice alone (edge 0.23). A true restart is corroborated -
+ * Le Freak's edge arrives at 1.57 with the band and clears this floor untouched.
+ */
+const SNAP_RESTART_NOISE = 0.6;
 
 /**
  * Align chorus-class startBars with the hook windows the sung lyrics prove, in place.
@@ -358,17 +372,21 @@ export function snapToHooks(
 			// against a sentinel that scored its one disagreement as a regression, and
 			// restored when the owner's round-2 note overturned that sentinel: the veto had
 			// been right about the bar and the instrument wrong.
-			// Entrances only: a vocal ENTRANCE can lead the beat (the veto's whole case),
-			// but a RESTART happens mid-flow and cannot lag or lead anything - its window
-			// is trustworthy against any incumbent, which is the same asymmetry the
-			// one-bar-later rule already encodes. Without this the veto slid a
-			// lyric-perfect restart chorus two bars onto the band's arrival.
+			// The ratio form is for entrances only: a vocal ENTRANCE can lead the beat (the
+			// veto's whole case), but a RESTART happens mid-flow and cannot lag or lead
+			// anything - held to the ratio, the veto slid a lyric-perfect restart chorus
+			// two bars onto the band's arrival. A restart window still cannot claim a bar
+			// the record never arrives at, though: physics cannot rank a corroborated
+			// restart edge against a decisive incumbent (the lyric does that), but it can
+			// tell a band-backed edge from the voice alone, and only the absolute noise
+			// floor makes that call.
 			if (
 				edge < from &&
-				!w.restart &&
 				arrivals &&
 				(arrivals[from] ?? 0) >= SNAP_KEEP_DECISIVE &&
-				(arrivals[from] ?? 0) >= Math.max(1, arrivals[edge] ?? 0) * SNAP_DOMINANCE
+				(w.restart
+					? (arrivals[edge] ?? 0) < SNAP_RESTART_NOISE
+					: (arrivals[from] ?? 0) >= Math.max(1, arrivals[edge] ?? 0) * SNAP_DOMINANCE)
 			) {
 				continue;
 			}

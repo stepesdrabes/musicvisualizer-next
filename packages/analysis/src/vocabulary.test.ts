@@ -272,6 +272,39 @@ describe('snapToHooks', () => {
 		]);
 	});
 
+	it('refuses the restart pull-back onto a bar where nothing arrives', () => {
+		// The Kisses case: the singer never stops, so a repeated line mid-flow reads as a
+		// restart two bars before the band lands. The refiner pinned the band's bar; the
+		// snap must not drag the last drop onto a window the record has not arrived at.
+		const arrivals = new Float32Array(61);
+		arrivals[23] = 5.4;
+		arrivals[21] = 0.2;
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 23, kind: 'groove', group: 0 },
+			{ startBar: 23, endBar: 40, kind: 'drop', group: 1 }
+		];
+		// Hook restarts at bar 20.3, window {20, 21}, so the full-reach edge is 21.
+		expect(snapToHooks(segments, [restart(40.6)], barTime, 60, 2, arrivals)).toEqual([]);
+		expect(segments[1].startBar).toBe(23);
+	});
+
+	it('still pulls back onto a restart the band corroborates', () => {
+		// The Le Freak shape: the restart window carries a real arrival of its own - the
+		// band hits with the singer - and a decisive incumbent two bars later must not
+		// hold the chorus off it. Physics cannot rank these two bars; the lyric can.
+		const arrivals = new Float32Array(61);
+		arrivals[23] = 4.1;
+		arrivals[21] = 1.6;
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 23, kind: 'verse', group: 0 },
+			{ startBar: 23, endBar: 40, kind: 'chorus', group: 1 }
+		];
+		expect(snapToHooks(segments, [restart(40.6)], barTime, 60, 2, arrivals)).toEqual([
+			{ from: 23, to: 21 }
+		]);
+		expect(segments[1].startBar).toBe(21);
+	});
+
 	it('absorbs a two-bar build leftward when the hook window sits inside it', () => {
 		// The Safir shape, marked by the owner in two rounds: chorus at 43, hook window
 		// {41, 42}, and the 2-bar build 41-43 holding the minimum-length refusal in place.

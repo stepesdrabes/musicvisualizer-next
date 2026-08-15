@@ -158,6 +158,22 @@ const BREAKDOWN_KIT = 0.62;
  */
 const DROP_KICK_STEP = 0.3;
 /**
+ * The pounding arm of `hasDrops`, for the club track both step arms are blind to: a
+ * wall-to-wall banger has no energy step (Ponyboy's biggest is 0.11 against DROP_STEP's
+ * 0.22) and no kick step (0.125 against 0.3), so it composed as grooves end to end and
+ * the room read it as "completely lost its energy". Sustained pounding IS the drop
+ * culture's signature, so on a club family it counts as having drops and the peak
+ * rescue below decides which group is the one. Every inner section must keep at least
+ * half the track's own q90 kick bar with the kit present in nearly every bar - measured
+ * over the judged 36, no club track that lacks drops today crosses this (the ambient
+ * and ballad sentinels sit far under it), and Ponyboy's quietest groove sits exactly at
+ * the half. Family-gated because a rock record with constant drums is not thereby
+ * festival material, and OFF without metadata - the survivable direction, same call
+ * speaksClub makes.
+ */
+const POUND_KICK = 0.5;
+const POUND_KIT = 0.9;
+/**
  * How far the kick has to sit below the drop it leads into for the passage to be a build.
  *
  * A build is the one section defined by where it is going rather than by what it contains, and
@@ -303,7 +319,9 @@ export function arrange(
 	snaresPerBar: Int32Array,
 	/** Boundaries placed on measured arrivals, which the phrase snap must not drag off them. */
 	pinned: ReadonlySet<number> = new Set(),
-	label: LabelTuning = DEFAULT_LABEL_TUNING
+	label: LabelTuning = DEFAULT_LABEL_TUNING,
+	/** Genre family is club-side; arms the pounding form of `hasDrops`. */
+	clubFamily = false
 ): Arrangement {
 	const count = bars.count;
 
@@ -351,8 +369,13 @@ export function arrange(
 	// a track the drum detector heard NOTHING in cannot have one however its strings swell
 	// - a beatless ambient piece with 18 energy-stepped "drops" was the judged failure.
 	// `audible` is the q90-based reading above; a single hallucinated onset stays false.
+	const inner = kit.slice(1, Math.max(1, kit.length - 1));
+	const pounds =
+		clubFamily &&
+		inner.length > 0 &&
+		inner.every((k) => k.kick >= POUND_KICK && k.kit >= POUND_KIT);
 	const hasDrops =
-		audible && (biggestStep >= DROP_STEP || biggestKickStep >= DROP_KICK_STEP);
+		audible && (biggestStep >= DROP_STEP || biggestKickStep >= DROP_KICK_STEP || pounds);
 
 	const body = median(segEnergy);
 	const loudLevel = Math.max(quantile(segEnergy, 0.7), Math.max(...segEnergy) * 0.82);
@@ -792,7 +815,7 @@ const MAX_SNAP_BARS = 1;
  * shorter than two bars, because the linter rejects an off-phrase cue outright and the
  * sections are what the cues are written against.
  */
-function snapToPhrases(
+export function snapToPhrases(
 	segments: Segment[],
 	barCount: number,
 	anchor: number,
@@ -824,7 +847,14 @@ function snapToPhrases(
 		if (len >= 2 || segments[i].kind === 'void' || segments.length === 1) continue;
 		const prev = segments[i - 1];
 		const next = segments[i + 1];
-		if (next && (!prev || next.endBar - next.startBar >= prev.endBar - prev.startBar)) {
+		// Folding forward moves the next section's start onto the sliver's bars, and when
+		// that start is pinned it drags a measured arrival onto bars nothing arrived at -
+		// the pin outranks the length heuristic here the way it outranks the grid above.
+		// Unless the previous neighbour is a void: growing a void over a played bar blacks
+		// out sound in the room, which is worse than a one-bar pin shift.
+		if (next && prev && prev.kind !== 'void' && pinned.has(next.startBar)) {
+			prev.endBar = segments[i].endBar;
+		} else if (next && (!prev || next.endBar - next.startBar >= prev.endBar - prev.startBar)) {
 			next.startBar = segments[i].startBar;
 		} else if (prev) {
 			prev.endBar = segments[i].endBar;
