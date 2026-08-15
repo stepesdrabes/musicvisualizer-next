@@ -131,7 +131,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 		...profile.signatures.filter((s) => !signatures.includes(s))
 	];
 
-	const peakSpan = analysis.sections.find((s) => s.energyRank === 1) ?? null;
+	const peakSpan = peakSection(analysis.sections);
 
 	// What the peak arrival is marked with. The genre's answer by default - but a bloom
 	// family's peak that measurably pounds has earned the slam anyway: 0.8 kicks a beat is
@@ -157,7 +157,11 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	// two and the linter says so. The peak therefore gets a short cue carrying the burst and a
 	// second one right behind it for the rest of the section, which is how a desk would run it.
 	// A swell peak carries no burst at all: rnb and ballads bloom into their biggest passage.
-	const slots = buildSlots(analysis, profile.peak === 'swell' ? 0 : (peakMaster?.taste.maxBars ?? 0));
+	const slots = buildSlots(
+		analysis,
+		profile.peak === 'swell' ? 0 : (peakMaster?.taste.maxBars ?? 0),
+		peakSpan?.index ?? -1
+	);
 
 	// A squashed master has almost no per-bar level left to read, so the arrangement has to
 	// supply the dynamics the waveform no longer does. Under about 8 LU of peak-to-loudness the
@@ -318,6 +322,7 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
 	shapeApproaches(cues, profile);
 	plantWildcard(cues, slots, picker, analysis);
 	inheritWhereEmpty(cues);
+	trackTheLeaving(cues, analysis);
 
 	return {
 		version: SHOW_VERSION,
@@ -341,9 +346,67 @@ export function composeShow(analysis: TrackAnalysis, opts: EngineOptions = {}): 
  * section change anywhere else, and a cue that arrives off-phrase reads as wrong even when
  * nobody can say why.
  */
-function buildSlots(analysis: TrackAnalysis, peakMasterBars: number): Slot[] {
+/**
+ * The record leaving is a gesture the room must follow. A ring-out or fade whose single
+ * closing cue holds one level reads as the lights refusing to let go - every documented
+ * ending practice tracks the decay (the round-2 endings research). Where the final bars
+ * decline decisively, the closing look is stepped down WITH them: the same layers
+ * throughout, which is the outro inheritance rule, only the level and the clock move.
+ * A cold ending has no decline and is the button's business, not this pass's.
+ */
+function trackTheLeaving(cues: Show['cues'], analysis: TrackAnalysis): void {
+	if (cues.length === 0) return;
+	const last = cues[cues.length - 1];
+	const endBar = analysis.bars.length;
+	if (endBar - last.bar < 6) return;
+	const energy = (b: number) => analysis.bars[Math.min(endBar - 1, Math.max(0, b))].energy;
+	const head = (energy(last.bar) + energy(last.bar + 1)) / 2;
+	const tail = (energy(endBar - 2) + energy(endBar - 1)) / 2;
+	if (head < 15 || tail > 0.65 * head) return;
+	const base = last.intensity ?? 0.5;
+	const baseMotion = last.motion ?? 1;
+	let prev = base;
+	for (let bar = last.bar + 4; bar < endBar - 1; bar += 4) {
+		const local = (energy(bar) + energy(bar + 1)) / 2;
+		// Follows the record down, never back up, and never to black: "letting the room go
+		// dark" is not the same instruction as "off".
+		const level = Math.max(0.12, Math.min(prev - 0.02, base * (local / head)));
+		if (level >= prev) continue;
+		prev = level;
+		cues.push({
+			bar,
+			section: last.section,
+			layers: last.layers,
+			palette: last.palette,
+			intensity: Math.round(level * 100) / 100,
+			motion: Math.max(0.15, Math.round(baseMotion * Math.max(0.5, local / head) * 100) / 100),
+			fadeBeats: 8,
+			note: 'the record is leaving and the room goes with it'
+		});
+	}
+}
+
+/**
+ * The peak is the LAST statement of the loudest group, not the loudest single section.
+ * The house craft holds the first statement back so every return adds, and every peak
+ * complaint on file names a first statement: EARFQUAKE's corrected first chorus
+ * outranked by mean, sat before SETTLE_BARS, and silently skipped the reserved master.
+ * Kind is held alongside group because a degenerate grouping (everything group 0) must
+ * not let the peak leak into an outro that merely shares the id.
+ */
+export function peakSection(sections: readonly SectionSpan[]): SectionSpan | null {
+	const top = sections.find((s) => s.energyRank === 1) ?? null;
+	if (!top || top.group < 0) return top;
+	let last = top;
+	for (const s of sections) {
+		if (s.group === top.group && s.kind === top.kind && s.index > last.index) last = s;
+	}
+	return last;
+}
+
+function buildSlots(analysis: TrackAnalysis, peakMasterBars: number, peakIndex: number): Slot[] {
 	const slots: Slot[] = [];
-	const peakIndex = analysis.sections.find((s) => s.energyRank === 1)?.index ?? -1;
+
 	let dropCount = 0;
 
 	// The final appearance of each material, so the last chorus can outrank its siblings.

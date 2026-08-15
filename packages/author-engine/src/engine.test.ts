@@ -79,6 +79,54 @@ describe('the arrangement', () => {
 		expect(brightest.bar).toBeLessThan(peak.endBar);
 	});
 
+	it('spends the peak on the loudest group LAST statement, not its first', () => {
+		// The house craft holds the first chorus back so every return adds; a first
+		// statement that outranks by mean (EARFQUAKE's corrected first chorus) must not
+		// take the peak treatment away from the final one.
+		const early = fixture();
+		const firstDrop = early.sections.find((x) => x.kind === 'drop')!;
+		const lastDrop = [...early.sections].reverse().find((x) => x.kind === 'drop')!;
+		firstDrop.energyRank = 1;
+		lastDrop.energyRank = 2;
+		const s = composeShow(early, { artHue: null, context: emptyContext() });
+		const brightest = s.cues.reduce((a, b) => ((b.intensity ?? 0) > (a.intensity ?? 0) ? b : a));
+		expect(brightest.bar).toBeGreaterThanOrEqual(lastDrop.startBar);
+		expect(brightest.bar).toBeLessThan(lastDrop.endBar);
+	});
+
+	it('steps the closing cue down with a record that is leaving', () => {
+		// The ring-out and the fade-out: a single outro cue holding one level reads as the
+		// lights refusing to let go. Where the final bars decline decisively, the closing
+		// look thins WITH them - same layers, lower level, slower clock.
+		const fading = fixture();
+		const outro = fading.sections[fading.sections.length - 1];
+		for (let b = outro.startBar; b < outro.endBar; b++) {
+			const k = (b - outro.startBar) / Math.max(1, outro.endBar - outro.startBar - 1);
+			fading.bars[b].energy = Math.round(55 * (1 - k) + 8 * k);
+		}
+		const s = composeShow(fading, { artHue: null, context: emptyContext() });
+		const tail = s.cues.filter((c) => c.bar >= outro.startBar);
+		expect(tail.length).toBeGreaterThanOrEqual(2);
+		for (let i = 1; i < tail.length; i++) {
+			expect(tail[i].intensity ?? 1).toBeLessThan(tail[i - 1].intensity ?? 1);
+			expect(tail[i].layers).toEqual(tail[0].layers);
+		}
+		// The gesture is sanctioned: the linter must not read the held stack as a repeat.
+		const lint = lintShow(s, { analysis: fading, effects });
+		expect(lint.warnings.filter((w) => w.rule === 'repeated-stack')).toEqual([]);
+	});
+
+	it('keeps the linter agreeing about where the peak is', () => {
+		const early = fixture();
+		const firstDrop = early.sections.find((x) => x.kind === 'drop')!;
+		const lastDrop = [...early.sections].reverse().find((x) => x.kind === 'drop')!;
+		firstDrop.energyRank = 1;
+		lastDrop.energyRank = 2;
+		const s = composeShow(early, { artHue: null, context: emptyContext() });
+		const lint = lintShow(s, { analysis: early, effects });
+		expect(lint.warnings.filter((w) => w.rule === 'peak-not-brightest')).toEqual([]);
+	});
+
 	it('snaps the cues that have to arrive on the downbeat', () => {
 		for (const cue of show.cues) {
 			if (cue.section === 'drop' || cue.section === 'void') expect(cue.fadeBeats).toBe(0);

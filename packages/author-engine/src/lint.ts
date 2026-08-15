@@ -1,5 +1,6 @@
 import type { EffectDef, Hit, LayerRole, Show, TrackAnalysis, TrackContext } from '@mv/core';
 import { allowedFlashes } from './genre.ts';
+import { peakSection as enginePeakSection } from './plan.ts';
 import {
 	HIT_RULES,
 	LAYER_ROLES,
@@ -289,9 +290,13 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 
 	// Your best trick loses value with every repeat. Except on the way out: an outro's
 	// sameness IS the gesture - the look thins and holds - and warning on it pushes an
-	// agent toward exactly the look-change the inheritance forbids.
+	// agent toward exactly the look-change the inheritance forbids. A decline step is
+	// the same gesture wherever it lives: the record is leaving, the stack holds and
+	// only the level falls.
+	const level = (i: number) => cues[i].intensity ?? show.defaults.intensity;
 	for (let i = 1; i < stacks.length; i++) {
 		if (cues[i].section === 'outro' && cues[i - 1].section === 'outro') continue;
+		if (cues[i].section === cues[i - 1].section && level(i) < level(i - 1) - 0.01) continue;
 		if (stacks[i] && stacks[i] === stacks[i - 1]) {
 			warn(
 				'repeated-stack',
@@ -303,7 +308,7 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 
 	// --- energy discipline --------------------------------------------------------------
 
-	const peakSection = analysis.sections.find((s) => s.energyRank === 1);
+	const peakSection = enginePeakSection(analysis.sections);
 	if (peakSection) {
 		const maxIntensity = Math.max(...cues.map((c) => c.intensity ?? show.defaults.intensity));
 		const loudest = cues.filter((c) => (c.intensity ?? show.defaults.intensity) === maxIntensity);
