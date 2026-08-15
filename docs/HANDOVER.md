@@ -1,7 +1,9 @@
 # Handover
 
-State as of 2026-08-15, early morning, after three shipped-and-judged rounds against
-the 2026-08-14 judged corpus, written for a session that starts at ROUND 4.
+State as of 2026-08-15, after FOUR shipped rounds against the 2026-08-14 judged
+corpus (round 4 code-complete, awaiting the owner's listening verdict), written for
+the session that closes round 4 and continues. Start at "If you are the next
+session" near the end, then come back to the top.
 `docs/EFFECT_POLISHING.md` carries the method (judge loop, cluster-before-fix, the
 kill criterion, bench-vs-room discipline). The complete campaign evidence lives in
 `bench/judged/round-2026-08-14/`:
@@ -20,13 +22,15 @@ memory; nothing there is needed to start round 4.
 
 ## Where the code stands
 
-HEAD `6ae3371`, tree clean EXCEPT the owner's own in-flight work: `docs/hardware.html`
+HEAD `fc72407`, tree clean EXCEPT the owner's own in-flight work: `docs/hardware.html`
 and everything under `packages/preview3d/` (modified + new files). DO NOT touch or
 commit those - preview3d is explicitly out of scope and the owner is working on it.
 
-ANALYSIS_VERSION 19, SHOW_VERSION 14. 764 tests green, `npm run check` clean,
-showprobe gate green over cache114 at v19 (0 lint / 0 misfires / 100% quiet coverage;
-the 2 dark bars are the pre-existing lavaBlobs bed-only build pair, on the ledger).
+ANALYSIS_VERSION 19, SHOW_VERSION 15. 764 tests green, `npm run check` clean,
+showprobe gate green over cache114 at v19/v15 (0 lint / 0 misfires / 100% quiet
+coverage; contrast mean 2.86, hue jumps 2962 - current baselines, drift from these
+is signal; the 2 dark bars are the pre-existing lavaBlobs bed-only build pair, on
+the ledger).
 Commit discipline: Conventional Commits, no co-author trailer, no em-dashes anywhere,
 stage explicit paths, only commit when the owner says so (the pattern each round:
 implement -> gates -> owner listens -> owner says "commit").
@@ -46,9 +50,11 @@ What shipped, one line each (details in round2-record.md):
   restart cannot lag or lead) and the absorb-left move for 2-bar builds. Room:
   EARFQUAKE went 2* -> 5* ("sectioning is great"); Vitej 3* -> 4*.
 
-The boundary instrument `bench/earlybars.ts` is the campaign's backbone: 17 frozen
-owner-marked pairs + 11 sentinels, scored against whatever analyzer is checked out.
-Current score 15 hit / 0 worse. Run it after ANY analysis change:
+The boundary instrument `bench/earlybars.ts` is the campaign's backbone: 18 frozen
+owner-marked pairs + 10 sentinels (28 rows), scored against whatever analyzer is
+checked out. Last full score 15 hit / 0 worse of 26, BEFORE the two round-3 pairs
+(Kisses 61->63, Way Too Self Aware 84->82) were added - the first run of a new
+session re-baselines at 28 rows and both new pairs are expected 'same'. Run it after ANY analysis change:
 `node bench/earlybars.ts [--variant=NAME] [--no-lyrics]`. First run per track pays
 BeatThis (~15 s each, cached in bench/corpus/.beats). `--no-lyrics` attributes an
 error to the DP/refine vs the hook snap - it found EARFQUAKE.
@@ -254,9 +260,11 @@ structure.ts docblock names them).
   original judgements, already fully mined into snapshot.json).
 - `LightningStrike (B).app` = round 1 (v17/v13) on `cache-B` (round-1 A/B verdicts
   in its judge/).
-- `LightningStrike (C).app` = round 3 (v19/v14) on `cache-C` (round-2 AND round-3
-  verdicts in its judge/ - the R3 notes are mined; future judgements land here).
-- Round 4 hands over by REPLACING C (its verdicts are mined) or adding D - ask.
+- `LightningStrike (C).app` = ROUND 4 FINAL (v19/v15 + the playhead fix) on
+  `cache-C` (round-2 and round-3 verdicts in its judge/, all mined; the round-4
+  listening verdicts LAND HERE and are the next session's first read).
+- Round 5 hands over by replacing C again (after mining its judge/) or adding D -
+  ask the owner which.
 - **THE INSTALL TRAP**: `cp -R new.app "/Applications/X.app"` onto an existing bundle
   NESTS it (X.app/LightningStrike.app) and the old binary keeps launching - one A/B
   was listened against the wrong build this way. `rm -rf` the target first, then
@@ -294,7 +302,8 @@ rounds taught:
 
 1. `npm test` (764) and `npm run check`. If check errors with TS6305 after deleting
    dist/, `npx tsc --build --force packages/analysis` (stale tsbuildinfo).
-2. `node bench/earlybars.ts` - 15 hit / 0 worse is the floor; any WORSE is a stop.
+2. `node bench/earlybars.ts` - 15 hit / 0 worse (of 28 rows) is the floor; any
+   WORSE is a stop.
 3. `node bench/structscore.ts --dataset raveform|harmonix --limit 60 --variant current`
    after analyser changes (baselines in sweep-record.md; label columns are BLIND to
    same-kind merges and lyric effects - read F0.5/F3/sections).
@@ -337,6 +346,16 @@ rounds taught:
   and no readout covered.
 - Ask the owner in small pieces; they answer fast and their one-line answers have
   twice redirected a round ("strobe is okay", "maybe 64").
+- **When the table is right and the ear still says off, suspect the LOOK, not the
+  analysis.** Round 4's "2-4 beats off" survived three correct boundary fixes because
+  the offender was a show gesture (the breath cue re-staging the room) - diff the
+  CUES at the complained bar (layers, fades, intensity), not just the sections.
+- **A re-staged room reads as an arrival, however dim.** Changing the layer stack is
+  a boundary statement; changing only intensity is not. The breath, the outro, and
+  any future approach-shaping obey this.
+- **Owner marks carry ~1.5-2 s of lag** (mid-bar positions even on praised conf-1.00
+  tracks); the `bar` field truncates from `t`. Trust the prose, recompute from `t`,
+  and never read sub-bar meaning from a mark.
 
 ## Owner's standing taste verdicts (unchanged, do not re-propose)
 
@@ -346,4 +365,21 @@ family drawn at most one per show; one wave-family at ~50-60% of its genre is th
 ceiling; exact-arrival gestures need the shape between arrivals to be worth watching.
 PLUS, new this campaign: the strobe-before-a-drop is explicitly endorsed ("strobe is
 okay like that before actual drop"); outros keep their look and thin; endings are
-anchored to the finish line, not the outro boundary.
+anchored to the finish line, not the outro boundary; the pre-arrival breath DIMS the
+rig and never strikes the set (full look kept, intensity only - the owner delegated
+this call and it shipped at v15).
+
+## If you are the next session: the first hour
+
+1. Read this file to the end, then round2-record.md's tail (rounds 2-4 + verdicts).
+2. Mine cache-C/judge for new marks (rules under "Mining a new judged round"; diff
+   against snapshot.json). The round-4 closing question: do Safir ~1:07 and Vitej
+   ~2:38 arrive ON the bar now, and does the playhead feel right?
+3. Verdict good -> commit anything the owner approves, close round 4 in the round
+   record, start ROUND 5 (ballad endings, design below, research verified). Verdict
+   still-off -> the model-plurality phase path in the round-4 section (owner taps
+   "one"; never a local discriminator).
+4. Before ANY change: run `node bench/earlybars.ts` for the fresh baseline (28 rows),
+   and keep every gate in "Gates and probes" green behind each slice.
+5. One question is waiting on the owner regardless: Vitej 81 vs 82 (marked both ways
+   in two rounds) - ask before touching that pair.
