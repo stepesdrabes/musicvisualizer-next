@@ -485,3 +485,70 @@ gate. Phase 0 runs with today's one map: build bench/mapscore.ts, score the
 rules AND the rolled-back P6 head against the owner's maps. 15-20 maps freeze
 the eval; 30-50 adapt the head. judgemap's first numbers (boundaries right,
 kinds 35%) already point the same direction.
+
+## The piecewise grid ships as the CUTS PATH; the automatic detector died on its instruments
+
+Package A of the finishing campaign, v22, all in one evening:
+
+- **barSynchronousAt**: the bar table over explicit bar-start beat indices; the
+  uniform path delegates to it (equivalence proven by the whole suite).
+- **The cuts path (SHIPPED)**: analyzeTrack accepts `gridCuts` (seconds) or
+  `sectionMapBoundaries` (a hand map's internal boundaries; cuts derived from beat
+  residues against the uniform grid - a map on a correct grid implies nothing).
+  Each cut becomes one TRUE SHORT BAR ending exactly at it. ingest and reanalyse
+  read the cache's judgement automatically: the owner draws a map, the next
+  analysis obeys it. Safir through this path: every mark 0.00-0.10s off, 0.82s
+  short bars at 53.80 and 106.80, the DP finding the owner's structure unforced -
+  better than the staged long-bar hack it replaces, and staged into cache-C at v22.
+- **The automatic plateau detector: built, measured, KILLED.** Unit-tested clean
+  on synthetics; on the real track its evidence is structurally blind - a backbeat
+  is symmetric under a half-bar shift, and Safir's phase-0 truth region voted
+  0/0/5/2 by broadband strongest-onsets. It declined on the verified edits and
+  hallucinated one on KITN, renumbering the praised 49 sentinel (the one WORSE the
+  floor exists to catch). Deleted per the house rule; may return only with an
+  asymmetric voter (chord/bass change at candidate lines - the research thread's
+  boundary-evidence path), behind the same instruments.
+
+Gates: suite 775, typecheck clean, earlybars 20 hit / 0 worse of 28 restored
+after the kill. Corpus + judged-36 + cache114 formal runs at v22 in flight
+(cut path provably inert without maps; expected identical).
+
+## The finishing wave, packages B through G (same night, v22 / SHOW 16)
+
+- **E: group-final peaks.** `peakSection` - the peak is the LAST statement of the
+  loudest group, kind held so a degenerate grouping cannot leak it into an outro -
+  single-sourced into the planner AND the linter (which had its own copy of the old
+  rule and would have warned against the fix). Proven failing first on a doctored
+  fixture (rank-1 on a group's first statement). Fixes on file: EARFQUAKE's skipped
+  reserved master, Ine Plemena, Self Aware's peak, Hannah's tension drop.
+- **D: the record leaving.** `trackTheLeaving`: where the final bars decline
+  decisively (tail under 65% of the closing cue's head), the closing look steps
+  down WITH the record - same layers throughout (the outro inheritance gesture),
+  level and clock following, never to black, fadeBeats 8. The linter learned the
+  decline step as sanctioned sameness. Cold endings stay the button's business;
+  T4 afterglow stays with the lounge dissolve (already covers it; recorded, not
+  built). SHOW_VERSION 16.
+- **B: evidence-gated settle - a measured NEGATIVE, kept.** The gate (settle votes
+  only under decisive physics; tried at 2 and 2.4) suppresses the harm AND the
+  gain: ungated 1.2's one win travelled through a decisive bar the gate rightly
+  silences. settleWeight stays 0; the gate and the result are documented in the
+  tuning docblock so the next candidate weight starts from here.
+- **F: the SOPHIE fixture guard**, as characterisation: a clipped pitched-sub kick
+  over a legato bassline; recall > 0.8 guards the class staying heard, precision
+  pinned at today's 0.4 - the clip synthetically REPRODUCES the Self Aware
+  bassline-as-drums complaint, and raising that floor is the fix's win condition
+  (the classes overlap physically; the model path carries precision in the app).
+- **G: context provenance.** `audioGenres` split from metadata `genres` (the
+  effnet echo made re-votes circular - Get Lucky wore "ballad" on its own
+  reflection), CONTEXT_VERSION 2, lazy re-enrich heals every cached context on
+  next play.
+- **C: lyric-assertive placement - DEFERRED to its own session, by design.** The
+  riskiest remaining package (four lyric-good sentinels gate it; the v16 snap's
+  conservatism was deliberate) does not ship as the last act of a marathon; it
+  opens the next session with hookcheck as its instrument.
+
+**A method violation, caught and paid for**: the first v22 battery chain was
+contaminated - its reanalyse process started during the settle-1.2 experiment
+window, exactly the background-run hygiene the handover warns about. The chain
+was killed and both batteries re-run on frozen code. The invariant stands: land
+edits BETWEEN runs, always.
