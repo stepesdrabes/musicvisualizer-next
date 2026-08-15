@@ -280,7 +280,12 @@ export class Viz {
 		const f = frame ?? this.player.frame;
 		this.onReadout?.({
 			fps: Math.round(this.fps),
-			position: this.position,
+			// The heard instant, not the raw audio clock: every indicator fed from the
+			// readout (scrubber, timeline playhead, judge timestamps) marks what the ear
+			// is getting, and the raw clock leads it by the whole output latency - the
+			// same correction the room and the hardware sync already make. Paused audio
+			// has no output path, so the raw clock is the truth then.
+			position: this.playing ? this.heardPosition : this.position,
 			duration: this.duration,
 			playing: this.playing,
 			bar: f.barIndex,
