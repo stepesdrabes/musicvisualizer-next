@@ -272,6 +272,32 @@ describe('snapToHooks', () => {
 		]);
 	});
 
+	it('absorbs a two-bar build leftward when the hook window sits inside it', () => {
+		// The Safir shape, marked by the owner in two rounds: chorus at 43, hook window
+		// {41, 42}, and the 2-bar build 41-43 holding the minimum-length refusal in place.
+		const segments: Segment[] = [
+			{ startBar: 33, endBar: 41, kind: 'breakdown', group: 2 },
+			{ startBar: 41, endBar: 43, kind: 'build', group: -1 },
+			{ startBar: 43, endBar: 67, kind: 'chorus', group: 1 }
+		];
+		const moves = snapToHooks(segments, [restart(83.2)], barTime, 60);
+		expect(moves).toEqual([{ from: 43, to: 42 }]);
+		expect(segments).toEqual([
+			{ startBar: 33, endBar: 42, kind: 'breakdown', group: 2 },
+			{ startBar: 42, endBar: 67, kind: 'chorus', group: 1 }
+		]);
+	});
+
+	it('still refuses the shrink when the blocker is not a two-bar build', () => {
+		const segments: Segment[] = [
+			{ startBar: 33, endBar: 41, kind: 'breakdown', group: 2 },
+			{ startBar: 41, endBar: 44, kind: 'build', group: -1 },
+			{ startBar: 44, endBar: 67, kind: 'chorus', group: 1 }
+		];
+		expect(snapToHooks(segments, [restart(83.2)], barTime, 60)).toEqual([]);
+		expect(segments).toHaveLength(3);
+	});
+
 	it('never delays a boundary by two bars onto a lagging club vocal', () => {
 		// The VYZEE case: the drop hits at 13, the hook line only enters at bar 15.7.
 		const segments: Segment[] = [

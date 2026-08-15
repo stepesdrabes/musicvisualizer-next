@@ -277,14 +277,12 @@ const HOOK_MIN_GAP_BARS = 4;
 /** How far a boundary may be pulled BACK onto a hook window. The judged failure class. */
 const SNAP_REACH_EARLIER = 2;
 /**
- * The pull-back is refused only when it would move a DECISIVE arrival onto a bar with
- * essentially none: the incumbent at the refine pass's pin class, the edge under its
- * noise floor. A ratio was tried first and broke a praised boundary whose edge merely
- * arrived less hard - the singer-leads-the-drop case is not "weaker there", it is
- * "nothing there": EARFQUAKE's pickup bars sit at energy 7 in a track that peaks at 93.
+ * A boundary on a decisive arrival (the refine pass's pin class) is not pulled back
+ * unless the window edge arrives within the refine margin of it; max(1, ...) keeps the
+ * ratio meaningful over near-zero edges.
  */
 const SNAP_KEEP_DECISIVE = 2;
-const SNAP_EDGE_NOISE = 0.6;
+const SNAP_DOMINANCE = 1.45;
 
 /**
  * Align chorus-class startBars with the hook windows the sung lyrics prove, in place.
@@ -342,6 +340,7 @@ export function snapToHooks(
 
 		let to = -1;
 		let dist = Infinity;
+		let absorb = false;
 		for (const w of windows) {
 			// The nearest edge of this window, from outside it.
 			const edge = from < w.bar ? w.bar : w.bar + 1;
@@ -349,32 +348,60 @@ export function snapToHooks(
 			if (d >= dist) continue;
 			if (edge < from && from - edge > SNAP_REACH_EARLIER) continue;
 			if (edge > from && (edge - from > 1 || !w.restart)) continue;
-			// The physics veto on the FULL-REACH pull-back: a singer leading the drop by two
-			// bars puts the hook window on bars where nothing physically arrives, and the
-			// snap was dragging a correct boundary off the beat and onto them. One-bar pulls
-			// stay free - a pickup sung into the downbeat is the case the window exists for,
-			// and a praised one-bar placement sits on an edge this veto cannot distinguish
-			// from silence, because arrival measures change, not level. A wrongly-late
-			// boundary is on a bar nothing arrived at, so the decisive-incumbent condition
-			// spares every legitimate two-bar rescue the snap has on record.
+			// The physics veto on the pull-back: a singer leading the beat puts the hook
+			// window on bars the record has not arrived at yet, and the snap was dragging
+			// correct boundaries off the beat and onto them - EARFQUAKE's second drop by two
+			// bars over near-silence, its first chorus by two over a sung entrance. A
+			// decisive incumbent stays unless the edge arrives comparably; a wrongly-late
+			// boundary sits on a bar nothing arrived at, so every legitimate rescue on
+			// record (weak incumbent) still proceeds. This ratio form was tried, dropped
+			// against a sentinel that scored its one disagreement as a regression, and
+			// restored when the owner's round-2 note overturned that sentinel: the veto had
+			// been right about the bar and the instrument wrong.
+			// Entrances only: a vocal ENTRANCE can lead the beat (the veto's whole case),
+			// but a RESTART happens mid-flow and cannot lag or lead anything - its window
+			// is trustworthy against any incumbent, which is the same asymmetry the
+			// one-bar-later rule already encodes. Without this the veto slid a
+			// lyric-perfect restart chorus two bars onto the band's arrival.
 			if (
 				edge < from &&
-				from - edge === SNAP_REACH_EARLIER &&
+				!w.restart &&
 				arrivals &&
 				(arrivals[from] ?? 0) >= SNAP_KEEP_DECISIVE &&
-				(arrivals[edge] ?? 0) < SNAP_EDGE_NOISE
+				(arrivals[from] ?? 0) >= Math.max(1, arrivals[edge] ?? 0) * SNAP_DOMINANCE
 			) {
 				continue;
 			}
-			if (edge - prev.startBar < minSegmentBars) continue;
+			// A move that would shrink the previous segment below the minimum is normally
+			// refused - except when that segment is a two-bar BUILD, the connective tissue
+			// the DP cuts off a riser. Then the move absorbs it leftward instead: its first
+			// bar joins the passage it rose out of, and the chorus starts where the hook
+			// says. The owner marked Safir's second chorus at 42 twice across two rounds
+			// while a 2-bar build at 41-43 held this exact refusal in place.
+			const shrinks = edge - prev.startBar < minSegmentBars;
+			const canAbsorb =
+				shrinks &&
+				prev.kind === 'build' &&
+				prev.endBar - prev.startBar === minSegmentBars &&
+				i >= 2 &&
+				segments[i - 2].kind !== 'void';
+			if (shrinks && !canAbsorb) continue;
 			if (s.endBar - edge < minSegmentBars) continue;
 			to = edge;
 			dist = d;
+			absorb = shrinks;
 		}
 		if (to < 0) continue;
 		moves.push({ from, to });
-		s.startBar = to;
-		prev.endBar = to;
+		if (absorb) {
+			segments[i - 2].endBar = to;
+			segments.splice(i - 1, 1);
+			s.startBar = to;
+			i--;
+		} else {
+			s.startBar = to;
+			prev.endBar = to;
+		}
 	}
 	return moves;
 }

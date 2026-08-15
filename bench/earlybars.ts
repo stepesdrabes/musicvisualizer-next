@@ -45,7 +45,7 @@ const TARGETS: Target[] = [
 	{ id: 'juRFjpB5Ppg', title: 'Tití Me Preguntó', judged: 53, trueBar: 54, note: 'chorus missed (too early); slam is at 54' },
 	{ id: 'juRFjpB5Ppg', title: 'Tití Me Preguntó', judged: 73, trueBar: 72, note: 'last chorus misses (too late)' },
 	{ id: 't-E2gm0a_N0', title: 'EARFQUAKE', judged: 38, trueBar: 40, note: 'chorus too early again; e7 at 38, e93 at 40' },
-	{ id: 't-E2gm0a_N0', title: 'EARFQUAKE', judged: 6, trueBar: 7, note: 'owner marks 7 (round-2 note); boundary is IN window {5,6} - the in-window edge question' },
+	{ id: 't-E2gm0a_N0', title: 'EARFQUAKE', judged: 6, trueBar: 8, note: 'owner note at 23.3s = bar 7.87; the DP put 8 (arrival 6.48) and the snap dragged it to 6' },
 	{ id: 'ZqSlV5LmrTg', title: 'Snooze', judged: 17, trueBar: 23, note: 'WAY TOO early; owner marks 23 exactly' },
 	{ id: 'ZD6rXLXZOEI', title: 'bad guy', judged: 23, trueBar: 24, note: 'chorus too early, later are okay', tentative: true },
 	{ id: '2o9aoL0NWpw', title: 'Killing In the Name', judged: 21, trueBar: 22, note: 'chorus too early; vocal 0.26 at 21, 1.0 at 22', tentative: true },
@@ -59,6 +59,7 @@ const TARGETS: Target[] = [
 	{ id: 'rgN9j5WQVdc', title: 'Cígo a káva', judged: 50, trueBar: 49, note: 'chorus missed (too late); owner marks 49', tentative: true },
 	// Sentinels: verified-good boundaries (praised, or window-confirmed on well-rated
 	// tracks). judged == trueBar, so any drift at all prints WORSE.
+	{ id: 'RAYQTfFh4xk', title: 'Le Freak', judged: 45, trueBar: 45, note: 'SENTINEL: restart window, lyric overlap 1.00 - the veto must not touch restarts' },
 	{ id: 'nTzU8TjvxyE', title: 'Safír', judged: 9, trueBar: 9, note: 'SENTINEL: the v16 hook-snap win' },
 	{ id: 'NZtZzsI8JTA', title: 'Praha/Vídeň', judged: 24, trueBar: 24, note: 'SENTINEL: window+1, effects-only complaints' },
 	// Formerly a sentinel at 63; the owner's round-2 note says "maybe 64" - contested,
