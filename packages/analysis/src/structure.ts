@@ -322,7 +322,9 @@ function arrivalStrength(
 	kicksPerBar: Int32Array | null,
 	vocal: Float64Array | null,
 	hooks: Uint8Array | null,
-	b: number
+	b: number,
+	settle: Float32Array | null = null,
+	settleWeight = 0
 ): number {
 	if (b <= 0 || b >= bars.count) return 0;
 	const step = Math.max(0, db[b] - db[b - 1]) / tol;
@@ -360,7 +362,26 @@ function arrivalStrength(
 		novelty = Math.max(0, 1 - dot);
 	}
 
-	return step + kit + voice + 0.8 * dip + 1.5 * novelty;
+	// Newness that PERSISTS: an arrival bar resembles its successor and not its
+	// predecessor, while a fill resembles neither - the drum fill before a slam scores
+	// kit and novelty exactly like the slam does, and this is the term that tells them
+	// apart. The judged round's boundary errors ran three-to-one EARLY, onto fills.
+	const settling = settle && settleWeight > 0 ? settleWeight * Math.max(0, settle[b]) : 0;
+
+	return step + kit + voice + 0.8 * dip + 1.5 * novelty + settling;
+}
+
+/**
+ * Per-bar settling contrast from the similarity matrix: how much more bar `b` resembles
+ * the bar after it than the bar before it. Positive where new material establishes
+ * itself, near zero mid-passage and on one-bar transients.
+ */
+export function settlingContrast(sim: Float32Array, n: number): Float32Array {
+	const out = new Float32Array(n);
+	for (let b = 1; b < n - 1; b++) {
+		out[b] = sim[b * n + (b + 1)] - sim[(b - 1) * n + b];
+	}
+	return out;
 }
 
 export interface BoundaryMove {
@@ -390,6 +411,17 @@ export interface StructureTuning {
 	 * rather than structure, and the sections merge. 0 disables consolidation.
 	 */
 	consolidateFloor: number;
+	/**
+	 * Weight of the settling-contrast term in arrival scores. 0 keeps the score the
+	 * refine sweep shipped; positive lets an arrival that PERSISTS outbid the fill
+	 * before it. Swept at 1.6 it fixed one marked bar and moved two praised ones, so it
+	 * ships at 0. Any positive weight rescales a score that five ABSOLUTE thresholds are
+	 * calibrated on - refineFloor, pinScore, consolidateFloor, and the snap veto's
+	 * decisive/noise cuts - so a future sweep must re-ask all five, not just this dial.
+	 */
+	settleWeight: number;
+	/** Bars a boundary may be pulled onto an arrival by the refine pass. */
+	refineReach: number;
 }
 
 /**
@@ -412,7 +444,9 @@ export const DEFAULT_TUNING: StructureTuning = {
 	// 17.2, Harmonix within noise (0.530 -> 0.526, sections 10.4 vs 10.1 annotated).
 	// Arrival-only merging (no material gate) paid 1.7-2.2 points of Harmonix F3 for
 	// the same floors: soft real boundaries between different material must survive.
-	consolidateFloor: 1.6
+	consolidateFloor: 1.6,
+	settleWeight: 0,
+	refineReach: 1
 };
 
 /**
@@ -423,13 +457,15 @@ export function arrivalStrengths(
 	bars: BarFeatures,
 	kicksPerBar: Int32Array | null,
 	vocal: Float64Array | null = null,
-	hooks: Uint8Array | null = null
+	hooks: Uint8Array | null = null,
+	settle: Float32Array | null = null,
+	settleWeight = 0
 ): Float32Array {
 	const db = barLevels(bars);
 	const tol = LEVEL_TOL * levelSpread(db);
 	const out = new Float32Array(bars.count);
 	for (let b = 1; b < bars.count; b++) {
-		out[b] = arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, b);
+		out[b] = arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, b, settle, settleWeight);
 	}
 	return out;
 }
@@ -448,23 +484,27 @@ export function refineBoundaries(
 	moves?: BoundaryMove[],
 	floor = REFINE_FLOOR,
 	vocal: Float64Array | null = null,
-	hooks: Uint8Array | null = null
+	hooks: Uint8Array | null = null,
+	settle: Float32Array | null = null,
+	settleWeight = 0,
+	reach = REFINE_REACH
 ): number[] {
 	const db = barLevels(bars);
 	const tol = LEVEL_TOL * levelSpread(db);
 	const out = [...bounds];
+	const score = (b: number) =>
+		arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, b, settle, settleWeight);
 
 	for (let i = 1; i + 1 < out.length; i++) {
 		const here = out[i];
 		let best = here;
-		let bestScore =
-			arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, here) * REFINE_MARGIN;
-		for (let c = here - REFINE_REACH; c <= here + REFINE_REACH; c++) {
+		let bestScore = score(here) * REFINE_MARGIN;
+		for (let c = here - reach; c <= here + reach; c++) {
 			if (c === here) continue;
 			if (c - out[i - 1] < MIN_SEGMENT_BARS || out[i + 1] - c < MIN_SEGMENT_BARS) continue;
-			const score = arrivalStrength(bars, db, tol, kicksPerBar, vocal, hooks, c);
-			if (score > bestScore && score > floor) {
-				bestScore = score;
+			const v = score(c);
+			if (v > bestScore && v > floor) {
+				bestScore = v;
 				best = c;
 			}
 		}

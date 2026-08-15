@@ -276,6 +276,15 @@ export interface HookSnapMove {
 const HOOK_MIN_GAP_BARS = 4;
 /** How far a boundary may be pulled BACK onto a hook window. The judged failure class. */
 const SNAP_REACH_EARLIER = 2;
+/**
+ * The pull-back is refused only when it would move a DECISIVE arrival onto a bar with
+ * essentially none: the incumbent at the refine pass's pin class, the edge under its
+ * noise floor. A ratio was tried first and broke a praised boundary whose edge merely
+ * arrived less hard - the singer-leads-the-drop case is not "weaker there", it is
+ * "nothing there": EARFQUAKE's pickup bars sit at energy 7 in a track that peaks at 93.
+ */
+const SNAP_KEEP_DECISIVE = 2;
+const SNAP_EDGE_NOISE = 0.6;
 
 /**
  * Align chorus-class startBars with the hook windows the sung lyrics prove, in place.
@@ -304,7 +313,9 @@ export function snapToHooks(
 	starts: readonly HookStart[],
 	barTime: Float64Array,
 	barCount: number,
-	minSegmentBars = 2
+	minSegmentBars = 2,
+	/** PHYSICS-ONLY arrival strengths - no voice term, which is the evidence on trial. */
+	arrivals: Float32Array | null = null
 ): HookSnapMove[] {
 	const moves: HookSnapMove[] = [];
 	if (starts.length === 0 || barCount < 2) return moves;
@@ -338,6 +349,23 @@ export function snapToHooks(
 			if (d >= dist) continue;
 			if (edge < from && from - edge > SNAP_REACH_EARLIER) continue;
 			if (edge > from && (edge - from > 1 || !w.restart)) continue;
+			// The physics veto on the FULL-REACH pull-back: a singer leading the drop by two
+			// bars puts the hook window on bars where nothing physically arrives, and the
+			// snap was dragging a correct boundary off the beat and onto them. One-bar pulls
+			// stay free - a pickup sung into the downbeat is the case the window exists for,
+			// and a praised one-bar placement sits on an edge this veto cannot distinguish
+			// from silence, because arrival measures change, not level. A wrongly-late
+			// boundary is on a bar nothing arrived at, so the decisive-incumbent condition
+			// spares every legitimate two-bar rescue the snap has on record.
+			if (
+				edge < from &&
+				from - edge === SNAP_REACH_EARLIER &&
+				arrivals &&
+				(arrivals[from] ?? 0) >= SNAP_KEEP_DECISIVE &&
+				(arrivals[edge] ?? 0) < SNAP_EDGE_NOISE
+			) {
+				continue;
+			}
 			if (edge - prev.startBar < minSegmentBars) continue;
 			if (s.endBar - edge < minSegmentBars) continue;
 			to = edge;

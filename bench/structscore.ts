@@ -34,11 +34,11 @@ const VARIANTS: Record<string, StructureTuning> = {
 	// No re-phasing at all: refinement still moves single boundaries onto arrivals.
 	off: { ...DEFAULT_TUNING, rephaseReach: 0 },
 	// Re-phasing kept but disciplined: short reach, decisive pins only, near-unanimity.
-	strict: { refineFloor: 0.6, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0 },
+	strict: { refineFloor: 0.6, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0, settleWeight: 0, refineReach: 1 },
 	// Strict, and boundaries only move onto DECISIVE arrivals - the kick-wall class.
-	tight: { refineFloor: 2, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0 },
+	tight: { refineFloor: 2, pinScore: 2, rephaseReach: 1, rephaseMinPins: 3, rephaseAgreement: 0.8, consolidateFloor: 0, settleWeight: 0, refineReach: 1 },
 	// No refinement follow-up at all, approximating the pipeline before this work.
-	none: { refineFloor: 1e9, pinScore: 1e9, rephaseReach: 0, rephaseMinPins: 99, rephaseAgreement: 1, consolidateFloor: 0 },
+	none: { refineFloor: 1e9, pinScore: 1e9, rephaseReach: 0, rephaseMinPins: 99, rephaseAgreement: 1, consolidateFloor: 0, settleWeight: 0, refineReach: 1 },
 	// Same-kind seam consolidation, swept over the arrival floor a seam must clear to
 	// survive. cons0 is the explicit baseline whatever the shipped default becomes.
 	cons0: { ...DEFAULT_TUNING, consolidateFloor: 0 },
@@ -47,7 +47,13 @@ const VARIANTS: Record<string, StructureTuning> = {
 	cons16: { ...DEFAULT_TUNING, consolidateFloor: 1.6 },
 	cons20: { ...DEFAULT_TUNING, consolidateFloor: 2 },
 	cons24: { ...DEFAULT_TUNING, consolidateFloor: 2.4 },
-	cons30: { ...DEFAULT_TUNING, consolidateFloor: 3 }
+	cons30: { ...DEFAULT_TUNING, consolidateFloor: 3 },
+	// The settling-contrast term: an arrival that persists outbids the fill before it.
+	settle08: { ...DEFAULT_TUNING, settleWeight: 0.8 },
+	settle12: { ...DEFAULT_TUNING, settleWeight: 1.2 },
+	settle16: { ...DEFAULT_TUNING, settleWeight: 1.6 },
+	settle12r2: { ...DEFAULT_TUNING, settleWeight: 1.2, refineReach: 2 },
+	settle16r2: { ...DEFAULT_TUNING, settleWeight: 1.6, refineReach: 2 }
 };
 const tuning = VARIANTS[variantName];
 if (!tuning) throw new Error(`unknown variant ${variantName}`);

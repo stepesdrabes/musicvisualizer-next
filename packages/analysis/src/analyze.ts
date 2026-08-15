@@ -31,6 +31,7 @@ import {
 	refineBoundaries,
 	rephaseToPins,
 	segmentBars,
+	settlingContrast,
 	similarityMatrix,
 	type BoundaryMove,
 	type StructureTuning
@@ -231,6 +232,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 
 	const tuning = input.tuning ?? DEFAULT_TUNING;
 	const sim = similarityMatrix(bars);
+	const settle = settlingContrast(sim, bars.count);
 	const moves: BoundaryMove[] = [];
 	const rough = refineBoundaries(
 		segmentBars(sim, bars),
@@ -239,7 +241,10 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		moves,
 		tuning.refineFloor,
 		vocal,
-		hooks
+		hooks,
+		settle,
+		tuning.settleWeight,
+		tuning.refineReach
 	);
 	// Only the decisive arrivals earn pin status; a marginal move may correct its own
 	// boundary without getting a vote over everyone else's.
@@ -314,9 +319,14 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// arrange() emitted them while every boundary was still where the energy alone put
 	// it, and a drop downbeat left at a bar its section has moved off - or been demoted
 	// off - fires the show's biggest cue in the wrong section.
+	const arrivals = arrivalStrengths(bars, rawKicks, vocal, hooks, settle, tuning.settleWeight);
+	// The snap's veto reads arrivals WITHOUT the voice term: the sung evidence is the very
+	// thing under adjudication, and with it in the score a hook bar can never read as
+	// "nothing arrives here" - which is exactly what a pickup sung over silence is.
+	const physical = arrivalStrengths(bars, rawKicks, null, null, settle, tuning.settleWeight);
 	const snapMoves =
 		lyricLines && lyricLines.length > 0
-			? snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count)
+			? snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count, 2, physical)
 			: [];
 	// The last structural word: seams between same-kind sections that nothing arrives on
 	// are DP artefacts, and each one downstream is a cue change and a punctuated false
@@ -327,7 +337,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	const preConsolidation = plan.segments.map((s) => ({ ...s }));
 	consolidateSections(
 		plan.segments,
-		arrivalStrengths(bars, rawKicks, vocal, hooks),
+		arrivals,
 		sim,
 		bars.count,
 		tuning.consolidateFloor,

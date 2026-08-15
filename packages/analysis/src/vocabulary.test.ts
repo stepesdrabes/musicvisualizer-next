@@ -244,6 +244,34 @@ describe('snapToHooks', () => {
 		expect(moved[1].startBar).toBe(24);
 	});
 
+	it('refuses the pull-back when the boundary sits on a dominant arrival', () => {
+		// The EARFQUAKE case: the singer leads the drop a cappella, so the hook window
+		// sits two near-silent bars before the beat lands. The DP put the boundary on the
+		// beat; the snap must not drag it onto the pickup.
+		const arrivals = new Float32Array(61);
+		arrivals[40] = 3.2;
+		arrivals[38] = 0.2;
+		const segments: Segment[] = [
+			{ startBar: 0, endBar: 40, kind: 'build', group: 0 },
+			{ startBar: 40, endBar: 52, kind: 'chorus', group: 1 }
+		];
+		// Hook sung at bar 37.2, window {37, 38}; without arrivals the old rule pulls
+		// the boundary from the beat at 40 onto the pickup edge at 38.
+		expect(snapToHooks(segments, [entrance(74.4)], barTime, 60, 2, arrivals)).toEqual([]);
+		expect(segments[1].startBar).toBe(40);
+		// And with an edge that arrives comparably, the snap still works.
+		const weak = new Float32Array(61);
+		weak[40] = 0.8;
+		weak[38] = 0.7;
+		const again: Segment[] = [
+			{ startBar: 0, endBar: 40, kind: 'build', group: 0 },
+			{ startBar: 40, endBar: 52, kind: 'chorus', group: 1 }
+		];
+		expect(snapToHooks(again, [entrance(74.4)], barTime, 60, 2, weak)).toEqual([
+			{ from: 40, to: 38 }
+		]);
+	});
+
 	it('never delays a boundary by two bars onto a lagging club vocal', () => {
 		// The VYZEE case: the drop hits at 13, the hook line only enters at bar 15.7.
 		const segments: Segment[] = [
