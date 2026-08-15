@@ -403,34 +403,43 @@ this call and it shipped at v15).
 
 ## If you are the next session: the first hour
 
-1. Read this file to the end, then round2-record.md's tail (round-4 close + the
-   round-5 boundary-slice diagnoses and implementation - the freshest evidence).
-2. Mine cache-C/judge for new marks (rules under "Mining a new judged round"; the
-   v20 build IS app C now, and it carries the SECTION-EDITING UI - the owner can
-   hand-draw a track's section map in the judge panel; it saves into the
-   judgement as `sections` with authoritative TIMES + fractional bars on the
-   pinned grid. Mine those as ground truth before anything else). Open with the
-   owner: (a) SAFIR - a PIECEWISE grid staged in cache-C (gridedit.ts, cuts at
-   53.8 and 106.8 from the owner's five-mark prescription; .orig backup,
-   `restore` mode) - the track carries TWO half-bar edits and no single phase
-   serves it (the round record's "piecewise-phase track" section); does the
-   staged version land every seam?; (b) Kisses 1:47.8, Titi 1:59.0, Praha 1:30.5
-   verdicts; (c) the commit word; (d) PONYBOY - the kick-blindness diagnosis was
-   RETRACTED (an undefined-read artifact); the measured mechanism is hasDrops
-   starving on step-less wall-to-wall bangers, fix design A in the round record
-   (third hasDrops arm: club + sustained pounding); implement behind judged-36
-   zero-drift.
-3. The v20 slice is UNCOMMITTED - if the owner said "commit", stage the explicit
-   paths in "Where the code stands" (never the preview3d files or hardware.html).
-4. Taps landed -> compute per-tap offsets vs the shipped grid, subtract the
-   EARFQUAKE median lag, read Safir's phase (~0 = grid right, ~2 beats = half-bar
-   flip confirmed -> design the low-meterConf phase fix; guard rails in the phase
-   brief above; NEVER a local discriminator).
-5. Before ANY further analyser change: `MV_CACHE_DIR=<cache with Kisses/WTSA audio>
-   node bench/earlybars.ts` - the floor is 20 hit / 0 worse of 28. Keep every gate
-   in "Gates and probes" green behind each slice; `bench/stagetrace.ts <id> [from]
-   [to]` names the stage that moved any boundary (MATCH line must hold; it prints
-   the real analyzeTrack table - compare FINALS, a mid-pipeline line once read as
-   the final cost an hour).
-6. Ballad endings (the old R5 candidate above) is the next queued round AFTER the
-   phase question and the v20 room verdict settle.
+1. Read this file to the end, then round2-record.md's TAIL (the finishing wave:
+   the cuts path, the killed detector's postmortem, the settle negative, the
+   engine round, the gates). The campaign's finishing wave is SHIPPED and
+   COMMITTED; one package remains.
+2. Mine cache-C/judge FIRST: hand-drawn section maps (`sections` on judgements,
+   authoritative times) are ground truth - run `MV_CACHE_DIR=<cache-C> node
+   bench/mapscore.ts` and `bench/judgemap.ts` on whatever accumulated. A new map
+   re-grids its track automatically on the next analysis (the cuts loop). If the
+   owner drew SAFIR's map, its staged blob becomes permanent - until then the
+   staging survives only while ANALYSIS_VERSION stays 22.
+3. THE REMAINING PACKAGE - C, lyric-assertive chorus placement: strong hook
+   windows may PLACE chorus starts on song-family tracks (Snooze 17 -> 23 needs
+   six bars only lyrics can justify; Blinding Lights needs demotion loosened
+   where a better-overlapping sibling exists). Sentinels that gate it: Hannah,
+   KITN, Praha, Le Freak - all lyric-good today. Instrument: hookcheck (in the
+   round dir's history) + earlybars + the lyric sentinels. Own ANALYSIS_VERSION
+   bump, full battery, adversary before ship.
+4. Smaller open threads, in value order: Self Aware kit precision (win condition
+   = raising the SOPHIE fixture's 0.4 precision floor in drums.test.ts);
+   EARFQUAKE's grouping (its choruses do not group as kin, so the group-final
+   peak cannot reach the last one - a groupSegments question); the remaining
+   earlybars pairs (bad guy 23->24, KITN 21->22, Thinkin 2->1, PROVENZA 79->80,
+   Cigo 50->49, Titi 73->72 - refine-margin class, no cheap move left; the
+   gated-settle negative is the map of what does not work); An Ending's phantom
+   share (listening-flagged); Praha's restart edge at 0.63 vs the 0.6 floor
+   (flap risk); Back In Black double-time (parked, owner ground truth on file).
+5. The model loop runs alongside: maps accumulate -> at ~15 freeze bench/maps-eval
+   (never train on them), at ~30 adaptation starts (the protocol memo lives
+   OUTSIDE this repo by the owner's hand - ask them for it; mapscore is its
+   instrument and the P6 history its warning).
+6. Floors and gates, current: earlybars 20 hit / 0 worse of 28 (MV_CACHE_DIR must
+   point at a cache with Kisses/WTSA audio - cache-C); suite 778; structscore
+   raveform 0.394/0.540, harmonix 0.202/0.532; showprobe 0/0/100%, dark 2,
+   contrast 2.76, hue jumps 2585 (the leaving pass softened both - drift from
+   THESE numbers is signal). stagetrace names any moved stage (trust only its
+   FINAL analyzeTrack line). Land edits BETWEEN background runs - the
+   contamination incident in the record is what skipping that costs.
+7. App C = v22/16 with everything; A and B are the older references. Rebuild via
+   `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app`, rm -rf
+   the target before copying (the nesting trap).
