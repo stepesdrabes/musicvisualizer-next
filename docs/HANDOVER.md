@@ -275,6 +275,11 @@ on its AGPL-3.0 licence; a pooled MusicFM embedding as a continuous taste vector
   /Applications/LightningStrike.app, sync artifacts if regenerating them, relaunch, then
   curl the app's own `/api/library` and read the `current` count. The app build must be
   at least as new as any artifacts handed to it.
+- **Replacing an installed .app needs `rm -rf` FIRST.** `cp -R src.app dst.app` onto an
+  existing bundle copies the new app INTO it (dst.app/LightningStrike.app) and the old
+  binary keeps launching - an A/B round was listened against the wrong build this way,
+  and every in-app symptom (cleared cache, "unchanged" tracks) pointed elsewhere.
+  Verify after any install: `ls "<dst>.app/"` must show Contents and nothing else.
 - **Caches**: desktop app `~/Library/Application Support/cz.drabek.lightningstrike/cache`
   (the owner's library + judge/ verdicts - 2026-08-13 wipe kept audio/meta/context and
   deleted analysis/show blobs, so everything regenerates lazily); repo `cache/` (dev);

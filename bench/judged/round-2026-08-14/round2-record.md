@@ -110,3 +110,25 @@ Three time-anchored notes, all mined into earlybars:
   63 to 64 were scored worse against that sentinel; the sentinel is now a tentative
   pair at 64 instead. Instrument humility: sentinels built from silence are weaker
   than sentinels built from praise.
+
+## Round 3, boundary slice (v19, same night)
+
+The three owner-marked targets, all landed, measured by the grown instrument
+(16 pairs + 11 sentinels):
+
+- Safír 43 -> 42: the 2-bar build 41-43 blocked the snap via minSegmentBars; the move
+  now absorbs such a build leftward (its first bar joins the passage it rose from) and
+  the chorus starts where the owner marked twice.
+- EARFQUAKE first chorus 6 -> 8: the DP had it right (arrival 6.48 at 8) and the snap
+  dragged it to the sung entrance. The RATIO veto - tried in round 2 and dropped when
+  the old Praha-63 sentinel scored its one disagreement as a regression - was restored
+  after the owner's note overturned that sentinel, then narrowed to ENTRANCE windows
+  only when the readout showed it sliding Le Freak's lyric-perfect RESTART chorus onto
+  the band's arrival. A restart cannot lag or lead; an entrance can lead. Le Freak is
+  now a sentinel.
+- Praha 63 -> 64: falls out of the ratio veto, matching the owner's tentative mark.
+
+Final ladder: 15 hit, 0 worse of 26. Suite 764. Readout collateral, flagged for the
+listening list: EARFQUAKE's corrected first chorus now outranks by mean energy, so the
+peak moved to bar 8 (before SETTLE_BARS, so its reserved master is skipped) - the third
+data point for the queued peak-selection-by-mean redesign, not fixed here.
