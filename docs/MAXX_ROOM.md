@@ -79,6 +79,45 @@ steep part is not the set you would draw now.
 saying where it thinks a section began. Collapse the rails (`[`, `]`) or look away; blind mode
 cannot hide the product itself.
 
+### The fifteen
+
+Assembled 2026-08-16 into `cache-eval/` (gitignored, 54 MB, audio + meta + context only; the
+analyses re-derive at the current version rather than arriving stale). Chosen from 41 judged
+tracks and 168 with audio, on the tags actually recorded: 22 `sections wrong` and 20
+`boundary off`.
+
+Melanž and Ponyboy are deliberately absent. Both already carry a hand-drawn map, so neither can
+be drawn blind by someone who remembers drawing it.
+
+| track | family | judged | meter conf | s | why it is in the set |
+|---|---|---|---|---|---|
+| As It Was | rock | 1 star | 0.6 | 167 | 1 star, sections wrong + boundary off; guitar-pop with a soft chorus edge |
+| Someone Like You | pop | 1 star | 0.74 | 285 | 1 star; 18 sections in 285 s, the over-fragmentation case |
+| Best Part (feat. H.E.R.) | rnb | 1 star | 0.58 | 210 | 1 star; slow rnb, almost no kit to key boundaries off |
+| bad guy | rock | 2 star | 0.47 | 194 | 2 stars; meter confidence 0.47 and a mid-track tempo break |
+| Xtal | techno | 1 star | 0.68 | 294 | 1 star; ambient techno whose form is genuinely ambiguous |
+| Le Freak | disco | 1 star | 1 | 328 | 1 star at meter confidence 1.00 - so a naming failure, not a grid one |
+| Someone You Loved | house | 2 star | 0.98 | 182 | 2 stars; a piano ballad filed as house, the vocabulary test |
+| Thinkin Bout You | hiphop | 2 star | 0.36 | 201 | 2 stars; the low-meter-confidence cohort at 0.36 |
+| SICKO MODE | hiphop | 3 star | 0.39 | 313 | 3 stars; a medley - three tracks in one, the hardest form here |
+| I Don't Care | latin | not yet | 0.5 | 220 | unjudged; 23 sections in 220 s, the fragmentation extreme |
+| An Ending (Ascent) (Remastered 2019) | ambient | 1 star | 0.21 | 265 | 1 star; beatless ambient, no grid to lean on |
+| Desire | trance | not yet | 0.74 | 159 | unjudged trance; club reading with a clean build/drop form |
+| Self Aware | bass | 4 star | 0.99 | 152 | 4 stars, praised; bass sentinel a model must not break |
+| EARFQUAKE | hiphop | 5 star | 1 | 190 | 5 stars, "sectioning is great"; the strongest sentinel |
+| Pistácie (feat. Sofian Medjmedj) | house | 5 star | 1 | 174 | 5 stars; house sentinel |
+
+Eleven are known-wrong or unjudged; three are praise sentinels, there so a labeller that helps
+the hard tracks and quietly ruins the good ones is caught. Club-reading families (techno, house,
+trance, bass, disco) are six of fifteen against eight song-reading, which is roughly the mix the
+room actually plays. Meter confidence spans 0.21 to 1.00 on purpose: the low cohort is where the
+handover's unresolved off-feel lives.
+
+**The sentinels carry a caveat.** EARFQUAKE was praised specifically for its sectioning, so
+there is some chance of drawing the analyser's answer from memory rather than from the record.
+That is the price of having sentinels at all; draw them first, before re-reading anything about
+them.
+
 ### Two things to record that cannot be reconstructed later
 
 - **How long each map takes.** Saved automatically as `editSeconds`. No published figure exists
