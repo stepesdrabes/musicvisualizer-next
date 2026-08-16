@@ -58,6 +58,24 @@ export interface Judgement {
 	comment: string;
 	/** The hand-drawn section map, when the owner has adjusted one; absent otherwise. */
 	sections?: JudgedSection[] | null;
+	/**
+	 * The map was drawn BLIND: the editor started from one empty span and the chrome hid every
+	 * section the analyser had found.
+	 *
+	 * A map corrected from the analyser's draft is faster and agrees with itself more, but it
+	 * agrees because both drafts came from the same place - correcting a pre-annotation is
+	 * measured to pull the annotator toward it. Only a blind map can say whether a model is
+	 * right, so this flag is what separates an evaluation set from training data.
+	 */
+	blind?: boolean;
+	/**
+	 * Seconds spent with the editor armed, accumulated across sittings.
+	 *
+	 * Kept because nobody has published a minutes-per-track figure for correction-based
+	 * structure annotation, and because a map drawn in ninety seconds and one drawn in twenty
+	 * minutes are not the same evidence.
+	 */
+	editSeconds?: number;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;

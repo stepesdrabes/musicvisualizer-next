@@ -18,6 +18,7 @@
 		volume = $bindable(0.8),
 		timelineOpen = false,
 		view = FULL_WINDOW,
+		blind = false,
 		queued = 0,
 		hasPrev = false,
 		hasNext = false,
@@ -36,6 +37,8 @@
 		timelineOpen?: boolean;
 		/** What the drawer's lanes are showing, so the scrubber can bracket it. */
 		view?: TimeWindow;
+		/** Hide everything the analyser decided, so a blind map is drawn from the music. */
+		blind?: boolean;
 		/** Rows in the queue, which is what separates an empty night from one that is loading. */
 		queued?: number;
 		hasPrev?: boolean;
@@ -136,12 +139,17 @@
 				position={readout.position}
 				duration={readout.duration}
 				{view}
+				{blind}
 				{onseek} />
 		</div>
 
 		<div class="right">
 			{#if ready}
-				<Badge colour={`var(--sec-${readout.section})`}>{titleCase(readout.section)}</Badge>
+				<!-- The bar survives a blind sitting: it is where you are, not what the analyser
+				     decided. The section badge is the answer being withheld. -->
+				{#if !blind}
+					<Badge colour={`var(--sec-${readout.section})`}>{titleCase(readout.section)}</Badge>
+				{/if}
 				<span class="mono subtle bar">bar {readout.bar}</span>
 			{/if}
 

@@ -16,7 +16,13 @@ const judgeDir = join(cache, 'judge');
 if (!existsSync(judgeDir)) throw new Error(`no judge dir at ${judgeDir}`);
 
 interface JudgedSection { kind: string; startTime: number; endTime: number }
-interface Judgement { trackId: string; title: string; sections?: JudgedSection[] | null }
+interface Judgement {
+	trackId: string;
+	title: string;
+	sections?: JudgedSection[] | null;
+	blind?: boolean;
+	editSeconds?: number;
+}
 
 const KINDS = [...SECTION_KINDS] as string[];
 const confusion = new Map<string, Map<string, number>>();
@@ -27,6 +33,7 @@ const bump = (hand: string, model: string, secs: number) => {
 };
 
 let maps = 0;
+let blindMaps = 0;
 let degenerate = 0;
 const perTrack: string[] = [];
 for (const f of readdirSync(judgeDir).filter((x) => x.endsWith('.json'))) {
@@ -36,6 +43,7 @@ for (const f of readdirSync(judgeDir).filter((x) => x.endsWith('.json'))) {
 	if (!existsSync(blobPath)) continue;
 	const analysis = JSON.parse(readFileSync(blobPath, 'utf8'));
 	maps++;
+	if (j.blind) blindMaps++;
 
 	for (const s of j.sections) {
 		if (!KINDS.includes(s.kind)) console.log(`WARNING ${j.title}: unknown kind '${s.kind}' - not in SECTION_KINDS`);
@@ -59,7 +67,9 @@ for (const f of readdirSync(judgeDir).filter((x) => x.endsWith('.json'))) {
 		bump(hand, pred, 1);
 	}
 	if (modelSeen.size <= 1 && n > 30) degenerate++;
-	perTrack.push(`${j.title.slice(0, 30).padEnd(30)} strict ${((100 * agree) / Math.max(1, n)).toFixed(0).padStart(3)}%  model kinds ${modelSeen.size}`);
+	perTrack.push(
+		`${j.title.slice(0, 30).padEnd(30)} strict ${((100 * agree) / Math.max(1, n)).toFixed(0).padStart(3)}%  model kinds ${modelSeen.size}  ${j.blind ? 'blind' : 'corrected'}`
+	);
 }
 
 if (maps === 0) {
@@ -67,7 +77,7 @@ if (maps === 0) {
 	process.exit(0);
 }
 
-console.log(`${maps} hand-drawn maps\n`);
+console.log(`${maps} hand-drawn maps, ${blindMaps} of them blind\n`);
 for (const line of perTrack) console.log('  ' + line);
 
 // Per-kind F1 against the hand truth, seconds-weighted.
@@ -90,3 +100,11 @@ for (const kind of KINDS) {
 	console.log(`  ${kind.padEnd(10)} F1 ${(100 * f1).toFixed(0).padStart(3)}%  (P ${(100 * p).toFixed(0)}% R ${(100 * r).toFixed(0)}%)  model says: ${top}`);
 }
 console.log(`\nmacro F1 ${(100 * macroAcc / Math.max(1, macroN)).toFixed(0)}%  ·  degenerate tracks ${degenerate}/${maps}`);
+// A corrected map started from the analyser's own answer, so scoring the analyser on it
+// flatters it by construction. Only the blind ones can settle whether a labeller is right.
+if (blindMaps < maps) {
+	console.log(
+		`\nWARNING ${maps - blindMaps} of these maps were corrected from the analyser's draft.` +
+			` They may train a labeller and must not grade one - see bench/mapsfreeze.ts.`
+	);
+}

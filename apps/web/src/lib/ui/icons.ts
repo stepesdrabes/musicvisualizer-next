@@ -7,6 +7,7 @@
  */
 import AudioLines from 'lucide-svelte/icons/audio-lines';
 import Check from 'lucide-svelte/icons/check';
+import EyeOff from 'lucide-svelte/icons/eye-off';
 import ChevronDown from 'lucide-svelte/icons/chevron-down';
 import ChevronLeft from 'lucide-svelte/icons/chevron-left';
 import ChevronRight from 'lucide-svelte/icons/chevron-right';
@@ -52,6 +53,7 @@ export const GLYPHS = {
 	link: Link,
 	listMusic: ListMusic,
 	music: Music,
+	blind: EyeOff,
 	panelLeft: PanelLeft,
 	panelRight: PanelRight,
 	pause: Pause,

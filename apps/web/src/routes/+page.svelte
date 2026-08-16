@@ -4,7 +4,7 @@
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
 	import { installHint, readShell } from '$lib/shell.svelte.ts';
-	import { DEFAULT_AMBIENT, type AmbientSettings } from '@mv/core';
+	import { DEFAULT_AMBIENT, barAtTime, type AmbientSettings } from '@mv/core';
 	import { indexOfKey } from '$lib/queueModel.ts';
 	import { DEFAULT_OUTPUT_FPS, type WireProtocol } from '$lib/hardware.ts';
 	import { FULL_WINDOW, type TimeWindow } from '$lib/timeline.ts';
@@ -107,6 +107,18 @@
 	/** Hand-drawn section editing: the drawer's section lane grows handles while armed. */
 	let sectionEditing = $state(false);
 	let sectionDraft = $state<JudgedSection[] | null>(null);
+	/**
+	 * This sitting is BLIND: the draft started from one empty span and the chrome is hiding
+	 * every section, cue and hit the analyser produced.
+	 *
+	 * Correcting a draft is faster and reads as more consistent, but the consistency comes from
+	 * both drafts sharing an origin - which is exactly what an evaluation set must not do.
+	 */
+	let sectionBlind = $state(false);
+	/** Seconds already banked against this track's map, before the current sitting. */
+	let sectionEditSeconds = $state(0);
+	/** Wall clock at which the current sitting started; 0 when the editor is not armed. */
+	let editStartedAt = 0;
 	/** The show composed from the hand-drawn map while previewing it; null otherwise. */
 	let previewShow = $state<Show | null>(null);
 	/** Where the real show waits while the preview is on stage. Not reactive: only restore reads it. */
@@ -325,15 +337,55 @@
 		return seedFromAnalysis();
 	}
 
-	async function armSectionEdit(on: boolean) {
+	/**
+	 * One span over the whole record, which is where a blind sitting starts.
+	 *
+	 * The kind has to be something and every choice is a nudge; `groove` is the one that says
+	 * only "the track is playing", and it is the kind a first split overwrites anyway.
+	 */
+	function seedBlank(): JudgedSection[] | null {
+		if (!analysis || !readout.duration) return null;
+		const tempo = analysis.tempo;
+		const bar = (t: number) => Math.round(barAtTime(tempo, t) * 100) / 100;
+		return [
+			{
+				kind: 'groove',
+				startTime: 0,
+				endTime: readout.duration,
+				startBar: bar(0),
+				endBar: bar(readout.duration)
+			}
+		];
+	}
+
+	function elapsedEditSeconds(): number {
+		const live = editStartedAt ? Math.round((Date.now() - editStartedAt) / 1000) : 0;
+		return sectionEditSeconds + live;
+	}
+
+	async function armSectionEdit(on: boolean, blind = false) {
 		if (!on) {
+			// Bank the sitting before tearing down, or a map drawn and never touched again
+			// records no time at all.
+			const banked = elapsedEditSeconds();
+			editStartedAt = 0;
+			sectionEditSeconds = banked;
+			// A single span is the blank a blind sitting starts from, not a map. Writing it
+			// would overwrite a real map with nothing on the way out of a sitting where the
+			// editor was only opened and closed.
+			if (trackId && sectionDraft && sectionDraft.length > 1) saveSections(sectionDraft);
 			sectionEditing = false;
+			sectionBlind = false;
 			sectionDraft = null;
 			return;
 		}
 		await loadJudgements();
-		sectionDraft = seedSections();
+		const prev = trackId ? judgements[trackId] : null;
+		sectionDraft = blind ? seedBlank() : seedSections();
 		if (!sectionDraft) return;
+		sectionBlind = blind;
+		sectionEditSeconds = prev?.editSeconds ?? 0;
+		editStartedAt = Date.now();
 		sectionEditing = true;
 		timelineOpen = true;
 	}
@@ -350,6 +402,10 @@
 			notes: prev?.notes ?? [],
 			comment: prev?.comment ?? '',
 			sections: list,
+			// A map is blind only while it has never been edited with the answer on screen.
+			// Re-opening it in the ordinary editor spends that, and it cannot be earned back.
+			blind: sectionBlind && (prev?.blind ?? true),
+			editSeconds: elapsedEditSeconds(),
 			analysisHash: analysis?.hash ?? prev?.analysisHash ?? null,
 			showSeed: show?.seed ?? prev?.showSeed ?? null,
 			authoredBy: show?.authoredBy ?? prev?.authoredBy ?? null,
@@ -1092,12 +1148,15 @@
 				onnext={nextUnjudged}
 				onseek={(t) => viz?.seek(t)}
 				oneditsections={(on) => void armSectionEdit(on)}
+				onblindsections={() => void armSectionEdit(true, true)}
+				blindEditing={sectionEditing && sectionBlind}
 				ondiscardsections={discardSections}
 				onpreviewarrangement={(on) => void togglePreview(on)}
 				onclose={() => (judgeOpen = false)} />
 		{:else if rightOpen}
 			<Inspector
 				{analysis}
+				blind={sectionEditing && sectionBlind}
 				{context}
 				{show}
 				{readout}
@@ -1127,6 +1186,7 @@
 		bind:volume
 		{timelineOpen}
 		view={laneView}
+		blind={sectionEditing && sectionBlind}
 		queued={queue.items.length}
 		{hasPrev}
 		{hasNext}
@@ -1147,6 +1207,7 @@
 			bind:view={laneView}
 			onseek={(t) => viz?.seek(t)}
 			editing={sectionEditing}
+			blind={sectionEditing && sectionBlind}
 			sections={sectionDraft}
 			onsections={saveSections} />
 	{/if}

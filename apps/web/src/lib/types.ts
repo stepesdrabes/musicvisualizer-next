@@ -182,6 +182,10 @@ export interface Judgement {
 	notes: MomentNote[];
 	comment: string;
 	sections?: JudgedSection[] | null;
+	/** The map was drawn with the analyser's own sections hidden. See the server's docblock. */
+	blind?: boolean;
+	/** Seconds with the editor armed, accumulated across sittings. */
+	editSeconds?: number;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;

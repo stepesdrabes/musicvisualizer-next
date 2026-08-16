@@ -9,6 +9,7 @@
 		position,
 		duration,
 		view = FULL_WINDOW,
+		blind = false,
 		onseek
 	}: {
 		analysis: TrackAnalysis | null;
@@ -17,6 +18,8 @@
 		duration: number;
 		/** The slice the timeline drawer is showing, drawn here so the zoom has somewhere to read. */
 		view?: TimeWindow;
+		/** Hide everything the analyser decided, so a blind map is drawn from the music. */
+		blind?: boolean;
 		onseek: (t: number) => void;
 	} = $props();
 
@@ -25,6 +28,11 @@
 	let hoverAt = $state<number | null>(null);
 
 	const played = $derived(duration > 0 ? Math.min(1, position / duration) : 0);
+
+	// A blind sitting gets a plain seek bar: the section colours and the hit ticks are both
+	// the analyser's answer to the question being asked.
+	const shownSections = $derived(blind ? [] : (analysis?.sections ?? []));
+	const shownHits = $derived(blind ? [] : (show?.hits ?? []));
 
 	function timeAt(e: PointerEvent | MouseEvent): number {
 		if (!el) return 0;
@@ -91,7 +99,7 @@
 		}}>
 		<!-- The sections ARE the progress bar. There is no separate timeline to consult. -->
 		<div class="sections">
-			{#each analysis?.sections ?? [] as s (s.index)}
+			{#each shownSections as s (s.index)}
 				{@const g = span(s.startTime, s.endTime)}
 				<div
 					class="sec"
@@ -101,7 +109,7 @@
 			{/each}
 		</div>
 
-		{#each show?.hits ?? [] as h, i (i)}
+		{#each shownHits as h, i (i)}
 			{@const t = analysis ? barTimeAt(analysis.tempo, h.bar) : 0}
 			<div
 				class="hit {h.kind}"
@@ -128,7 +136,9 @@
 				style:left={`${((hoverAt / duration) * 100).toFixed(3)}%`}>
 				<span class="mono">{clock(hoverAt)}</span>
 				{#if analysis}
-					<span class="sub subtle">bar {barAt(hoverAt)} · {titleCase(sectionAt(hoverAt))}</span>
+					<span class="sub subtle">
+						bar {barAt(hoverAt)}{blind ? '' : ` · ${titleCase(sectionAt(hoverAt))}`}
+					</span>
 				{/if}
 			</div>
 		{/if}

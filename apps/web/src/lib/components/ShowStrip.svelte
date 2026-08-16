@@ -26,6 +26,7 @@
 		view = $bindable(FULL_WINDOW),
 		onseek,
 		editing = false,
+		blind = false,
 		sections = null,
 		onsections = () => {}
 	}: {
@@ -38,6 +39,12 @@
 		onseek: (t: number) => void;
 		/** Section editing: the lane grows handles and the draft below replaces the analysis. */
 		editing?: boolean;
+		/**
+		 * Blind sitting: the lanes the analyser's own labelling reaches are withheld. The drum
+		 * density lane stays - it is a measurement of the record, not a claim about its form,
+		 * and drawing a map without it would be harder than drawing one by ear.
+		 */
+		blind?: boolean;
 		/** The hand-drawn draft being edited; owned by the page, committed via onsections. */
 		sections?: JudgedSection[] | null;
 		onsections?: (s: JudgedSection[]) => void;
@@ -344,36 +351,40 @@
 			</div>
 		{/if}
 
-		<div class="lane cues" aria-label="Cues">
-			{#each timeline.cues as c (c.bar)}
-				<div
-					class="cue"
-					style:left={`${pct(c.start)}%`}
-					style:width={`${widthPct(c.start, c.end)}%`}
-					style:opacity={0.3 + 0.7 * c.intensity}
-					onpointerenter={(e) => showTip(e, c.title, c.lines)}
-					role="presentation">
-					<span class="label">{titleCase(c.section)}</span>
-				</div>
-			{/each}
-		</div>
+		{#if !blind}
+			<div class="lane cues" aria-label="Cues">
+				{#each timeline.cues as c (c.bar)}
+					<div
+						class="cue"
+						style:left={`${pct(c.start)}%`}
+						style:width={`${widthPct(c.start, c.end)}%`}
+						style:opacity={0.3 + 0.7 * c.intensity}
+						onpointerenter={(e) => showTip(e, c.title, c.lines)}
+						role="presentation">
+						<span class="label">{titleCase(c.section)}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
 		<div class="lane drums" aria-label="Kick, snare and hat density">
 			<canvas bind:this={canvas}></canvas>
 		</div>
 
-		<div class="lane hits" aria-label="Strobes, blackouts and slams">
-			{#each timeline.markers as m, i (i)}
-				<div
-					class="hit {m.kind}"
-					style:left={`${pct(m.start)}%`}
-					style:width={`${widthPct(m.start, m.end)}%`}
-					onpointerenter={(e) => showTip(e, titleCase(m.title), m.lines)}
-					role="presentation">
-					<span class="glyph">{m.kind === 'strobe' ? '⚡' : m.kind === 'blackout' ? '■' : '▲'}</span>
-				</div>
-			{/each}
-		</div>
+		{#if !blind}
+			<div class="lane hits" aria-label="Strobes, blackouts and slams">
+				{#each timeline.markers as m, i (i)}
+					<div
+						class="hit {m.kind}"
+						style:left={`${pct(m.start)}%`}
+						style:width={`${widthPct(m.start, m.end)}%`}
+						onpointerenter={(e) => showTip(e, titleCase(m.title), m.lines)}
+						role="presentation">
+						<span class="glyph">{m.kind === 'strobe' ? '⚡' : m.kind === 'blackout' ? '■' : '▲'}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
 		<!-- Only while it is in view. `.lanes` does not clip, because the tooltip rises out of it. -->
 		{#if duration > 0 && fractionIn(view, position / duration) >= 0 && fractionIn(view, position / duration) <= 1}
@@ -414,7 +425,10 @@
 
 	<div class="legend subtle">
 		{#if editing}
-			<span>drag a boundary · double-click splits · alt-click a handle merges · click a section for its kind</span>
+			<span>
+				{blind ? 'blind sitting · ' : ''}drag a boundary · double-click splits · alt-click a
+				handle merges · click a section for its kind
+			</span>
 			<span class="sep">·</span>
 		{/if}
 		<span><i class="swatch kick"></i>Kick</span>

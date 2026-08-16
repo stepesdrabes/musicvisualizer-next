@@ -33,9 +33,12 @@
 		onrelevel,
 		onreroll,
 		relevelling = false,
-		rerolling = false
+		rerolling = false,
+		blind = false
 	}: {
 		analysis: TrackAnalysis | null;
+		/** Withhold the arrangement: a blind sitting must not be able to read the answer here. */
+		blind?: boolean;
 		context?: TrackContext | null;
 		show: Show | null;
 		readout: Readout;
@@ -310,6 +313,9 @@
 					and only one of the two could say where the room is now.
 				-->
 				<Section title="Arrangement">
+					{#if blind}
+						<p class="note">Withheld while a blind map is being drawn.</p>
+					{:else}
 					<ul class="sections">
 						{#each analysis.sections as s (s.index)}
 							{@const live = readout.bar >= s.startBar && readout.bar < s.endBar}
@@ -350,6 +356,7 @@
 							</li>
 						{/each}
 					</ul>
+					{/if}
 				</Section>
 			{/if}
 
@@ -528,6 +535,10 @@
 		width: auto;
 	}
 
+	.note {
+		font-size: 12.5px;
+		color: var(--subtle-foreground);
+	}
 	ul.sections {
 		list-style: none;
 		margin: 0;

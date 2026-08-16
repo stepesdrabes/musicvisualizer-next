@@ -15,11 +15,13 @@
 		judged = 0,
 		total = 0,
 		editingSections = false,
+		blindEditing = false,
 		previewingArrangement = false,
 		onsave,
 		onnext,
 		onseek,
 		oneditsections = () => {},
+		onblindsections = () => {},
 		ondiscardsections = () => {},
 		onpreviewarrangement = () => {},
 		onclose
@@ -38,12 +40,15 @@
 		total?: number;
 		/** Whether the drawer's section lane is in hand-adjust mode right now. */
 		editingSections?: boolean;
+		/** Whether that sitting is blind: blank draft, analyser's answer hidden everywhere. */
+		blindEditing?: boolean;
 		/** Whether the room is playing the show composed from the hand-drawn map. */
 		previewingArrangement?: boolean;
 		onsave: (j: Judgement) => void;
 		onnext: () => void;
 		onseek: (t: number) => void;
 		oneditsections?: (on: boolean) => void;
+		onblindsections?: () => void;
 		ondiscardsections?: () => void;
 		onpreviewarrangement?: (on: boolean) => void;
 		onclose: () => void;
@@ -215,7 +220,11 @@
 						{editingSections ? 'Done adjusting' : 'Adjust sections'}
 					</Button>
 					{#if judgement?.sections?.length}
-						<span class="hint">{judgement.sections.length} hand-drawn</span>
+						<span class="hint">
+							{judgement.sections.length} hand-drawn{judgement.blind ? ' · blind' : ''}{judgement.editSeconds
+								? ` · ${clock(judgement.editSeconds)}`
+								: ''}
+						</span>
 						<button
 							class="ghost"
 							onclick={ondiscardsections}
@@ -224,6 +233,17 @@
 						</button>
 					{/if}
 				</div>
+				{#if !editingSections}
+					<div class="markrow blindrow">
+						<Button variant="ghost" size="sm" onclick={onblindsections}>
+							<Icon name="blind" size={13} />
+							Draw blind
+						</Button>
+						<span class="hint">
+							{judgement?.sections?.length ? 'replaces the map' : 'for the eval set'}
+						</span>
+					</div>
+				{/if}
 				{#if judgement?.sections?.length}
 					<div class="markrow previewrow">
 						<Button
@@ -396,6 +416,9 @@
 	}
 	.previewrow {
 		margin-top: 8px;
+	}
+	.blindrow {
+		margin-top: 6px;
 	}
 	.hitrow {
 		display: flex;

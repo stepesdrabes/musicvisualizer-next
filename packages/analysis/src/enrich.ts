@@ -383,6 +383,9 @@ export async function enrichTrack(input: EnrichInput): Promise<TrackContext> {
 		isrc: deezer?.isrc ?? null,
 		publishedBpm: deezer?.bpm ?? null,
 		genres,
+		// Enrichment is the METADATA half. The classifier fills this in ingest, and the two
+		// stay apart so a re-vote cannot read the model's own echo back as evidence.
+		audioGenres: [],
 		genreFamily: vote.family,
 		genreConfidence: Math.round(vote.confidence * 100) / 100,
 		lyrics,
