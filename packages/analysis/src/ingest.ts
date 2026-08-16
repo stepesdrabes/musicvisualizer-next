@@ -350,6 +350,16 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	// failed enrichment permanent - no published tempo, no lyrics, ever, for that track.
 	let context = await readContext(id);
 	const enriched = (c: TrackContext) => c.sources.some((s) => s !== 'effnet');
+	/**
+	 * Whether enrichment just rebuilt the context in this call.
+	 *
+	 * A rebuild comes back METADATA-ONLY, and the audio vote below sits past the cached-analysis
+	 * return, so a CONTEXT_VERSION bump on its own used to strip the model's genre from every
+	 * track whose analysis was already current - and leave it stripped, because nothing would
+	 * ask again until something forced a re-analysis. Eno came back `rock` and EARFQUAKE came
+	 * back with no family at all, voting on one iTunes tag. Only a rebuild pays for the decode.
+	 */
+	let rederived = false;
 	if (!context || context.version !== CONTEXT_VERSION || !enriched(context)) {
 		log('looking the track up');
 		context = await enrichTrack({
@@ -364,6 +374,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			onProgress: log
 		});
 		await writeFile(contextPath(id), JSON.stringify(context, null, '\t'));
+		rederived = true;
 	}
 
 	const relevel = opts.metricalLevel !== undefined && Math.abs(opts.metricalLevel - 1) > 1e-6;
@@ -374,6 +385,14 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 			// meaning. Version mismatch has to discard it.
 			if (cached.version === ANALYSIS_VERSION) {
 				log('cached');
+				if (rederived && !context.sources.includes('effnet')) {
+					const heard = await decodeAudio(audioPath);
+					const refined = await refineGenreFromAudio(context, heard.mono, heard.sampleRate);
+					if (refined !== null) {
+						context = refined === context ? { ...context, sources: [...context.sources, 'effnet'] } : refined;
+						await writeFile(contextPath(id), JSON.stringify(context, null, '\t'));
+					}
+				}
 				// Tracks analysed before meta carried a duration or a trust verdict get them
 				// here, so a list of the cache does not have to open a 400 kB analysis per row.
 				if (!meta.duration || !meta.gridTrust) {
