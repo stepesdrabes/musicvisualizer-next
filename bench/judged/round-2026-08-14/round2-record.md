@@ -1212,3 +1212,87 @@ The rule now reads: the plain drag says WHICH BAR, the fine drag says the bar li
 HERE. Both are honoured exactly, and the room plays what the preview showed.
 
 Gates: 827 tests, typecheck clean, earlybars 20 hit / 0 worse of 28, 47/47 lint-clean.
+
+## Round 8: the multi-tempo gap, researched and opened
+
+The owner, after trying to map SICKO MODE: "the songs contain sections that have completely
+different BPM and they might start offbeat compared to each other. That is the BIGGEST gap
+that the whole LightningStrike analysis have. It should be somehow displayed in the UI, and
+properly know the boundaries."
+
+### What the research found, and how it shrank the problem
+
+**The timing substrate is already piecewise.** `barTimes` is built from tracked beat times
+through `barSynchronousAt`, so the grid already follows a tempo change. Measured on SICKO
+MODE: bars run 1.74 s before the switch (138 bpm) and 3.10 s after (77 bpm). What lied was
+the SUMMARY - `tempo.bpm` is a median, and the composition decisions all read it.
+
+**The model already knows too.** Beat This reports 136.4 bpm to 58.3 s and 76.9 after, with
+101 of its 119 downbeat intervals holding exactly four beats. Its paper names the case
+directly - it refuses a global tempo head because that "assumes an (almost) constant tempo",
+and lists "audio tracks containing multiple concatenated songs" as motivation. It emits
+per-frame beat and downbeat probabilities and no tempo at all, which is the right shape for
+this and is what we already run.
+
+**But nothing may decide automatically.** The model's downbeats imply 18 phase resets on
+SICKO MODE (3 holding four clean bars) and 48 on Melanz (8) - and 27 on Je mi fajn, an
+ORDINARY track, because the model emits 2-beat bars when unsure. A detector on that signal
+would re-grid a quarter of the library to fix two tracks: the plateau detector's wall again.
+Splitting at the switch and fitting a uniform grid per part recovers only 53% (Melanz 49%),
+so the naive fix does not work either.
+
+**What the tools do, and it is what we already have.** Rekordbox stores tempo per beat,
+Serato stores markers with beats-till-next, Ableton stores warp markers as (seconds, beats)
+with "Warp From Here", Melodyne builds a tempo map and lets you correct it. All four store
+ANCHORS and derive tempo - which is exactly what `barTimes` is. The correction gesture to
+steal is Ableton's: pin a marker, re-derive to the right. That is the movement mark.
+
+**A caution for any future gate:** CMLt/AMLt penalise a CORRECT tempo change, because they
+demand continuity with the previous beat. `bench/beatscore.ts` would report this work as a
+regression. The literature's answer is per-beat annotation coverage (ACR), and there is no
+published task, dataset or metric for tempo-change-point detection at all.
+
+### Slice 1 (shipped): read the tempo at the bar
+
+`beatPeriodAt` / `bpmAt` in core, over the existing `barDurationAt`. The sharp fix is the
+strobe: it was sized off the median AND checked off the median, so the planner and the linter
+agreed with each other while both asked about a tempo the track never plays - licensing 4
+flashes a beat at 138 bpm, 9.2 Hz, past the 8 Hz ceiling the room set at 9.4. Both sides now
+ask at the firing bar; SICKO MODE picks 2/beat for 4.6 Hz, Melanz 4/beat for exactly 8.00.
+
+Three clocks were already wrong on any drifting track, each hand-rolling a bar from
+`firstBeat`/`beatPeriod` while the correct table-driven call sat in the same file: the agent's
+onset tool, the timeline's hit markers (75% overdrawn on a fast movement), and the scrubber's
+tooltip. Corpus unmoved - 47/47 lint-clean, showprobe 0/0/100%, contrast 2.75, hue jumps
+2745 - because on a constant-tempo track the local value IS the median. SHOW_VERSION 18.
+
+### Slices 2 and 3 (shipped): show it, and offer the boundaries
+
+`tempoSegments` reads the map off the bar table: gather bars while their length holds within
+12%, admit a segment once it lasts four bars. That threshold separates a tempo change (SICKO
+MODE's switch is 78%) from the short bar a listener cut leaves behind. SICKO MODE reads
+108/135/78, Melanz seven, Je mi fajn and Desire exactly one.
+
+The player bar reads the tempo at the playhead (140 bpm in SICKO MODE's fast movement, where
+it said 78) with a chip listing how many there are; the timeline grows a tempo lane with
+dividers above the sections; the inspector lists the segments. All three appear only where
+there is more than one segment.
+
+And the judge panel offers the change points as movement candidates - "the grid changes tempo
+here", one click to mark. SICKO MODE offers 0:29 and 1:01. Offered, never applied, for the
+reason the measurements above make plain.
+
+### Still open on this gap
+
+- The remaining half is PHASE: only 47 of 120 model downbeats sit on a shipped bar line,
+  because one uniform four-beat walk cannot follow the resets the model implies. A marked
+  movement cuts the grid there; scattered resets do not have an answer yet, and phase-reset
+  candidates would need the model's downbeats stored in the analysis (they are not today).
+- Three decisions still read the median and all three change how a show LOOKS, so they want
+  the owner's ear rather than a mechanical fix: palette heat (`(bpm-90)/85`, which clamps to
+  zero on a track half of which runs at 136), `lapBars`, and the genre flash budget (which
+  zeroes below 90 bpm and would silence a medley whose median is 79).
+- Owed regardless of this feature: eight effects and `Presence` rescale retroactively when
+  the beat period steps, and they already misfire on the idle transition (40 bpm against a
+  track's 130). The effect gate has never run a tempo step - all 97 effects were admitted on
+  constant-tempo evidence.

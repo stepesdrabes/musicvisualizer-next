@@ -422,7 +422,20 @@ this call and it shipped at v15).
 2. NOTHING IS COMMITTED. The whole round is staged in the working tree; the owner
    commits on their word only. Do not stage `docs/hardware.html` or
    `packages/preview3d/*` (the owner's own in-flight work).
-3. **THE NAMED NEXT GOAL: MULTI-TEMPO TRACKS.** The owner, after mapping SICKO MODE:
+3. **MULTI-TEMPO: RESEARCHED, AND THREE SLICES SHIPPED (round 8).** The tempo is now read
+   AT THE BAR (`bpmAt`/`beatPeriodAt` in core), which closed a live breach of the 8 Hz
+   strobe ceiling - 9.2 Hz on SICKO MODE's fast movement, passed by a linter reading the
+   same median the planner sized from. The tempo map is on screen: the player bar reads
+   the local tempo with a "N tempi" chip, the timeline has a tempo lane, the inspector
+   lists the segments, and the judge panel offers each change point as a movement
+   candidate (SICKO MODE: 0:29 and 1:01), offered and never applied. What remains is in
+   the record's round-8 section: PHASE (47 of 120 model downbeats sit off a bar line, and
+   phase-reset candidates would need the model's downbeats stored, which they are not),
+   three median-driven decisions that change how a show LOOKS and want the owner's ear
+   (palette heat, lapBars, the genre flash budget - the owner asked to do these together),
+   and the retroactive-rescale bug in eight effects plus `Presence`, which already
+   misfires on the idle transition and which no gate has ever tested.
+   The evidence, kept because it will be argued with again: The owner, after mapping SICKO MODE:
    "the songs contain sections that have completely different BPM and they might start
    offbeat compared to each other. That is the BIGGEST gap that the whole LightningStrike
    analysis have. It should be somehow displayed in the UI, and properly know the
