@@ -7,6 +7,17 @@ export interface PickRequest {
 	lengthBars: number;
 	/** 0..1. Decides which energy band of the catalog is in range. */
 	energy: number;
+	/**
+	 * This passage measurably pounds, so it draws one band harder than its loudness alone
+	 * would ask for.
+	 *
+	 * The band otherwise comes from mean energy, and a heavily limited master has almost no
+	 * energy range to give: a record that is four-on-the-floor from its first bar reads as
+	 * mid-energy throughout and gets mid-energy looks, which the room hears as the rig being
+	 * too polite for the track. The caller decides what pounding means; it is the same
+	 * measurement that upgrades the punctuation to slams.
+	 */
+	pounding?: boolean;
 	/** Allow an effect its author reserved for one moment per show. */
 	allowPeakReserved?: boolean;
 	/** This layer has to hold the room by itself, so anything that cannot is ineligible. */
@@ -142,7 +153,8 @@ export class EffectPicker {
 	}
 
 	pick(req: PickRequest): EffectDef | null {
-		const target = 1 + Math.round(Math.max(0, Math.min(1, req.energy)) * 4);
+		const band = 1 + Math.round(Math.max(0, Math.min(1, req.energy)) * 4);
+		const target = Math.min(5, band + (req.pounding ? 1 : 0));
 		const previous = this.lastInRole.get(req.role);
 
 		const groupKey = req.group !== undefined && req.group >= 0 ? `${req.role}:${req.group}` : null;
