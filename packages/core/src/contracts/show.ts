@@ -2,7 +2,7 @@ import type { SectionKind } from './frame.ts';
 import type { LayerRole, ParamSpec, Params } from './effect.ts';
 import type { ShowPalette } from './palette.ts';
 
-export const SHOW_VERSION = 17;
+export const SHOW_VERSION = 18;
 
 export interface LayerSpec {
 	effect: string;
@@ -106,6 +106,8 @@ export const STROBE_MAX_HZ = 8;
  * is judged over its whole length, not per drifting bar.
  */
 export function strobePerBeat(tempo: { bpm: number }): number {
+	// Callers on a track that changes tempo must pass the LOCAL bpm (`bpmAt`), not the
+	// track median: this returns a rate per beat, and a beat is only as long as its bar.
 	const beatHz = tempo.bpm / 60;
 	for (const per of [4, 2]) {
 		if (per * beatHz <= STROBE_MAX_HZ + 1e-9) return per;

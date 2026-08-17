@@ -6,6 +6,7 @@ import {
 	LAYER_ROLES,
 	PHRASE_BARS,
 	STROBE_MAX_HZ,
+	bpmAt,
 	hitSeconds,
 	onPhraseGrid,
 	phraseOffset,
@@ -429,11 +430,15 @@ export function lintShow(show: Show, ctx: LintContext): LintResult {
 		// events - measured in the room at 9.4 Hz, where the same gesture at 4.7 still lands.
 		if (hit.kind === 'strobe') {
 			const perBeat = hit.params?.perBeat ?? 2;
-			const ceiling = strobePerBeat(tempo);
+			// At the bar it fires on. Reading the track median here let a 9.2 Hz strobe past
+			// on a track whose median said 5.2 - the planner and the linter agreed with each
+			// other because they were both asking about a tempo the track never plays.
+			const local = bpmAt(tempo, hit.bar);
+			const ceiling = strobePerBeat({ bpm: local });
 			if (perBeat > ceiling) {
 				err(
 					'strobe-too-fast',
-					`strobe at bar ${hit.bar} flashes ${perBeat}/beat at ${Math.round(tempo.bpm)} bpm, ${((perBeat * tempo.bpm) / 60).toFixed(1)} Hz; past ${STROBE_MAX_HZ} Hz it reads as noise - ${ceiling}/beat is the fastest this tempo carries`,
+					`strobe at bar ${hit.bar} flashes ${perBeat}/beat at ${Math.round(local)} bpm, ${((perBeat * local) / 60).toFixed(1)} Hz; past ${STROBE_MAX_HZ} Hz it reads as noise - ${ceiling}/beat is the fastest that bar carries`,
 					hit.bar
 				);
 			}

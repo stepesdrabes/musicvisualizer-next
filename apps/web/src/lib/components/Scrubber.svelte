@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
+	import { barTimeAt, type Show, type TrackAnalysis, barAtTime } from '@mv/core';
 	import { clock, titleCase } from '$lib/format.ts';
 	import { FULL_WINDOW, isFullWindow, type TimeWindow } from '$lib/timeline.ts';
 
@@ -51,10 +51,10 @@
 	}
 
 	function barAt(t: number): number {
-		if (!analysis) return 0;
-		const g = analysis.tempo;
-		const beats = (t - g.firstBeat) / g.beatPeriod;
-		return Math.max(0, Math.floor((beats - g.downbeatPhase) / g.beatsPerBar));
+		// Through the bar table, like every other reader of this grid. Hand-rolled against
+		// the median it disagreed with the markers drawn beside it on any track that drifts,
+		// and named the wrong bar entirely on one that changes tempo.
+		return analysis ? Math.max(0, Math.floor(barAtTime(analysis.tempo, t))) : 0;
 	}
 
 	function sectionAt(t: number): string {

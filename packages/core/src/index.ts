@@ -80,6 +80,8 @@ export {
 	barAtTime,
 	barDurationAt,
 	barTimeAt,
+	beatPeriodAt,
+	bpmAt,
 	hitSeconds,
 	nearestBar,
 	nearestBarIn,

@@ -1,4 +1,4 @@
-import { LAYER_ROLES, barTimeAt, type LayerRole, type Show, type TrackAnalysis } from '@mv/core';
+import { LAYER_ROLES, barTimeAt, beatPeriodAt, type LayerRole, type Show, type TrackAnalysis } from '@mv/core';
 
 export interface TimelineSection {
 	index: number;
@@ -89,11 +89,15 @@ export function buildTimeline(
 
 	const markers: TimelineMarker[] = show.hits
 		.map((h) => {
-			const start = barTimeAt(analysis.tempo, h.bar) + (h.beat ?? 0) * beatPeriod;
+			// Sized at the bar the hit lands on, the way the player sizes it. Off the track
+			// median, a 4-beat hit on SICKO MODE's fast movement drew 3.09 s where the room
+			// runs it 1.76 s - the marker and the flash disagreed by 75%.
+			const local = beatPeriodAt(analysis.tempo, h.bar);
+			const start = barTimeAt(analysis.tempo, h.bar) + (h.beat ?? 0) * local;
 			return {
 				kind: h.kind,
 				start,
-				end: start + h.beats * beatPeriod,
+				end: start + h.beats * local,
 				title: h.kind,
 				lines: [
 					`bar ${h.bar}${h.beat ? ` beat ${h.beat}` : ''}, ${h.beats} beat${h.beats === 1 ? '' : 's'}`,

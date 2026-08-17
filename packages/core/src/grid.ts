@@ -136,6 +136,25 @@ function tieToEarlier(bars: number): number {
 }
 
 /**
+ * The beat period and tempo AT a bar, rather than the track's median.
+ *
+ * `tempo.bpm` is a summary, and on a track that changes tempo it is a summary of nothing
+ * anybody plays: SICKO MODE reports 77.67 while its first movement runs at 138 and its
+ * second at 77. Every decision taken from the median is then taken for a track that does
+ * not exist - the strobe rate sized off it ran at 9.2 Hz in the fast movement, past the
+ * 8 Hz ceiling, and the linter agreed with the planner because both read the same
+ * median. The bar table has known the truth all along.
+ */
+export function beatPeriodAt(tempo: TempoGrid, bar: number): number {
+	return barDurationAt(tempo, bar) / Math.max(1, tempo.beatsPerBar);
+}
+
+export function bpmAt(tempo: TempoGrid, bar: number): number {
+	const period = beatPeriodAt(tempo, bar);
+	return period > 1e-6 ? 60 / period : tempo.bpm;
+}
+
+/**
  * How long a hit lasts, in seconds, read off the bar table.
  *
  * The one place this arithmetic lives, because the planner and the linter have to agree on it

@@ -171,11 +171,12 @@ export function buildTools(session: AuthorSession, phase: ToolPhase = 'build') {
 			const to = barTimeAt(session.analysis.tempo, toBar + 1);
 			const hits = onsets[instrument].times.filter((t) => t >= from && t < to);
 			if (hits.length === 0) return text(`No ${instrument} onsets in bars ${fromBar}-${toBar}.`);
+			// Through the same table the window above came from. Hand-rolled against the
+			// median, the labels contradicted their own window on any track that drifts.
 			const lines = hits.map((t) => {
-				const beats = (t - tempo.firstBeat) / tempo.beatPeriod;
-				const bar = Math.floor((beats - tempo.downbeatPhase) / tempo.beatsPerBar);
-				const beatInBar = (beats - tempo.downbeatPhase) % tempo.beatsPerBar;
-				return `${t.toFixed(3)}s  bar ${bar} beat ${beatInBar.toFixed(2)}`;
+				const bars = barAtTime(tempo, t);
+				const bar = Math.floor(bars);
+				return `${t.toFixed(3)}s  bar ${bar} beat ${((bars - bar) * tempo.beatsPerBar).toFixed(2)}`;
 			});
 			return text(`${hits.length} ${instrument} onsets:\n${lines.join('\n')}`);
 		},

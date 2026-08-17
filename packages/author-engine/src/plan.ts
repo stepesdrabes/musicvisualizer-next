@@ -22,7 +22,8 @@ import {
 	hitSeconds,
 	lerpHue,
 	sectionBase,
-	strobePerBeat
+	strobePerBeat,
+	bpmAt
 } from '@mv/core';
 import { allowedFlashes, profileFor, type GenreProfile } from './genre.ts';
 import { choosePalette } from './palette.ts';
@@ -955,7 +956,10 @@ function planHits(
 	const hits: Hit[] = [];
 	const { tempo } = analysis;
 	const beatsPerBar = tempo.beatsPerBar;
-	const perBeat = strobePerBeat(tempo);
+	// Sized at the bar it will FIRE on, not off the track median. On a track that changes
+	// tempo the median describes nothing anybody plays: SICKO MODE's median says 5.2 Hz is
+	// safe while its fast movement runs the same gesture at 9.2, past the 8 Hz ceiling.
+	const perBeatAt = (bar: number) => strobePerBeat({ bpm: bpmAt(tempo, bar) });
 
 	// Every gesture below is counted in whole bars, so each one starts on a downbeat and ends on
 	// one. Anything shorter came back mid-bar, and a room that comes back mid-bar has answered
@@ -1090,6 +1094,9 @@ function planHits(
 		// brings the strobe into IT with it.
 		const room = before.endBar - before.bar - 1;
 		const runFor = strobeBars(slot.bar, Math.min(slot.peak ? 2 : 1, room));
+		// The bar it actually starts on, which on a track that changes tempo is the only bar
+		// whose beat length says what this will look like in the room.
+		const perBeat = perBeatAt(slot.bar - runFor);
 		if (perBeat > 0 && runFor > 0 && treatFor(slot) === 'slam') {
 			spendFlash({
 				bar: slot.bar - runFor,
