@@ -383,6 +383,7 @@ export async function enrichTrack(input: EnrichInput): Promise<TrackContext> {
 		isrc: deezer?.isrc ?? null,
 		publishedBpm: deezer?.bpm ?? null,
 		genres,
+		audioGenres: [],
 		genreFamily: vote.family,
 		genreConfidence: Math.round(vote.confidence * 100) / 100,
 		lyrics,
