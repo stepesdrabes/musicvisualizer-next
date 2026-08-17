@@ -599,3 +599,616 @@ Three findings for the next session, in priority order:
    on today's play, so the fresh METADATA vote itself says house - inspect its
    context genres and mapGenres' vote; likely a metadata-vote bug, now clean
    of the effnet echo.
+
+## Round 7 (2026-08-17): the map loop closed, package C refuted
+
+ANALYSIS_VERSION 23, CONTEXT_VERSION 3, engine untouched. Round-6 verdicts were
+already mined; no newer saves existed (the judge files' mtimes are the cache copy,
+their updatedAt is round 6).
+
+### The map->cuts derivation (finding 1): FIXED
+
+`cutsFromBarTimes` reads a piecewise grid's own cuts back out by COUNTING BEATS per
+bar - a cut bar is the one holding fewer beats than the meter. Bar durations cannot
+answer it: Safir drifts 146 -> 190 bpm, so its tail bars are half a second shorter
+than its head bars while every one of them still holds four. `handMapGrid` then
+carries those cuts forward instead of re-deriving from residues, because a map drawn
+on a piecewise grid carries positions from a grid whose bar lines have moved. Safir
+at v23 through the real reader: cuts 53.80 / 106.80, every map boundary 0.00 off,
+the verse rounding back from its 54.21 nudge onto bar 34. The new test fails against
+the bug when the carry-forward is reverted (verified both directions).
+
+Second half, on the owner's call: a residue change now counts only when the NEXT
+boundary carries it too. An inserted half bar shifts everything after it, so real
+evidence comes in twos; the editor snaps to BEATS, so a lone nudge onto a mid-bar
+beat says nothing about meter. Blinding Lights' outro (185.345, 35 ms off a mid-bar
+beat, one boundary of eleven) was cutting that track's grid and no longer does. The
+cost, documented: an edit evidenced only by a map's last boundary cannot be
+corroborated and must come in as explicit `gridCuts`.
+
+### Map adoption (finding 2): SHIPPED
+
+`handSectionBars` + the `hand` branch in analyze.ts. A judgement carrying a map now
+decides its track: boundaries snap to the nearest bar line, kinds are the owner's
+words, and the label passes, the hook snap and consolidation all stand down (that
+last one matters - consolidation would fuse Ponyboy's two adjacent drops). Grouping
+still runs `groupSegments` over the map's bounds, so repeats stay measured by
+self-similarity rather than guessed from matching lengths as the preview's
+`applyHandSections` has to.
+
+All five maps adopt exactly, verified end to end through `bench/reanalyse.ts`:
+
+    Safir      intro build@2 chorus@9 verse@34 chorus@43 build@66 chorus@68 breakdown@88 outro@96
+    Ponyboy    groove drop@16 drop@32 groove@48 drop@64 drop@72 outro@80
+    Blinding   intro verse@3 verse@7 chorus@23 chorus@39 chorus@63 build@77 chorus@79 build@111 chorus@113 outro@130
+    Praha      intro build@3 chorus@8 build@16 chorus@24 chorus@40 chorus@48 build@56 chorus@64 outro@76
+    Az na mesic intro build@8 chorus@16 build@40 chorus@48 verse@56 chorus@60 breakdown@70 breakdown@72 breakdown@80 chorus@88 outro@96
+
+Worst internal snap delta 0.41 s (Safir's verse nudge, half a bar is 0.82 s); every
+other boundary on every map lands 0.00 off. 5/5 lint-clean including the drop|drop
+and breakdown|breakdown|breakdown seams the maps ask for.
+
+`bench/reanalyse.ts --no-hand-maps` reproduces the un-adopted reading. This is not
+optional hygiene: adoption would otherwise make `mapscore` measure the adoption
+rather than the analyser and quietly end the model eval. Baseline before adoption,
+for the eval's record: strict agreement 99 / 98 / 100 / 100 / 35 % (Az na mesic,
+Blinding Lights, Praha, Safir, Ponyboy), macro F1 79 %, degenerate 0/5. Read those
+numbers knowing four of the five maps were drawn by EDITING the analyser's own
+sections, so they are partly derivative - high agreement there is not high quality.
+
+### Package C, lyric-assertive chorus placement: REFUTED, not shipped
+
+The owner's Blinding Lights map is what killed it. The map's choruses sit at bars
+23 / 39 / 63 / 79 / 113; the sung hook windows sit at 33 / 72 / 104. The voice
+arrives about TEN BARS inside the chorus the owner drew - on this record the synth
+riff IS the chorus - so placing chorus starts on hook windows would move three of
+five choruses ten bars late on the very track the package was gated by. What the
+analyser actually gets wrong there is smaller and different: 22/38/62 against the
+map's 23/39/63, one bar early three times, plus an extra seam at 128 the map does
+not want. Refine-margin class, not lyric class.
+
+Snooze points the other way (window 23 IS the owner's true bar against the DP's 17),
+so the narrow form the owner approved was: place only where no boundary is already
+within reach AND the lead-in is not the chorus's own material. Measured through
+`bench/stagetrace.ts`, which grew a hook-placement readout for it (material ratio,
+lead/body lengths, energy, vocal coverage, hook-bar coverage):
+
+    track     window  must move  ratio  lead vocal  lead hookbars
+    Snooze      23      YES      0.964     1.00         0.00
+    KITN        64      no       1.021     1.00         0.00
+    KITN        86      no       0.908     1.00         0.00
+    Hannah      79      no       1.000     1.00         0.00
+    Blinding    33      no       1.106     0.89         0.00
+    Praha       30      no       0.912     1.00         0.17
+
+Snooze's window is inside the sentinel range on every column measured, and KITN's
+window 64 is Snooze's row with the digits shuffled. The only rule that separates
+them - first chorus of the track AND lead fully sung AND no hook bar in the lead -
+is three conditions fitted to one positive example with no reason why only a first
+chorus would suffer it, so it was not shipped. The fifth design to die on an
+instrument in this campaign, and the cheapest: two measurement passes.
+
+What would settle it is hand maps on lyric tracks (Snooze, KITN, Hannah): the maps
+are the only evidence that distinguishes a riff-chorus from a verse lead-in. Until
+then a mapped Snooze fixes Snooze exactly, with no rule and no risk to the rest.
+
+### Someone You Loved's "house" (finding 3): a measurement, not a vote
+
+Not a metadata bug. The classifier itself heard Tropical House 0.63, House 0.48,
+Pop Ballad 0.45; two house labels outvote its own ballad label on any weighting, and
+the metadata ("Alternative") never gets a say. No vote arithmetic overturns that, so
+the fix is physical: `familyCorroborated` takes a kick-claiming family's promise to
+the record, using the loud-bar kick rate the drop vocabulary is already gated on
+(CLUB_KICK_FLOOR 0.4). Ambient is deliberately exempt - silence corroborates ambient
+rather than refuting it. The replacement family comes from the same labels with the
+kick-claiming ones struck out, since the model was not hearing nothing.
+
+Over the judged library, three tracks fail the floor and two have somewhere to go:
+Someone You Loved house -> ballad (kick 0.00), Take Me (To The Moon) bass -> ambient
+(0.31), and Way Too Self Aware (house, 0.31) keeps its verdict because its labels
+offer no non-club family - the conservative direction. Every genuinely club track
+sits at 0.61-1.38, Ponyboy at 1.12, so the pounding arm is untouched. The pass runs
+after the analysis because that is where the measurement exists, and that order is
+safe rather than lucky: the club privileges inside the analysis are kick-gated too,
+so all three tracks had already been refused the drop vocabulary (chorus/verse
+before this existed). CONTEXT_VERSION 3; the corrected family is persisted, so the
+show, the picker and the panel all see it.
+
+### Round-7 gates
+
+Suite 799, typecheck clean. earlybars 20 hit / 0 closer / 8 same / 0 worse of 28 -
+the floor, unmoved, which is the point: adoption and the cuts carry-forward are
+INERT without a map, and earlybars calls analyzeTrack directly with no judgement in
+sight. structscore identical to the v22 baselines on both corpora (raveform
+F0.5 0.394 / F3 0.540, harmonix 0.202 / 0.532). Judged-36 re-analysed in a scratch
+from the A cache (whose judgements carry no maps, so the DP path is what was
+measured): 36/36 lint-clean, 10 buttons, phantom share 28% unchanged.
+
+The real drift check is v22-vs-v23 rather than judged-after's v16 snapshot: of the
+ten judged tracks with a frozen v22 blob in cache-C, NINE are byte-identical in
+their section tables and the tenth is Safir, where cache-C holds the hand-staged
+piecewise blob and the fresh run had no map to read. cache114 regenerated at v23:
+showprobe 0 lint / 0 misfires / 100% quiet coverage, dark bars 2, contrast mean
+2.76, hue jumps 2585, 111 palettes - the v22 numbers to the decimal.
+
+### Two threads this round opened
+
+- **gridTrust now judges the owner's own map.** Fragmentation routes a track to the
+  lounge above ~4.5 sections a minute, and on a mapped track those sections are the
+  owner's rather than the analyser's confusion. Nothing is close today (the densest
+  map, Az na mesic, is 3.3/min), so nothing was changed - but a busy map could have
+  the app answer it by refusing to trust the grid. A map arguably CONFIRMS its grid,
+  which is the argument for exempting adopted tracks; it needs the owner's call.
+- **A context correction lands one play before the show hears it.** `settleGenreFamily`
+  writes the corrected family before ingest returns, so the show composed in the same
+  pass uses it - but a track whose analysis and show are both already current keeps
+  its show, because nothing hashes the context into it. Harmless for this change
+  (the version bump re-analyses everything anyway) and pre-existing for every context
+  change before it; worth knowing before the next one.
+
+## Round-7 verdicts (2026-08-17 evening): four answers, one new complaint
+
+The owner listened to the adoption round: **Blinding Lights 5*** ("almost perfect
+this time", up from 3*), **Ponyboy "way better than before"** (up from 2*, with one
+complaint below), **Hannah Montana "sectioning is nice"** - a PRAISE sentinel now,
+not a silence one - and **Snooze arranged by hand**, the map package C had been
+asking for. Also on the record, in the owner's words: the hand maps are "NOT 100%
+fully the best", and measurements are available on request.
+
+### Package C: killed by the owner's own two maps
+
+The maps answer C's question directly, and they answer it both ways:
+
+| track | map choruses (bars) | lyric hook starts | verdict |
+|---|---|---|---|
+| Snooze | 24, 56, 79, 83 | 23, 55, 79, 82 | agrees 4/4 within a bar |
+| Blinding Lights | 23, 39, 63, 79, 113 | 33, 72, 104, 128 | disagrees by 10+ bars |
+
+Hook-placed choruses would fix Snooze and wreck the track the owner had just rated
+5*. The instrument cannot tell the two cases apart from inside: Snooze's repeated-line
+runs start where its choruses start, Blinding Lights' start a third of the way into
+each one. That is the same vocabulary-blind failure the P6 rollback is on file for,
+so C stays dead in its assertive form and the four lyric sentinels were never put at
+risk. Snooze is fixed by its map instead, which is strictly better evidence.
+
+Also measured while C was on trial: Snooze's map first chorus is bar 24 where the
+owner's earlier live mark said 23 and the DP says 17. The DP is seven bars early
+there, which is the same refine-margin class as the remaining earlybars pairs - the
+map does not tell us how to fix it, only that it is wrong.
+
+### The map loop had a hole: a map drawn on a CURRENT analysis was never heard
+
+Snooze exposed it within minutes of the round shipping. Adoption happens when the
+analysis re-derives, and an analysis is kept while its version is current, so a map
+drawn on a v23 blob would have waited for v24 - and a map REDRAWN after a listen
+would never have been heard at all. Closed by stamping the map into the analysis
+(`TrackAnalysis.handMap`, a fingerprint of the drawn kinds and times) and comparing
+it in ingest's cached path: any difference re-analyses. Proven end to end through
+the real `ingest()`: map heard once (re-analyse) -> next play cached -> chorus
+redrawn 94->107s (re-analyse, bar 57 -> 65) -> next play cached -> map deleted
+(re-analyse, sections revert to the DP's own reading).
+
+Found on the way, and worth more than the fix: `handMapStamp` was referenced in
+ingest without being imported, and the cached path's `try` swallowed the resulting
+TypeError into a silent FULL RE-ANALYSIS on every play - a 40-second bug wearing a
+policy's clothes. `npm run check` had not run since the reference was added. The
+catch now covers only the read, so anything the cached blob is put through throws
+loudly. The general rule, third time paid for in this campaign: a catch around more
+than one operation is a catch that will one day hide the wrong one.
+
+### The pounding band raise (SHOW 17), from Ponyboy's complaint
+
+The owner: "I think there are A LOT of kicks/bass, so the effects should be a bit
+more aggressive." Instrumented before designing: Ponyboy pounds at 0.95-1.25
+kicks/beat in EVERY section, and its `bass` profile was already spending the hardest
+punctuation it has (slam peak, 4 strobes, 4 slams, 3 bumps). What sat mid-scale was
+the effect VOCABULARY: the picker's energy band comes from mean loudness
+(`1 + round(energy * 4)`), this record is mastered flat at 57-78, so four of six
+sections drew from band 3 of 5.
+
+Shipped: a drop-class slot measuring >= `POUNDING_KICK` (0.8 kicks/beat, now one
+constant serving all three of its consequences) draws one band harder, capped at 5.
+Swell families exempt, on the same grounds their punctuation is. The owner chose this
+axis over an impact-character preference and over raising intensity/motion.
+
+Measured, corpus-wide (114 shows, 1548 cues): mean layer band 2.814 -> 2.825,
+drop-class cues 3.270 -> 3.296 over 653 of them. Surgical because grooves are
+untouched - which also preserves the contrast a track like Ponyboy has little of.
+On Ponyboy itself the drops now draw rollerChase, doubleKickGatling, moshSlam,
+lightning and silhouette where they drew chorusBloom and vuTowers; its grooves are
+unchanged, so the drops STEP UP from them instead of matching them.
+
+Judged 36 recomposed at SHOW 16 vs 17 on identical analyses: **9 changed, 27
+identical**, and every diff is in the transient layer alone (snareBlade ->
+pyroBursts, kitStage -> snareBlade, snareBlade -> lightning). Two of the nine are
+the praise sentinels - **Pistacie 5*** (5 of 12 cues) and **EARFQUAKE 5*** (2 of 11,
+including a lightning on its peak bar) - so they head the re-listen list. The rule
+says a sentinel built from praise is the strongest one there is; this change moves
+two of them and only the room can clear it.
+
+### Round-7 gates
+
+Suite 806, typecheck clean, earlybars 20 hit / 0 worse of 28 (the floor), 47/47
+lint-clean with 0 rejected, judged-36 lint-clean, showprobe 0 lint / 0 misfires /
+100% quiet coverage with the two ledger dark bars, 111 palettes. Two numbers drifted
+and both are the change being visible: contrast mean 2.76 -> 2.75, hue jumps 2585 ->
+2745 (+6%, harder effects move more colour). structscore untouched this round - the
+analyser did not change after the v23 battery.
+
+## Round-7 close: the sentinels cleared, and the next goal scoped
+
+The owner re-listened after SHOW 17: **Pistacie "sectioning is almost perfect"**
+(5*, one adjustment drawn), **EARFQUAKE "almost perfect"**, **Ponyboy "way
+better"**, **Snooze one adjustment**. Both praise sentinels the band raise moved
+came back clean, so SHOW 17 stands. Two new maps mined: Pistacie's is a strict
+build/drop alternation (11 sections, no map before this), Snooze's verse and outro
+moved by a bar. Six maps now, and the stamp means both adopt on their next play.
+
+### The next goal, named by the owner: MULTI-SONG tracks
+
+"I think a BIG gap is in multi-songs - such as Melanz by Yzomandias, SICKOMODE by
+Travis Scott" - tracks that are two or three records stitched together. Scoped and
+instrumented before any design, and the instruments came back with two refusals.
+
+What the analysis sees today (both tracks already know something is wrong):
+
+| track | reported | meterConf | flags | switch |
+|---|---|---|---|---|
+| SICKO MODE | 77.7 bpm | 0.39 | constant false, ambiguous, alt 116/155 | one, 63.5s, 136 -> 77 |
+| Melanz | 79.7 bpm | 0.40 | constant false, alt 120/159 | a dozen level flips, 60 <-> 273 |
+
+**Refuted candidate 1: timing discontinuity.** The biggest sustained local-tempo
+step over a 16-beat window fires at x1.5 or more on 15 of 47 dev-cache tracks (32%)
+and 30 of 114 in cache114 (26%) - including Praha/Viden (4*), Sapphire, EARTH -
+Naporad and Snooze, all single-song tracks. A detector on this would re-grid a
+quarter of the library to fix two tracks. This is the plateau detector's failure
+mode exactly: a symmetric voter with no idea what it is voting on.
+
+**Refuted candidate 2: material break.** If a beat switch swaps the record, the band
+profile should jump. Measured as cosine distance between the 12s before and after,
+against the same measurement at ten other points in the same track: SICKO MODE's
+real switch scores 0.002 where the track's own median elsewhere is 0.024 - the
+switch is TEN TIMES LESS of a spectral event than an average moment of the track.
+Melanz at 266s: 0.002 against 0.009. Only Melanz's opening (28s) lights up, at 80x.
+Both records keep their spectral balance across the switch; what changes is pattern
+and tempo, which this cannot see.
+
+**The recommendation: the owner marks movements, the way the owner draws maps.**
+The channel already exists and has just proved itself twice over - the judge panel
+draws, the judgement carries, the stamp makes it audible on the next play, and the
+owner's truth outranks the DP on the track they marked. A movement mark would say
+"a new song starts here", and the analysis would give what follows its own metrical
+level and phase and its own energy normalisation, while the show re-stages: fresh
+vocabulary, and the question of whether each movement earns its own palette and its
+own peak arc is the owner's to answer. Accumulated marks then become the eval set
+for a detector, which is the only honest order after two refutations - the same
+protocol the sectioning-model memo sets out, and the reason the plateau postmortem
+is on file.
+
+### Multi-song, slice 1: the movement mark (SHIPPED, unheard)
+
+The channel the two refutations pointed at, built and verified end to end. A movement is
+marked by hand in the judge panel ("New song starts here", beside the typed hit marks),
+carried on the judgement as `movements` seconds, and does four things in the analysis:
+
+- **A grid cut.** The new song starts its own bar count instead of inheriting the old
+  song's phase, through the same `barStartsAtCuts` walk listener edits already use.
+- **A section boundary that survives.** It is pinned, forced into the table, and protected
+  from BOTH merge passes. This is where the slice nearly died: `arrange()` has its own
+  same-material merge, separate from `consolidateSections`, and it was eating the seam one
+  pass after it was created. Guarding only the outer pass looked like it worked, because the
+  seam was in `bounds` and gone from the output - the instrument that found it was printing
+  the table at four stages, not reasoning about it.
+- **Its own energy normalisation.** Every band and the loudness curve are levelled within
+  the movement (`spansFor`/`normaliseWithin`, minimum 8 bars), so a quiet movement is not
+  read as one long intro to the loud one.
+- **Published**, as `TrackAnalysis.movements` (bar indices), for the engine slice to come.
+
+Measured on SICKO MODE with its switch marked at 63.5s: the mark lands on bar 32 exactly,
+the seam holds, the section table gains `chorus@32`, and THE PEAK MOVES TO BAR 32 - the beat
+switch becomes the biggest moment of the show, which is what the record is famous for.
+
+Verified through the app on Melanz: mark -> judgement -> automatic re-analysis (the stamp
+covers movements too) -> `movements: [7]` at 12.2s. The test mark was removed afterwards so
+it does not sit in the library as false ground truth.
+
+Inert without a mark, and proven so rather than argued: `analyzeTrack` with `movements: []`
+is BYTE-IDENTICAL to the same call without the field (a test asserts the JSON equality), so
+no ANALYSIS_VERSION bump and no cached blob goes stale. Gates: 811 tests, typecheck clean,
+earlybars 20 hit / 0 worse of 28, 47/47 lint-clean.
+
+**Deliberately not shipped in the same breath: the engine slice** - per-movement palette,
+peak arc and vocabulary, which the owner asked for and chose. The analysis slice is itself
+unheard, and stacking a second unheard composition change on top of it is the one thing this
+campaign's method forbids. The design is settled and waiting: a cue with no palette resolves
+against the SHOW palette (`player.ts:130`), never the previous cue, so a movement's palette
+has to be written concretely into every cue of that movement - including resolving the
+'swap' that `paletteFor` returns for even drops, which would otherwise reach back to the
+first song's colour. The reserved peak master stays ONE per show (the owner's standing rule);
+what each movement gets is its own peak SLOT.
+
+### Known interaction: a movement inside a MAPPED track
+
+The map's boundaries are law, so a movement marked mid-section of a mapped track does not
+add a boundary - it still cuts the grid and levels its own energy. In practice a new song
+starts a new section and the owner draws it that way, but if a mapped track ever needs a
+movement seam the map is where to put it.
+
+### The preview arrangement was showing the map's cues against the old sections
+
+Reported by the owner while asking for a working preview to map Melanz and SICKO MODE
+with: "the subsections stay the same un-updated, and that is from where effects are taken".
+Exactly right, and in two places.
+
+**The deep half.** `applyHandSections` replaced `sections` and `moments` and left
+`bars[].section` alone - its docblock even claimed a shallow copy of those two was "exactly
+deep enough". It is not: `player.ts:226` builds `barSection` from the PER-BAR column and
+line 467 hands it to every frame, so `ctx.f.section` in every effect was the OLD
+arrangement while the cues around it were written for the new one. The linter reads the
+same column (`lint.ts:451`), and `engine.test.ts:44` asserts cue and bar label agree - an
+invariant the preview analysis was quietly violating. Fixed by rewriting the column with
+the spans; the endpoint now returns 0 cue/bar-label mismatches on Melanz where it is the
+only thing that could have been wrong.
+
+**The shallow half.** The route returned only the show, and the client called
+`viz.loadShow(analysis, previewShow)` with the ORIGINAL analysis - so the strip, the
+scrubber and the inspector all described the arrangement the preview was replacing. The
+route now returns the re-sectioned analysis with its show, and the client stages both,
+shelving the real analysis beside the real show and restoring both on toggle-off (and on
+a track change).
+
+Two tests, both proven failing against the bug first. Note for the future: with adoption
+shipped, the preview's window is narrower than it was - a map is adopted on the next play
+anyway - but it is what makes iterating on a map bearable, since the alternative is a
+30-60 second re-analysis per edit.
+
+### The preview, round two: the map was being ERASED, and adoption had made the button inert
+
+The first fix (per-bar labels + staging the re-sectioned analysis) was right and shipped, and
+the owner still reported the preview not working. Driving the owner's own flow rather than
+the endpoint found two further causes, one of them serious.
+
+**A judgement write could erase a hand-drawn map.** Three writers share one judgement file -
+the panel (rating, tags, notes, movements), the section editor (the map), and the mining
+scripts - and each sends a WHOLE judgement built from whatever it happened to know. The
+client merged `sections` defensively; nothing merged `movements` (so a section edit wiped
+movement marks, a bug this session introduced), an empty list counted as an erasure, and the
+server wrote whatever it was handed, so any writer that did not carry a field blanked it. A
+map is an hour of listening and it was losable by pressing a star. The merge now lives in
+`writeJudgement` where the file is: a missing field means LEAVE IT, an empty list means the
+writer carried nothing, and only an explicit null erases - which is what the discard button
+sends. Six tests, four of which fail against the old behaviour.
+
+**Adoption had quietly made the button pointless.** A saved map is adopted by the next
+analysis, so by the time the owner pressed Preview the current show WAS the map's show and
+nothing changed - "it does not work" was an accurate description of a button with nothing
+left to say. The preview now composes the map under the owner's hands: the endpoint takes
+the sections in the request body (POST), the panel sends the live editor draft, and the
+saved map is only the fallback. That also removes the save-then-read race entirely, and it
+is what makes iterating on a map bearable - the alternative is a 30-60 second re-analysis
+per edit.
+
+Verified end to end in the browser: an unsaved three-block draft previews as three sections
+and twenty cues while the sixteen-section map on disk stays untouched; the toggle posts 200,
+the room, the section lane, the scrubber and the readout all follow, and toggling back
+restores. Gates: 821 tests, typecheck clean.
+
+Method note, paid for here: two of the three causes were invisible from the endpoint, which
+answered correctly the whole time. They only appeared by DRIVING THE OWNER'S SEQUENCE -
+mark, edit, preview - in the real app. A verification that stops at the API stops one layer
+above where this class of bug lives.
+
+### The actual cause: the editor drew on BEATS, the engine hears BARS
+
+Third report, and the owner named it exactly: "the sub-sections do not actually snap to the
+drawn sections. It creates new boundaries that are OFF the ones that I drawn."
+
+Measured on the owner's own Melanz map, against the grid it was drawn over:
+
+| drawn | nearest bar line | off by |
+|---|---|---|
+| 25.60 | 25.84 | -0.24 s |
+| 41.60 | 39.60 | **+2.00 s** |
+| 89.60 | 90.10 | -0.50 s |
+| 121.35 | 121.10 | +0.25 s |
+| 286.77 | 285.92 | +0.85 s |
+| 300.31 | 301.14 | -0.84 s |
+
+Every one of the sixteen boundaries sits EXACTLY on a beat; six of them are off a bar line.
+The section editor snapped drags to the beat grid - deliberately, per the round-5 note, "so a
+hand mark is never rounded onto a wrong bar phase" - but a section is addressed by whole bars
+everywhere downstream: the adoption rounds, the preview rounds, every cue starts on a bar. So
+the boundary the owner drew and the boundary the room played were up to half a bar apart, and
+on Melanz's irregular grid two whole bars apart. The lane showed one thing and the arrangement
+did another, which is precisely what was reported three times.
+
+The beat snap is now a bar snap, in the editor and on the way in: `snapT` rounds to bar lines,
+the drag and split limits are a bar rather than a beat, stored bars are whole, and seeding the
+editor from a saved map snaps it too - so arming shows where each boundary WILL be heard
+rather than where it was once drawn. Proven end to end: feeding the bar-snapped map through
+the preview returns a section table IDENTICAL to what was drawn, and every drawn boundary
+opens a cue. (Cues still split within a long section every 8 bars; that is the look changing,
+not a boundary.)
+
+The rationale that put the beat snap there is superseded rather than wrong: a listener whose
+boundary genuinely falls between bar lines is describing a GRID error, and the answers to that
+are the listener cut and the movement mark - both of which move the bar lines themselves
+instead of pretending a section can start off one. The existing maps keep their drawn times on
+disk until edited; adoption rounds them the same way it always did.
+
+### And the correction to the correction: bars by default, beats on shift
+
+Snapping the editor to bars fixed the mismatch and immediately cost the owner the ability to
+work: "the step now is WAY TOO BIG". Measured on Melanz, they were right in the strongest
+possible way - in a four-second window around 41s the bar snap offers exactly TWO positions,
+because that track's bar table runs four seconds to the bar there. Beat resolution offers
+five. A bar is 2 s at 120 bpm even on a well-behaved track, which is far too coarse to place
+a boundary by ear.
+
+Shipped: bar snap remains the default, so what is drawn is what is heard, and holding SHIFT
+drags on the beat grid for the case bars cannot express. The panel says so while the editor
+is armed ("bars · shift drags beats"), the drag and split minimum spans follow the same step,
+and the adoption still rounds a beat-placed mark onto a bar.
+
+The honest reading of a boundary that will not sit on a bar line: it is a statement about the
+GRID, not about the section. Melanz's four-second bars are the multi-song grid problem in
+plain view - the tracker reading one level across several songs - and the durable answers are
+the movement mark and the listener cut, both of which move the bar lines themselves. The
+shift modifier is the workaround until the marks exist for that track.
+
+Three reports, three distinct causes, and only the third was the one the owner could see from
+the room: the per-bar column, then the erasing writes and the button made inert by adoption,
+then the snap resolution. Each was found by measuring the owner's own data rather than by
+reading the code again.
+
+### The save that ate the placement, and why bars are so long on this library
+
+"After I adjust to beat, it DOES NOT save properly and I can't preview it like that."
+
+One bug, two symptoms, and it was mine: `seedSections` snapped the saved map onto bar lines
+every time the editor was armed. So a boundary shift-dragged to a beat position was rewritten
+to the nearest bar the moment the editor re-opened, and the preview - which now sends the
+draft - sent the rewritten one. The map on disk was fine; the editor forgot it on the way
+back in. Seeding now takes the map exactly as saved, and stored bars are fractional again: a
+hand map records what was HEARD, and it is the arrangement's job to round, not the editor's
+job to forget.
+
+Proven end to end on a scratch track (never on a track carrying the owner's own map): a
+boundary placed one beat off bar 16 saves at 30.510s, reads back at 30.510s, survives
+re-arming, and is what the preview request carries (`chorus@30.51`, not the bar line at
+30.04). The rounding that remains is the engine's own - a section starts on a bar line or not
+at all - and the preview now SAYS so: "N boundaries rounded onto a bar line, up to X.XXs".
+Silent rounding is what made this look like the map was being ignored.
+
+**Why the bar step felt enormous, measured.** Every track the owner is mapping is gridded at
+a half-time reading:
+
+| track | reported | median bar |
+|---|---|---|
+| Melanz | 79.7 bpm | 3.02 s |
+| SICKO MODE | 77.7 bpm | 3.10 s |
+| Ibalgin | 64.2 bpm | 3.74 s |
+| Je mi fajn | 81.9 bpm | 2.92 s |
+
+A three-second bar is a three-second snap step, and it is why only 10 of Melanz's 16 drawn
+boundaries sit on a bar line. The editor is not the problem there - the metrical level is.
+The shipped control is the inspector's re-read-at-this-level (x2), which halves the bar; the
+owner's ear decides whether trap at 155 should be gridded at 155 or felt at 77. Worth
+knowing before the next mapping session, and it is the same root as the multi-song grid work:
+one level chosen for a whole track that does not hold one.
+
+### The judge file audited, and it was losing data in five ways
+
+The owner asked for verification rather than another patch, so the save path was audited
+independently (subagent, read-only, runnable repros on a scratch cache). It found that the
+merge shipped earlier that day closed one hole and left five open. All are now fixed and each
+repro re-run against the real `writeJudgement`.
+
+1. **A star reverted a redrawn map.** The panel's draft is seeded when the panel opens and
+   carried `sections`; a map redrawn afterwards was overwritten by the next rating, because
+   the merge's rule ("a non-empty array wins") cannot tell a stale array from a fresh one.
+   Measured: 4 sections on disk, press a star, 2 sections on disk.
+2. **A debounce in flight undid a discard.** Same root: discard, then the pending panel save
+   lands and restores the map the owner had just deleted.
+3. **A section save could blank the rating, tags, notes and comment.** The editor composed a
+   whole judgement from a `judgements` map loaded ONCE per page and never refreshed, so a
+   second writer (another tab, the desktop app, or a transient GET failure) meant the section
+   save wrote page-load values over everything since.
+4. **The write was an unlocked read-modify-write into the real file.** Twenty concurrent note
+   adds left ONE note on disk, and a crash mid-write left a torn file that reads as no
+   judgement at all - which then invites a blank save over an evening's work.
+5. **The 500 ms debounce was dropped on track change**, so a rating given in the last half
+   second of a song was written against the next song or lost entirely. Auto-advance makes
+   that routine.
+
+The fix is one idea rather than five patches: **each writer owns its fields and sends a
+PATCH**. The panel sends rating/tags/notes/comment/movements and never the map; the editor
+sends the map and the grid it was drawn against and never the panel's fields; the server
+merges over the file, where absent means leave it, a value means take it, null means erase,
+and an EMPTY ARRAY is a value (which is how the panel deletes its last movement mark - the
+old rule restored it from disk forever). Writes are serialised per track and land through a
+temp file and a rename, so concurrent saves cannot lose one another and a crash cannot tear
+the file. Save failures are now surfaced instead of swallowed.
+
+Re-run against the real path: the redraw survives a star with its sub-bar boundary intact at
+30.51, a blind section save leaves rating/tags/notes/comment/movements untouched, the last
+movement mark can be deleted, and twenty concurrent writes leave twenty notes.
+
+Two smaller ones from the same audit: the boundary drag clamped AFTER snapping, so a drag
+against its stop committed an off-grid boundary on any track whose bars vary (clamp first,
+snap second now), and stored bars were rounded to two decimals, which misreports a beat in
+3/4 by 5 ms (three decimals now). Left as noted: the panel re-pins `analysisHash` while a map
+keeps bars computed on the grid it was drawn over - times are the authoritative coordinate
+for mining, so nothing reads wrong today, but the stored bars can be stale after a
+re-analysis.
+
+### The preview and the room rounded a tie in OPPOSITE directions
+
+The second audit (subagent, read-only, fuzzed against real grids) found the bug behind the
+whole class of complaints, and it is a one-line disagreement between two copies of the same
+idea:
+
+- the preview rounded a fractional bar with `Math.round` - ties go UP, to the later bar;
+- the adoption walked the bar table keeping the first nearest - ties go DOWN, to the earlier.
+
+A boundary drawn on beat 3 of a 4/4 bar sits at EXACTLY bar + 0.5 by construction, so the
+beat-snapping editor produced that tie constantly: 34.6% of beat-snapped maps in a 5000-map
+fuzz, against 0% for maps drawn on bar lines. On Melanz the drawn boundary at 41.600s is bar
+25.5 to fifteen decimal places - the preview put it at bar 26, the analysis at bar 25, FOUR
+SECONDS apart on a track whose bars run four seconds there. The owner previewed one
+arrangement and the room played another, which is exactly what was reported three times and
+what no amount of staring at either side alone would have shown.
+
+Fixed by giving the rule one home, the way `hitSeconds` and `strobePerBeat` already are:
+`nearestBar` / `nearestBarIn` in `packages/core/src/grid.ts`, ties to the EARLIER bar because
+that is what the adoption already did and what the room has been confirming by ear. Both
+consumers call it. Proven on Melanz's real sixteen-boundary map: adopted and previewed
+startBars are now identical, tie included.
+
+Two more from the same audit, both fixed:
+
+- **A map with a non-finite time produced a garbage preview rather than an error.** NaN spans,
+  70 of 141 bars covered by no section, and `composeShow` quietly lighting the whole track as
+  one outro. Non-finite boundaries are now dropped before the rebuild.
+- **The preview accepted maps the analyser refuses.** A single-section map, or one whose
+  boundaries all round onto the same bar, previewed as one span end to end where adoption
+  returns null and keeps the DP table. Both now refuse the same maps; the route answers 422.
+
+Noted, not fixed, with numbers on file: the preview's repeat grouping is approximate (it
+matches on kind and length, adoption uses audio self-similarity - `group` differs on 11 of
+16 sections on Melanz), so a preview repeats a different set of looks than the adopted show;
+`spectrum` bakes a per-section scaling that the preview does not rebuild; `rawSectionCount`
+is carried from cache and feeds only the show's brief text; and `meanEnergy` double-rounds by
+at most one point. None of these move a boundary.
+
+### The last of it: a fine-placed boundary now MOVES THE BAR LINE
+
+"I can normally adjust the sections both with the fine grain and without, it persists
+correctly. The problem is that when I click Preview arrangement, the subsections are NOT
+correctly on the drawn boundaries. They move slightly and snap to something different."
+
+The save was fixed; this was the rounding itself, and it had been treated as a law of nature
+for three rounds: a section is addressed by whole bars, so a boundary between two bar lines
+can only be rounded onto one. That is true of the SECTION. It is not true of the GRID, and
+the repo has known how to move a bar line since Safir - the listener cut, which absorbs the
+offset as one short bar ending exactly at the mark, room-confirmed.
+
+So a boundary placed off the grid ON PURPOSE now cuts the grid to itself, in both consumers:
+the preview rebuilds the bar table locally (`regridForMap`, using the same `barStartsAtCuts`
+walk the analysis uses, with each new bar taking its measurements from the old bar its middle
+falls in), and `handMapGrid` hands the same positions to the next analysis as `gridCuts`, which
+re-derives them properly from the audio. Measured on Ibalgin: a boundary drawn 0.94 s past
+bar 16 previews at exactly 30.980s, every section sits on a bar line of the previewed grid,
+and the next analysis cuts at 30.98.
+
+"On purpose" is a recorded flag, not an inference. The editor sets `offGrid` when a commit
+lands between bar lines, which the default drag cannot produce - it snaps to bars. Maps drawn
+BEFORE that, whose off-bar boundaries are beat-snapping artefacts (Safir's verse a beat past
+its confirmed bar line, Blinding Lights' outro 35 ms off a mid-bar beat), carry no flag and
+still imply nothing: the first attempt inferred intent from position instead, and two tests
+caught it re-cutting Safir's confirmed grid.
+
+The rule now reads: the plain drag says WHICH BAR, the fine drag says the bar line belongs
+HERE. Both are honoured exactly, and the room plays what the preview showed.
+
+Gates: 827 tests, typecheck clean, earlybars 20 hit / 0 worse of 28, 47/47 lint-clean.

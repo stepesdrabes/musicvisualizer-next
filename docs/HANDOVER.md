@@ -1,10 +1,17 @@
 # Handover
 
-State as of 2026-08-15 (end of the marathon session): round 4 closed, the ROUND-5
-FINISHING WAVE shipped and committed through v22 / SHOW 16 / CONTEXT 2 - the
-boundary fixes, the listener-cut grids, the engine round, the judge tooling trio,
-and every gate green. Safir's grid is room-confirmed via the cuts path; the one
-deferred package is lyric-assertive placement (C), which opens the next session.
+State as of 2026-08-18 (round 7 closed, round 8 opening): the MAP LOOP IS CLOSED end
+to end at v23 / SHOW 17 / CONTEXT 3, the judge path has been audited and repaired, and
+the owner has named the next goal: MULTI-TEMPO TRACKS (see the first-hour list). The
+map loop: A hand-drawn map decides its track outright - grid
+and sections both - and it is heard THE NEXT PLAY, not the next version bump: the
+analysis stamps the map it adopted (`TrackAnalysis.handMap`) and ingest re-analyses
+on any difference, redraw and delete included. Adoption is room-confirmed: Blinding
+Lights 3* -> 5*, Ponyboy 2* -> "way better", Hannah's sectioning praised, and the
+owner hand-arranged Snooze. Package C (lyric-assertive placement) is DEAD - the
+owner's Snooze and Blinding Lights maps disagree about the hook evidence, so it
+would fix one and wreck the other. SHOW 17 answers Ponyboy's one complaint: a
+drop-class passage that measurably pounds draws its looks a band harder.
 Start at "If you are the next session" near the end, then come back to the top.
 `docs/EFFECT_POLISHING.md` carries the method (judge loop, cluster-before-fix, the
 kill criterion, bench-vs-room discipline). The complete campaign evidence lives in
@@ -33,11 +40,16 @@ and everything under `packages/preview3d/` - DO NOT touch or commit those; stage
 explicit paths only. The sectioning-model memo was moved OUT of the repo by the
 owner on purpose (a second research agent must not read it) - do not recreate it.
 
-ANALYSIS_VERSION 22, SHOW_VERSION 16, CONTEXT_VERSION 2 (the finishing wave:
+ANALYSIS_VERSION 23, SHOW_VERSION 17, CONTEXT_VERSION 3 (round 7: the map->cuts
+carry-forward, corroborated residues, map adoption, the map stamp that makes a
+fresh map audible on the next play, kick-corroborated genre families, and SHOW 17's
+pounding band raise - all UNCOMMITTED at handover time unless the owner said commit;
+the previous state was v22 / SHOW 16 / CONTEXT 2, the finishing wave:
 v20 boundary slice, v21 pounding arm, v22 listener-cut grids + settle gate +
-audioGenres; SHOW 16 = group-final peaks + the leaving pass). 778 tests green,
-`npm run check` clean. earlybars at v22: 20 hit / 0 closer / 8 same / 0 worse of
-28 - THE FLOOR. structscore v22 identical to v20/21 (sweep-record.md). Judged-36
+audioGenres; SHOW 16 = group-final peaks + the leaving pass). 806 tests green,
+`npm run check` clean. earlybars at v23: 20 hit / 0 closer / 8 same / 0 worse of
+28 - THE FLOOR, and inert by design: analyzeTrack reads no judgement, so adoption
+cannot flatter it. structscore v22 identical to v20/21 (sweep-record.md). Judged-36
 analysis-side ZERO drift from v21 on frozen code; composition side moved by
 design: peaks Vitej 81->82, Titi 37->54 (EARFQUAKE stays 8 - its choruses do not
 group as kin, a GROUPING question on the ledger), and five fade-class tracks
@@ -403,59 +415,110 @@ this call and it shipped at v15).
 
 ## If you are the next session: the first hour
 
-1. Read this file to the end, then round2-record.md's TAIL (the finishing wave:
-   the cuts path, the killed detector's postmortem, the settle negative, the
-   engine round, the gates). The campaign's finishing wave is SHIPPED and
-   COMMITTED; one package remains.
-2. THE ROUND-6 VERDICTS ARE ALREADY MINED (record tail): the wave is
-   room-confirmed across the board, and FIVE HAND MAPS exist in cache-C/judge
-   (Safir, Blinding Lights, Praha, Az na mesic, Ponyboy) - 5 of the 15 that
-   freeze the model eval. Run mapscore/judgemap for the current numbers, and
-   mine ANY newer saves first.
-3. FIX FIRST, before any ANALYSIS_VERSION bump: **the map->cuts derivation is
-   wrong for maps drawn on a piecewise grid** (record tail, finding 1). Safir's
-   own map derives cuts 54.20/67.40/106.80 where the confirmed grid needs
-   53.80/106.80 - the residue walk assumes a uniform drawing surface. The
-   judgement pins analysisHash: when the pinned analysis' barTimes are
-   non-uniform, carry ITS cut positions forward instead of re-deriving. Until
-   this lands, a version bump would corrupt Safir's grid on its next play.
-   Prove it with a test on Safir's real map, then the battery.
-4. NEXT: **map adoption** (record tail, finding 2 - Ponyboy sits at 2* because
-   of exactly this): when a judgement carries a hand map, the analysis adopts
-   its kinds AND boundaries wholesale - snapped to the grid, spans rebuilt from
-   bars. applyHandSections in apps/web/src/lib/server/previewArrangement.ts is
-   the reference rebuild; it belongs analysis-side, driven from the judgement
-   read ingest already does. This makes every map immediately real in the room.
-5. THEN package C - lyric-assertive chorus placement (Snooze 17 -> 23, Blinding
-   Lights) - NOW WITH GROUND TRUTH: the owner's Blinding Lights map gives the
-   true choruses (39.4 / 61.9 / 95.6 / 118.0 / 162.9). Sentinels: Hannah, KITN,
-   Praha, Le Freak. Instrument: mapscore against the map + hookcheck +
-   earlybars. Own bump, full battery, adversary. NOTE: map adoption (step 4)
-   may partly supersede C on MAPPED tracks - C is for the unmapped library.
-6. Also on file: Someone You Loved wears genreFamily "house" (a piano ballad;
-   context freshly re-enriched at v2, so the METADATA vote itself is wrong -
-   inspect its context genres and mapGenres).
-7. Smaller open threads, in value order: Self Aware kit precision (win condition
-   = raising the SOPHIE fixture's 0.4 precision floor in drums.test.ts);
-   EARFQUAKE's grouping (its choruses do not group as kin, so the group-final
-   peak cannot reach the last one - a groupSegments question); the remaining
-   earlybars pairs (bad guy 23->24, KITN 21->22, Thinkin 2->1, PROVENZA 79->80,
-   Cigo 50->49, Titi 73->72 - refine-margin class, no cheap move left; the
-   gated-settle negative is the map of what does not work); An Ending's phantom
-   share (listening-flagged); Praha's restart edge at 0.63 vs the 0.6 floor
-   (flap risk); Back In Black double-time (parked, owner ground truth on file).
-8. The model loop runs alongside: maps accumulate -> at ~15 freeze bench/maps-eval
-   (never train on them), at ~30 adaptation starts (the protocol memo lives
-   OUTSIDE this repo by the owner's hand - ask them for it; mapscore is its
-   instrument and the P6 history its warning).
-9. Floors and gates, current: earlybars 20 hit / 0 worse of 28 (MV_CACHE_DIR must
-   point at a cache with Kisses/WTSA audio - cache-C); suite 778; structscore
-   raveform 0.394/0.540, harmonix 0.202/0.532; showprobe 0/0/100%, dark 2,
-   contrast 2.76, hue jumps 2585 (the leaving pass softened both - drift from
-   THESE numbers is signal). stagetrace names any moved stage (trust only its
-   FINAL analyzeTrack line). Land edits BETWEEN background runs - the
-   contamination incident in the record is what skipping that costs.
-10. App C = v22/16 with everything (rebuilt 2026-08-16 including the owner's
-   preview3d refactor and the enrich audioGenres fix, 56031d7); A and B are the older references. Rebuild via
-   `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app`, rm -rf
-   the target before copying (the nesting trap).
+1. Read this file to the end, then round2-record.md's TAIL - the **round-7 verdicts**
+   section first (four room answers, package C's death, the map-loop hole, the
+   pounding band raise), then round 7's first half and round 6 above it.
+   `docs/EFFECT_POLISHING.md` is the method.
+2. NOTHING IS COMMITTED. The whole round is staged in the working tree; the owner
+   commits on their word only. Do not stage `docs/hardware.html` or
+   `packages/preview3d/*` (the owner's own in-flight work).
+3. **THE NAMED NEXT GOAL: MULTI-TEMPO TRACKS.** The owner, after mapping SICKO MODE:
+   "the songs contain sections that have completely different BPM and they might start
+   offbeat compared to each other. That is the BIGGEST gap that the whole LightningStrike
+   analysis have. It should be somehow displayed in the UI, and properly know the
+   boundaries." Measured before any design (probes are in the round record):
+   - Beat This ALREADY tracks it. On SICKO MODE the model reports 136.4 bpm to 58.3s and
+     76.9 after, and 101 of its 119 downbeat intervals hold exactly four beats. The
+     pipeline throws that away by fitting ONE tempo: only 47 of 120 model downbeats land
+     on a shipped bar line (median miss 0.44 s).
+   - The naive fix does NOT work: splitting at the switch and fitting a uniform grid per
+     part recovers only 53% (Melanz 49%), because phase resets are scattered through the
+     track, not just at the switch.
+   - And an automatic detector would wreck normal tracks: the model's downbeats imply 18
+     phase resets on SICKO MODE (3 sticky), 48 on Melanz (8 sticky) - and 27 on Je mi
+     fajn, an ORDINARY track, because the model emits 2-beat bars when unsure. The signal
+     points; it must not decide. Same wall the killed plateau detector hit.
+   Shape the design around the owner's movement mark as the trusted anchor, per-movement
+   level and phase read from the model's own beats inside the marked span, the tempo map
+   shown in the UI, and candidate switches SUGGESTED for confirmation rather than applied.
+4. MULTI-SONG slice 1 is BUILT AND UNHEARD: a
+   "New song starts here" mark in the judge panel gives the new song its own downbeat,
+   a section seam nothing can merge away, and its own energy levelling. Ask the owner to
+   mark SICKO MODE (its switch is at 63.5s) and Melanz, then listen. The engine slice -
+   per-movement palette, peak arc and vocabulary, all four of which the owner chose - is
+   designed and deliberately NOT shipped on top of an unheard change; the design notes
+   are in the record's multi-song section, including the trap that a cue with no palette
+   resolves against the SHOW palette rather than the previous cue.
+5. THE ROOM HAS NOT HEARD SHOW 17. It has heard v23 adoption and liked it
+   (Blinding Lights 3* -> 5* "almost perfect", Ponyboy 2* -> "way better", Hannah's
+   sectioning praised). SHOW 17's band raise is unheard, and it moves TWO PRAISE
+   SENTINELS - Pistacie 5* (5 of 12 cues) and EARFQUAKE 5* (2 of 11, a lightning
+   landing on its peak bar). Those two head the listening list, with Ponyboy: the
+   question for Ponyboy is whether "a bit more aggressive" is now right, too much,
+   or still short, and whether its GROOVES (which pound at ~1.0 kicks/beat and were
+   deliberately left alone to keep the drops stepping up) should rise too.
+6. A map is LAW on its track, and it is heard on the NEXT PLAY: `TrackAnalysis.handMap`
+   stamps the map that was adopted and ingest re-analyses on any difference. So the
+   loop to offer the owner is listen -> redraw in the panel -> play. A map error is a
+   show error until it is redrawn, which is the owner's accepted trade. Note the maps
+   are, in the owner's words, "NOT 100% fully the best": Safir's verse was drawn a
+   beat off its own confirmed bar line and Blinding Lights' outro on a mid-bar beat,
+   both rounded onto bar lines by the adoption and neither treated as a grid edit.
+   The owner offers measurements on request - ask.
+7. Adoption blinds `bench/mapscore.ts` on any played cache: it would measure the
+   adoption, not the analyser, and report ~100% forever. Run the eval on a cache
+   regenerated with `bench/reanalyse.ts --no-hand-maps`.
+8. PACKAGE C IS CLOSED, and now with ground truth on both sides: Snooze's map
+   choruses (24/56/79/83) match the lyric hook starts (23/55/79/82) within a bar,
+   while Blinding Lights' (23/39/63/79/113) miss its hook starts (33/72/104/128) by
+   ten bars and more. Hook-placed choruses fix one and wreck the other, and no
+   measurable column separates the two cases - the P6 vocabulary-blind failure again.
+   Do not rebuild it. Snooze is fixed by its own map instead.
+9. Smaller open threads, in value order: Snooze's DP first chorus is bar 17 where the
+   map says 24 - seven bars, the refine-margin class, and the class now holds nine
+   pairs (bad guy 23->24, KITN 21->22, PROVENZA 79->80, Thinkin 2->1, Cigo 50->49,
+   Titi 73->72, plus Blinding Lights' three one-bar-early choruses); Self Aware kit
+   precision (win condition = raising the SOPHIE fixture's 0.4 precision floor);
+   EARFQUAKE's grouping (its choruses do not group as kin, so the group-final peak
+   cannot reach the last one); `gridTrust` now judges the owner's own map density
+   (nothing near the 4.5/min gate today - the densest map is 3.3 - but a busy map
+   could route an adopted track to the lounge; needs the owner's call on whether a
+   map exempts its track); a context correction lands one play before the show hears
+   it (harmless at a version bump, pre-existing for every context change);
+   An Ending's phantom share; Praha's restart edge at 0.63 vs the 0.6 floor;
+   Back In Black double-time (parked, owner ground truth on file).
+10. The model loop: 6 of the 15 maps that freeze the eval now exist (Snooze joined).
+   Protocol note - four of the first five were drawn by EDITING the analyser's own
+   sections (98-100% agreement before adoption), so they are partly derivative and
+   cannot carry an independent eval. Maps on tracks the analyser gets WRONG are worth
+   several agreeing ones: Ponyboy (35%) and Snooze (7 bars out) are the valuable
+   pair so far. The memo lives outside the repo by the owner's hand - ask for it.
+11. Floors and gates, current at v23 / SHOW 17: suite 827; typecheck clean; earlybars
+   20 hit / 0 closer / 8 same / 0 worse of 28 (MV_CACHE_DIR at cache-C for
+   Kisses/WTSA audio) - inert by design, since analyzeTrack reads no judgement;
+   structscore raveform 0.394/0.540, harmonix 0.202/0.532 (unmoved at v23);
+   47/47 lint-clean, 0 rejected; showprobe 0 lint / 0 misfires / 100% quiet, dark 2,
+   contrast 2.75, hue jumps 2745 (contrast and jumps drifted from 2.76/2585 with the
+   band raise - that drift IS the change, and the new numbers are the baseline);
+   judged 36 at SHOW 16 vs 17 = 9 changed / 27 identical, transient layer only.
+   Land edits BETWEEN background runs - the contamination incident in the record is
+   what skipping that costs.
+12. THE JUDGE PATH WAS AUDITED AND REPAIRED (round-7 tail, full detail in the record).
+   Three reports of "the preview does not work" turned out to be four distinct causes,
+   and the audits found five ways the judge file could LOSE DATA. What changed, all of
+   it shipped: the preview re-sections the per-bar column and stages its own analysis;
+   the preview composes the LIVE editor draft, not the file; every judgement write is a
+   PATCH (each writer owns its fields), serialised per track and landed through a
+   rename, so a star can no longer revert a redrawn map and concurrent writes cannot eat
+   each other; the section editor snaps to BAR lines with shift for the beat grid; the
+   preview and the adoption share ONE rounding rule (`nearestBar` in core - they used to
+   break a mid-bar tie in opposite directions, four seconds apart on Melanz); and a
+   boundary placed off the grid ON PURPOSE (flagged `offGrid` by the fine drag) now CUTS
+   the grid to itself in both the preview and the next analysis, so the drawn moment
+   becomes a real bar line. Older maps carry no flag and still imply nothing, which is
+   what protects Safir's confirmed grid.
+13. App C is rebuilt at v23 / SHOW 17 (2026-08-18). Rebuild via
+   `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app` from
+   apps/desktop, `rm -rf` the target before copying (the nesting trap). Every track
+   re-analyses once on its next play (~30-60 s) because the analysis version bumped,
+   every context re-enriches once, and every show recomposes.
