@@ -7,6 +7,7 @@
 		trackId,
 		title,
 		analysisHash = null,
+		tempoChanges = [],
 		showSeed = null,
 		authoredBy = null,
 		position = 0,
@@ -27,6 +28,8 @@
 		trackId: string | null;
 		title: string;
 		analysisHash?: string | null;
+		/** Seconds where the grid's own bar lengths change: movement candidates. */
+		tempoChanges?: number[];
 		showSeed?: number | null;
 		authoredBy?: string | null;
 		/** Playhead, seconds; captured into a note the moment the mark is dropped. */
@@ -195,6 +198,22 @@
 		queueSave();
 	}
 
+	/**
+	 * Where the grid's own bar lengths say the tempo changed - offered as candidates, never
+	 * applied. The measurement is trustworthy (the bar table is built from tracked beats);
+	 * what it cannot know is whether a tempo change is a NEW SONG or the same one breathing,
+	 * and that is the listener's call. An ordinary track produces none of these.
+	 */
+	const candidates = $derived.by(() => {
+		const marked = draft.movements ?? [];
+		return tempoChanges.filter((t) => !marked.some((m) => Math.abs(m - t) < 2));
+	});
+
+	function acceptCandidate(t: number) {
+		draft.movements = [...(draft.movements ?? []), t].sort((a, b) => a - b);
+		queueSave();
+	}
+
 	function clock(t: number): string {
 		const m = Math.floor(t / 60);
 		const s = Math.floor(t % 60);
@@ -309,6 +328,17 @@
 						New song starts here
 					</button>
 				</div>
+				{#if candidates.length > 0}
+					<div class="hitrow">
+						<span class="hint">the grid changes tempo here</span>
+						{#each candidates as t (t)}
+							<button class="hitmark" onclick={() => acceptCandidate(t)} title="Mark a new song starting here">
+								<span class="glyph">‖</span>
+								{clock(t)}
+							</button>
+						{/each}
+					</div>
+				{/if}
 				{#if (draft.movements ?? []).length > 0}
 					<div class="hitrow">
 						{#each draft.movements ?? [] as t, i (i)}

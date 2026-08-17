@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis } from '@mv/core';
+	import { bpmAt, tempoSegments } from '@mv/core';
 	import type { TrackMeta } from '$lib/types.ts';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import { titleCase } from '$lib/format.ts';
@@ -9,6 +10,11 @@
 	import Button from '$lib/ui/Button.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
 	import Slider from '$lib/ui/Slider.svelte';
+
+	// The map is a property of the grid, computed once per analysis; the reading follows the
+	// bar the room is actually in.
+	const tempoMapOf = (a: TrackAnalysis | null) => (a ? tempoSegments(a.tempo) : []);
+	const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
 	let {
 		meta,
@@ -47,6 +53,9 @@
 		onsearch: () => void;
 		ontimeline: () => void;
 	} = $props();
+
+	const tempoMap = $derived(tempoMapOf(analysis));
+	const localBpm = $derived(analysis ? bpmAt(analysis.tempo, readout?.bar ?? 0) : 0);
 
 	const ready = $derived(readout.duration > 0);
 	/**
@@ -98,7 +107,18 @@
 						{meta.uploader}
 						{#if analysis}
 							<span class="dot">·</span>
-							<span class="mono">{analysis.tempo.bpm.toFixed(0)}</span> bpm
+							<!-- The tempo HERE, not the track median: on a track assembled from several
+							     the median describes none of them, and this was the last thing on
+							     screen still claiming a track has one. -->
+							<span class="mono">{localBpm.toFixed(0)}</span> bpm
+							{#if tempoMap.length > 1}
+								<span class="dot">·</span>
+								<span
+									class="subtle"
+									title={tempoMap.map((x) => `${x.bpm.toFixed(0)} bpm from ${clock(x.start)}`).join('\n')}>
+									{tempoMap.length} tempi
+								</span>
+							{/if}
 						{/if}
 					{/if}
 				</span>

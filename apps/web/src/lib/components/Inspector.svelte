@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
+	import { tempoSegments } from '@mv/core';
 	import type { Readout } from '$lib/viz.svelte.ts';
 	import type { AuthorEffort, Settings, Step } from '$lib/types.ts';
 	import { titleCase } from '$lib/format.ts';
@@ -56,6 +57,8 @@
 		relevelling?: boolean;
 		rerolling?: boolean;
 	} = $props();
+
+	const tempoMap = $derived(analysis ? tempoSegments(analysis.tempo) : []);
 
 	/**
 	 * How hard the model thinks, in the words the API uses for it.
@@ -285,6 +288,18 @@
 								</Button>
 							{/each}
 						</div>
+
+						{#if tempoMap.length > 1}
+							<!-- A track assembled from several is the one case where a single figure
+							     above is a summary of nothing anybody plays. -->
+							<p class="facts subtle">
+								{#each tempoMap as seg, i (seg.startBar)}
+									{#if i > 0}<span class="sep">·</span>{/if}
+									<span class="mono">{seg.bpm.toFixed(0)}</span> bpm from bar
+									<span class="mono">{seg.startBar}</span>
+								{/each}
+							</p>
+						{/if}
 
 						<p class="facts subtle">
 							<span class="mono">{analysis.tempo.beatsPerBar}/4</span>

@@ -154,6 +154,95 @@ export function bpmAt(tempo: TempoGrid, bar: number): number {
 	return period > 1e-6 ? 60 / period : tempo.bpm;
 }
 
+/** A stretch of the track whose bars are the same length, and what tempo that is. */
+export interface TempoSegment {
+	startBar: number;
+	endBar: number;
+	bpm: number;
+	/** Seconds, from the bar table. */
+	start: number;
+	end: number;
+}
+
+/**
+ * How much the bar length has to step to be a change of tempo rather than a track breathing.
+ *
+ * A live-feeling record drifts a couple of per cent across a phrase and a limited one wobbles
+ * less; a beat switch doubles or halves. Twelve per cent sits well clear of the first and well
+ * under the second - SICKO MODE's switch is 78%, and no bar-to-bar wobble measured on the
+ * judged corpus comes close.
+ */
+const TEMPO_STEP = 0.12;
+/** And how long it has to hold, so one long bar at an edit is not read as a new tempo. */
+const TEMPO_SEGMENT_BARS = 4;
+
+/**
+ * The track's tempo map, read off the bar table.
+ *
+ * A single `bpm` is a summary, and on a track assembled from several - a beat switch, a
+ * medley - it is a summary of nothing anybody plays. The bar table already carries the truth
+ * because it is built from tracked beat times, so the map is a measurement rather than an
+ * estimate: consecutive bars are gathered while their length holds, and a segment is only
+ * admitted once it has lasted long enough to be music rather than an edit.
+ *
+ * Returns one segment for the overwhelming majority of tracks, which is the honest answer for
+ * them.
+ */
+export function tempoSegments(tempo: TempoGrid, minBars = TEMPO_SEGMENT_BARS): TempoSegment[] {
+	const times = tempo.barTimes;
+	if (!times || times.length < 2 + minBars) {
+		return [
+			{
+				startBar: 0,
+				endBar: Math.max(1, (times?.length ?? 1) - 1),
+				bpm: tempo.bpm,
+				start: times?.[0] ?? 0,
+				end: times?.[times.length - 1] ?? 0
+			}
+		];
+	}
+
+	const perBar = Math.max(1, tempo.beatsPerBar);
+	const durations: number[] = [];
+	for (let b = 0; b + 1 < times.length; b++) durations.push(times[b + 1] - times[b]);
+
+	const cuts: number[] = [0];
+	let reference = durations[0];
+	for (let b = 1; b < durations.length; b++) {
+		if (Math.abs(durations[b] - reference) <= TEMPO_STEP * reference) {
+			// Track the drift rather than the first bar, so a slow ramp does not eventually
+			// read as a step against a stale reference.
+			reference = reference * 0.7 + durations[b] * 0.3;
+			continue;
+		}
+		// A step counts once the new length holds: an edit is one odd bar, a tempo change is
+		// a passage. The short bars a listener cut leaves behind are exactly the first case.
+		const holds = durations
+			.slice(b, b + minBars)
+			.every((d) => Math.abs(d - durations[b]) <= TEMPO_STEP * durations[b]);
+		if (!holds || durations.length - b < minBars) continue;
+		cuts.push(b);
+		reference = durations[b];
+	}
+	cuts.push(durations.length);
+
+	const out: TempoSegment[] = [];
+	for (let i = 0; i + 1 < cuts.length; i++) {
+		const [from, to] = [cuts[i], cuts[i + 1]];
+		if (to - from < 1) continue;
+		const span = times[to] - times[from];
+		const bars = to - from;
+		out.push({
+			startBar: from,
+			endBar: to,
+			bpm: span > 1e-6 ? (60 * perBar * bars) / span : tempo.bpm,
+			start: times[from],
+			end: times[to]
+		});
+	}
+	return out.length > 0 ? out : [{ startBar: 0, endBar: durations.length, bpm: tempo.bpm, start: times[0], end: times[times.length - 1] }];
+}
+
 /**
  * How long a hit lasts, in seconds, read off the bar table.
  *

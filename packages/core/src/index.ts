@@ -86,6 +86,8 @@ export {
 	nearestBar,
 	nearestBarIn,
 	nearestPhraseBar,
+	tempoSegments,
+	type TempoSegment,
 	onPhraseGrid,
 	phraseOffset
 } from './grid.ts';

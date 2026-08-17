@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
-	import { barAtTime, barTimeAt } from '@mv/core';
+	import { barAtTime, barTimeAt, tempoSegments } from '@mv/core';
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
@@ -106,6 +106,15 @@
 	/** By track id. Loaded once when the panel first opens; writes go through saveJudgement. */
 	let judgements = $state<Record<string, Judgement>>({});
 	let judgementsLoaded = false;
+	/**
+	 * Seconds where the grid's own bar lengths change - the judge panel offers these as
+	 * movement candidates. A measurement of the bar table, not a guess about structure:
+	 * whether a tempo change is a new song is the listener's call, so nothing acts on them.
+	 */
+	const tempoChanges = $derived(
+		analysis ? tempoSegments(analysis.tempo).slice(1).map((s) => Math.round(s.start * 10) / 10) : []
+	);
+
 	/** Hand-drawn section editing: the drawer's section lane grows handles while armed. */
 	let sectionEditing = $state(false);
 	let sectionDraft = $state<JudgedSection[] | null>(null);
@@ -1129,6 +1138,7 @@
 				{trackId}
 				title={meta?.title ?? ''}
 				analysisHash={analysis?.hash ?? null}
+				tempoChanges={tempoChanges}
 				showSeed={show?.seed ?? null}
 				authoredBy={show?.authoredBy ?? null}
 				position={readout.position}

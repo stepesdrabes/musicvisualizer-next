@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { SECTION_KINDS, barAtTime, barTimeAt, type Show, type TrackAnalysis } from '@mv/core';
+	import { SECTION_KINDS, barAtTime, barTimeAt, type Show, type TrackAnalysis , tempoSegments} from '@mv/core';
 	import {
 		FULL_WINDOW,
 		buildTimeline,
@@ -52,6 +52,8 @@
 	let heldUntil = 0;
 
 	const timeline = $derived(buildTimeline(analysis, show, duration));
+	// Read off the bar table, so it is a measurement of the grid the room is playing.
+	const tempoMap = $derived(analysis ? tempoSegments(analysis.tempo) : []);
 
 	/**
 	 * Four bars, which is the closest a zoom gets.
@@ -332,6 +334,18 @@
 		ondblclick={reset}
 		onpointerleave={() => (tip = null)}
 		role="presentation">
+		{#if tempoMap.length > 1}
+			<!-- Only where there is something to say: one segment is every ordinary track, and a
+			     lane announcing "this track has one tempo" is noise. -->
+			<div class="lane tempi" aria-label="Tempo changes">
+				{#each tempoMap as seg (seg.startBar)}
+					<div class="tempo" style:left={`${pct(seg.start)}%`} style:width={`${widthPct(seg.start, seg.end)}%`}>
+						<span class="label mono">{seg.bpm.toFixed(0)}</span>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		{#if editing && sections}
 			<div class="lane sections editing" aria-label="Sections, adjustable">
 				{#each sections as s, i (i)}
@@ -496,6 +510,23 @@
 		gap: 3px;
 		cursor: pointer;
 		touch-action: none;
+	}
+	.tempi {
+		height: 13px;
+	}
+	.tempi .tempo {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		border-left: 1px solid var(--border);
+		display: flex;
+		align-items: center;
+		padding-left: 4px;
+		overflow: hidden;
+	}
+	.tempi .label {
+		font-size: 9.5px;
+		color: var(--muted-foreground);
 	}
 	.lane {
 		position: relative;
