@@ -10,7 +10,7 @@
  * one place with network access.
  */
 
-export const CONTEXT_VERSION = 2;
+export const CONTEXT_VERSION = 3;
 
 /**
  * The lighting vocabulary of genres, not the record shop's. Each family names a distinct

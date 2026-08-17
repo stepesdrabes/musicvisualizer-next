@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { CONTEXT_VERSION, type TrackAnalysis, type TrackContext } from '@mv/core';
 import { cleanTitle, namesEqual, namesMatch, parseLrc, parseTitle } from './enrich.ts';
 import { mapGenres } from './genreMap.ts';
-import { publishedLevel } from './ingest.ts';
+import { correctGenreFamily, publishedLevel } from './ingest.ts';
 
 describe('cleanTitle', () => {
 	it('strips upload noise and keeps the remix identity', () => {
@@ -95,6 +96,61 @@ describe('mapGenres', () => {
 		);
 		// A genuine folk tag without the Discogs parent still reads ballad.
 		expect(mapGenres(['Folk']).family).toBe('ballad');
+	});
+
+	it('can be asked for the best family that is not on a list', () => {
+		const labels = ['Electronic Tropical House', 'Electronic House', 'Pop Ballad'];
+		expect(mapGenres(labels).family).toBe('house');
+		expect(mapGenres(labels, undefined, ['house', 'techno', 'edm', 'trance', 'bass']).family).toBe(
+			'ballad'
+		);
+		// The struck family keeps its share of the ballot, so the runner-up's confidence
+		// reports how weak a verdict it is.
+		expect(mapGenres(labels, undefined, ['house']).confidence).toBeLessThan(
+			mapGenres(labels).confidence
+		);
+	});
+});
+
+describe('correctGenreFamily', () => {
+	/** Someone You Loved's shape: the classifier's labels over a track with no kick at all. */
+	const capaldi = {
+		version: CONTEXT_VERSION,
+		genres: ['Alternative'],
+		audioGenres: ['Electronic---Tropical House', 'Electronic---House', 'Pop---Ballad'],
+		genreFamily: 'house',
+		genreConfidence: 0.44,
+		sources: ['ytmeta', 'deezer', 'effnet'],
+		instrumental: false,
+		lyrics: null
+	} as unknown as TrackContext;
+
+	const analysisWith = (kicksPerBar: number): TrackAnalysis =>
+		({
+			tempo: { beatsPerBar: 4 },
+			bars: Array.from({ length: 64 }, (_, b) => ({ kicks: kicksPerBar, energy: 50 + (b % 8) }))
+		}) as unknown as TrackAnalysis;
+
+	it('downgrades a house verdict the record never kicks for', () => {
+		const fixed = correctGenreFamily(capaldi, analysisWith(0));
+		expect(fixed?.genreFamily).toBe('ballad');
+	});
+
+	it('leaves a house verdict the kick corroborates alone', () => {
+		// Four to the floor: one kick per beat over the loud bars, well over the floor.
+		expect(correctGenreFamily(capaldi, analysisWith(4))).toBeNull();
+	});
+
+	it('never touches a family that makes no claim about drums', () => {
+		const ambient = { ...capaldi, genreFamily: 'ambient' } as TrackContext;
+		expect(correctGenreFamily(ambient, analysisWith(0))).toBeNull();
+		const ballad = { ...capaldi, genreFamily: 'ballad' } as TrackContext;
+		expect(correctGenreFamily(ballad, analysisWith(0))).toBeNull();
+	});
+
+	it('keeps the verdict when the labels have nothing else to offer', () => {
+		const onlyHouse = { ...capaldi, genres: [], audioGenres: ['Electronic---House'] } as TrackContext;
+		expect(correctGenreFamily(onlyHouse, analysisWith(0))).toBeNull();
 	});
 });
 

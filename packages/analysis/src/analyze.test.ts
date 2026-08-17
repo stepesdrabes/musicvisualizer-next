@@ -656,3 +656,68 @@ describe('re-reading a settled grid', () => {
 		);
 	});
 });
+
+describe('marked movements', () => {
+	/** The fixture's own stage boundaries, so a mark lands where the material really changes. */
+	const stageTime = (stage: number) =>
+		barTimeAt(analysis.tempo, fixture.stageBars[stage]);
+
+	const withMovement = (t: number) =>
+		analyzeTrack({
+			mono: fixture.mono,
+			sampleRate: fixture.sampleRate,
+			duration: fixture.duration,
+			hash: 'test',
+			trackId: 'file-000000000000',
+			title: 'Synthetic Arrangement',
+			movements: [t]
+		});
+
+	it('changes nothing at all when nothing is marked', () => {
+		const unmarked = analyzeTrack({
+			mono: fixture.mono,
+			sampleRate: fixture.sampleRate,
+			duration: fixture.duration,
+			hash: 'test',
+			trackId: 'file-000000000000',
+			title: 'Synthetic Arrangement',
+			movements: []
+		});
+		expect(JSON.stringify(unmarked)).toBe(JSON.stringify(analysis));
+		expect(analysis.movements).toBeUndefined();
+	});
+
+	it('starts a section on the marked bar and reports it', () => {
+		const marked = withMovement(stageTime(3));
+		expect(marked.movements).toHaveLength(1);
+		const bar = marked.movements![0];
+		expect(marked.sections.some((s) => s.startBar === bar)).toBe(true);
+		// The mark is a grid cut, so the movement begins its own bar rather than landing
+		// wherever the previous song's count of one happened to fall.
+		expect(Math.abs(barTimeAt(marked.tempo, bar) - stageTime(3))).toBeLessThan(0.2);
+	});
+
+	it('keeps the seam even where both sides read as the same material', () => {
+		// Marked INSIDE the fixture's 16-bar drop, so both sides are the same kind and the
+		// same repeat group - the one case the merge inside arrange() is written to fuse,
+		// and the case that made the whole movement machinery inert until it was guarded.
+		const mid = barTimeAt(analysis.tempo, fixture.stageBars[5] + 8);
+		const marked = withMovement(mid);
+		const bar = marked.movements![0];
+		expect(marked.sections.find((s) => s.endBar === bar)).toBeDefined();
+		expect(marked.sections.find((s) => s.startBar === bar)).toBeDefined();
+	});
+
+	it('levels each movement against itself', () => {
+		// Every band and the loudness curve are normalised within the movement, so the two
+		// sides cannot share one scale: at least one bar has to read differently.
+		const marked = withMovement(stageTime(3));
+		const moved = marked.bars.some((b, i) => b.energy !== analysis.bars[i]?.energy);
+		expect(moved).toBe(true);
+	});
+
+	it('ignores a mark outside the track', () => {
+		expect(withMovement(fixture.duration + 30).movements).toBeUndefined();
+		expect(withMovement(0).movements).toBeUndefined();
+	});
+});

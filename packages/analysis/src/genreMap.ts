@@ -82,8 +82,16 @@ export interface GenreVote {
  * string's vote - the audio classifier passes its activation scores, so a 0.74 Techno
  * outvotes three 0.2 relatives instead of being outvoted by the word "electronic"
  * appearing in every one of them.
+ *
+ * `exclude` bars families from winning while still letting them absorb their share of the
+ * vote, which is what makes the answer honest: the runner-up on a ballot the winner was
+ * struck from is a weaker verdict than a winner, and its confidence should say so.
  */
-export function mapGenres(strings: readonly string[], weights?: readonly number[]): GenreVote {
+export function mapGenres(
+	strings: readonly string[],
+	weights?: readonly number[],
+	exclude: readonly GenreFamily[] = []
+): GenreVote {
 	const votes = new Map<GenreFamily, number>();
 	let total = 0;
 
@@ -105,6 +113,7 @@ export function mapGenres(strings: readonly string[], weights?: readonly number[
 	let best: GenreFamily | null = null;
 	let bestVotes = 0;
 	for (const [family, n] of votes) {
+		if (exclude.includes(family)) continue;
 		if (n > bestVotes) {
 			bestVotes = n;
 			best = family;

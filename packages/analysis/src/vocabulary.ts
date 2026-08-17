@@ -56,6 +56,35 @@ export function isClubFamily(family: GenreFamily | null): boolean {
 	return family !== null && CLUB_FAMILIES.has(family);
 }
 
+/**
+ * The families whose name is a promise about the drums: a house record has a kick, and so
+ * does a techno, edm, trance or bass one. Ambient is deliberately absent though it keeps
+ * the club vocabulary - a record with no kick is exactly what ambient IS, so silence
+ * corroborates it rather than refuting it.
+ */
+export const KICK_CLAIMING_FAMILIES: readonly GenreFamily[] = [
+	'techno',
+	'house',
+	'edm',
+	'trance',
+	'bass'
+] as GenreFamily[];
+
+/**
+ * Whether the record backs up its genre verdict's drum claim.
+ *
+ * The audio classifier is confident and sometimes wrong in the same breath: it heard a
+ * Lewis Capaldi piano ballad as Tropical House 0.63 with House 0.48 behind it, and two
+ * house labels outvote its own Pop Ballad 0.45 however the ballot is weighted, so no vote
+ * arithmetic can overturn it. A measurement can. This is the same floor `speaksClub`
+ * gates the drop vocabulary on, asked one level up: not "may this track speak club" but
+ * "is this genre verdict true of this record at all".
+ */
+export function familyCorroborated(family: GenreFamily | null, loudKicksPerBeat: number): boolean {
+	if (family === null || !KICK_CLAIMING_FAMILIES.includes(family)) return true;
+	return loudKicksPerBeat >= CLUB_KICK_FLOOR;
+}
+
 export function speaksClub(
 	family: GenreFamily | null,
 	loudKicksPerBeat: number

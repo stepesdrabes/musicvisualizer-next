@@ -10,7 +10,10 @@ import { artworkHue } from './artwork.ts';
 import { decodeAudio, downloadAudio, probe, type ProbeResult } from './decode.ts';
 import { enrichTrack } from './enrich.ts';
 import { mapGenres } from './genreMap.ts';
+import { handMapGrid, type DrawingGrid } from './gridedits.ts';
+import { handMapFingerprint, type HandSection } from './handSections.ts';
 import { medianPeriod } from './metricalLevel.ts';
+import { KICK_CLAIMING_FAMILIES, familyCorroborated, loudKickRate } from './vocabulary.ts';
 
 const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const LOCAL_ID = /^file-[a-f0-9]{12}$/;
@@ -103,25 +106,104 @@ export async function readMeta(id: string): Promise<TrackMeta | null> {
 	}
 }
 
-/** yt-dlp errors are paragraphs; a row has one line. */
 /**
- * The internal boundaries of a hand-drawn section map, from the judgement file the judge
- * panel keeps beside this cache. Read as data rather than imported as code - the app owns
- * the judgement's full shape, this side needs only the map's times - and tolerated
- * missing or malformed the way every judgement read is: a broken file is one lost map,
- * not a broken analysis.
+ * The map itself, and the grid it was drawn on, or null when this track carries no map.
+ * Separate from the reading below because the cached-analysis path needs only to ask whether
+ * the map has changed, which must not depend on interpreting it.
  */
-async function handMapBoundaries(id: string): Promise<number[] | undefined> {
+async function readHandMap(
+	id: string
+): Promise<{
+	sections: HandSection[];
+	movements: number[];
+	pinnedHash: string | null;
+} | null> {
 	try {
 		const raw = await readFile(join(CACHE_DIR, 'judge', `${id.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`), 'utf8');
-		const j = JSON.parse(raw) as { sections?: { startTime: number }[] | null };
-		if (!j.sections || j.sections.length < 2) return undefined;
-		return j.sections.slice(1).map((s) => s.startTime);
+		const j = JSON.parse(raw) as {
+			sections?: { kind?: string; startTime: number; offGrid?: boolean }[] | null;
+			movements?: number[] | null;
+			analysisHash?: string | null;
+		};
+		const sections = j.sections ?? [];
+		const movements = (j.movements ?? []).filter((t) => Number.isFinite(t) && t > 0);
+		// Either mark is worth a read on its own: a track can be one song drawn in detail or
+		// three songs with nothing drawn yet.
+		if (sections.length < 2 && movements.length === 0) return null;
+		return {
+			sections: sections.map((s) => ({
+				kind: s.kind ?? 'groove',
+				startTime: s.startTime,
+				offGrid: s.offGrid === true
+			})),
+			movements: [...movements].sort((a, b) => a - b),
+			pinnedHash: j.analysisHash ?? null
+		};
 	} catch {
-		return undefined;
+		return null;
 	}
 }
 
+/**
+ * What a cached analysis must carry to count as having heard this track's current marks -
+ * the map and the movements together, since either changes what the analysis would be.
+ */
+async function handMapStamp(id: string): Promise<string | undefined> {
+	const map = await readHandMap(id);
+	if (!map) return undefined;
+	const movements = map.movements.map((t) => Math.round(t * 100) / 100).join(',');
+	return `${handMapFingerprint(map.sections)}${movements ? `;movements=${movements}` : ''}`;
+}
+
+/**
+ * What the hand-drawn map beside this cache says about the track, ready to spread into
+ * `analyzeTrack`: the grid it implies and the sections it draws. The judgement is read as
+ * data rather than imported as code - the app owns its full shape, this side needs the map -
+ * and tolerated missing or malformed the way every judgement read is: a broken file is one
+ * lost map, not a broken analysis.
+ *
+ * The map is read together with the analysis it was DRAWN ON, which is still the cached one
+ * at this point (this runs before the fresh blob is written), because the grid reading
+ * depends on it: `handMapGrid` carries a confirmed piecewise grid forward and only derives
+ * new cuts from a uniform one. The judgement pins `analysisHash`, so a cache holding some
+ * other grid than the map was drawn on is caught rather than trusted.
+ */
+export async function handMapInput(id: string): Promise<{
+	gridCuts?: number[];
+	sectionMapBoundaries?: number[];
+	handSections?: HandSection[];
+	movements?: number[];
+}> {
+	const map = await readHandMap(id);
+	if (!map) return {};
+	const { sections, pinnedHash } = map;
+	const movements = map.movements.length > 0 ? { movements: map.movements } : {};
+	if (sections.length < 2) return movements;
+	let drawnOn: DrawingGrid | null = null;
+	try {
+		const cached = JSON.parse(await readFile(analysisPath(id), 'utf8')) as TrackAnalysis;
+		if (pinnedHash === null || cached.hash === pinnedHash) {
+			drawnOn = {
+				beats: cached.beats,
+				barTimes: cached.tempo.barTimes,
+				beatsPerBar: cached.tempo.beatsPerBar
+			};
+		}
+	} catch {
+		// No blob yet, or unreadable: the map is all there is to go on.
+	}
+	return {
+		...handMapGrid(
+			sections.slice(1).map((s) => s.startTime),
+			drawnOn,
+			sections.slice(1).filter((s) => s.offGrid).map((s) => s.startTime)
+		),
+		handSections: sections,
+		...movements
+	};
+}
+
+/** yt-dlp errors are paragraphs; a row has one line. */
 function firstLine(message: string): string {
 	const line = message.split('\n').find((l) => l.includes('ERROR')) ?? message.split('\n')[0];
 	return line.replace(/^.*ERROR:\s*/, '').trim().slice(0, 90);
@@ -201,6 +283,45 @@ export async function refineGenreFromAudio(
 		// only an actual run earns the cache marker that stops future attempts.
 		return null;
 	}
+}
+
+/**
+ * Take the genre verdict's drum claim to the record, and downgrade it where the record says
+ * no. Returns a corrected context, or null when the verdict stands.
+ *
+ * The audio classifier hears a piano ballad as Tropical House and there is no ballot on
+ * which it loses (`familyCorroborated` carries the numbers). What settles it is the kick
+ * rate over the track's own loud bars - the measurement the drop vocabulary is already
+ * gated on. The replacement family comes from the same labels with the kick-claiming ones
+ * struck out, because the model was not hearing nothing: "Pop Ballad" was sitting third on
+ * its own list all along.
+ *
+ * Runs AFTER the analysis, which is the only place the measurement exists. That order is
+ * safe rather than lucky: every club privilege inside the analysis is kick-gated too, so a
+ * verdict this pass downgrades had already been refused the drop vocabulary - the three
+ * tracks it moves in the judged library were all labelled chorus/verse before it existed.
+ * The corrected family is persisted, so the show, the picker and the panel all see it, and
+ * a later re-analysis reads the corrected value from the start.
+ */
+export function correctGenreFamily(
+	context: TrackContext,
+	analysis: TrackAnalysis
+): TrackContext | null {
+	const kicks = Int32Array.from(analysis.bars, (b) => b.kicks);
+	const energy = Float32Array.from(analysis.bars, (b) => b.energy);
+	const rate = loudKickRate(kicks, energy, analysis.tempo.beatsPerBar);
+	if (familyCorroborated(context.genreFamily, rate)) return null;
+	const vote = mapGenres(
+		[...(context.audioGenres ?? []), ...context.genres],
+		undefined,
+		KICK_CLAIMING_FAMILIES
+	);
+	if (vote.family === null || vote.family === context.genreFamily) return null;
+	return {
+		...context,
+		genreFamily: vote.family,
+		genreConfidence: Math.round(vote.confidence * 100) / 100
+	};
 }
 
 /**
@@ -368,23 +489,30 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 
 	const relevel = opts.metricalLevel !== undefined && Math.abs(opts.metricalLevel - 1) > 1e-6;
 	if (!opts.force && !relevel) {
+		// Only the READ is allowed to fail quietly. Everything the cached blob is then put
+		// through used to sit inside this catch, where one undefined reference turned into a
+		// silent full re-analysis on every play - a 40-second bug that looked like a policy.
+		let cached: TrackAnalysis | null = null;
 		try {
-			const cached = JSON.parse(await readFile(analysisPath(id), 'utf8')) as TrackAnalysis;
-			// A stale blob is silently wrong rather than obviously broken: same shape, different
-			// meaning. Version mismatch has to discard it.
-			if (cached.version === ANALYSIS_VERSION) {
-				log('cached');
-				// Tracks analysed before meta carried a duration or a trust verdict get them
-				// here, so a list of the cache does not have to open a 400 kB analysis per row.
-				if (!meta.duration || !meta.gridTrust) {
-					meta.duration = meta.duration || cached.duration;
-					meta.gridTrust = meta.gridTrust ?? gridTrust(cached);
-					await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
-				}
-				return { id, audioPath, analysis: cached, meta, context, fromCache: true };
-			}
+			cached = JSON.parse(await readFile(analysisPath(id), 'utf8')) as TrackAnalysis;
 		} catch {
 			// No cache, or unreadable. Fall through and analyse.
+		}
+		// A stale blob is silently wrong rather than obviously broken: same shape, different
+		// meaning. Version mismatch has to discard it - and so does a hand-drawn map the blob
+		// has not heard, which is how a map drawn on a current analysis takes effect on the
+		// very next play instead of waiting for a version bump it may never get.
+		if (cached && cached.version === ANALYSIS_VERSION && cached.handMap === (await handMapStamp(id))) {
+			log('cached');
+			// Tracks analysed before meta carried a duration or a trust verdict get them
+			// here, so a list of the cache does not have to open a 400 kB analysis per row.
+			if (!meta.duration || !meta.gridTrust) {
+				meta.duration = meta.duration || cached.duration;
+				meta.gridTrust = meta.gridTrust ?? gridTrust(cached);
+				await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
+			}
+			context = await settleGenreFamily(id, context, cached);
+			return { id, audioPath, analysis: cached, meta, context, fromCache: true };
 		}
 	}
 
@@ -467,7 +595,7 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 		drums,
 		metricalLevel,
 		context,
-		sectionMapBoundaries: await handMapBoundaries(id)
+		...(await handMapInput(id))
 	});
 
 	await writeFile(analysisPath(id), JSON.stringify(analysis, null, '\t'));
@@ -475,5 +603,18 @@ export async function ingest(source: string, opts: IngestOptions = {}): Promise<
 	meta.duration = meta.duration || analysis.duration;
 	meta.gridTrust = gridTrust(analysis);
 	await writeFile(metaPath(id), JSON.stringify(meta, null, '\t'));
+	context = await settleGenreFamily(id, context, analysis);
 	return { id, audioPath, analysis, meta, context, fromCache: false };
+}
+
+/** `correctGenreFamily`, persisted. Both ingest paths end here, cached blob or fresh one. */
+async function settleGenreFamily(
+	id: string,
+	context: TrackContext,
+	analysis: TrackAnalysis
+): Promise<TrackContext> {
+	const corrected = correctGenreFamily(context, analysis);
+	if (!corrected) return context;
+	await writeFile(contextPath(id), JSON.stringify(corrected, null, '\t'));
+	return corrected;
 }

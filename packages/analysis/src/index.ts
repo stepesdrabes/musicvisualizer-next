@@ -11,7 +11,9 @@ export { radioFor, searchSongs, watchUrl, type Song } from './ytmusic.ts';
 export {
 	analysisPath,
 	contextPath,
+	correctGenreFamily,
 	findAudioFile,
+	handMapInput,
 	ingest,
 	isValidId,
 	markGridTrusted,
@@ -28,3 +30,5 @@ export {
 export { GenreClassifier, ensureGenreModel, genreModelPresent } from './genreModel.ts';
 export { cleanTitle, enrichTrack, parseLrc, parseTitle, type EnrichInput } from './enrich.ts';
 export { mapGenres, type GenreVote } from './genreMap.ts';
+export { barStartsAtCuts, cutsFromBarTimes, handMapGrid, type DrawingGrid } from './gridedits.ts';
+export { handMapFingerprint, handSectionBars, type HandSection } from './handSections.ts';

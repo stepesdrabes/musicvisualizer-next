@@ -1,6 +1,6 @@
 import type { SectionKind } from './frame.ts';
 
-export const ANALYSIS_VERSION = 22;
+export const ANALYSIS_VERSION = 23;
 
 export interface TempoGrid {
 	/** Median over the track. For display and for a default time constant, never for timing. */
@@ -223,6 +223,27 @@ export interface TrackAnalysis {
 	 * older than v17.
 	 */
 	rawSectionCount?: number;
+	/**
+	 * Fingerprint of the hand-drawn section map this analysis adopted, absent when it read
+	 * none. It is what lets a map take effect the moment it is drawn: the analysis is
+	 * otherwise kept while its version is current, so a map drawn on a current blob would
+	 * wait for the next version bump to be heard - and a map redrawn after a listen would
+	 * never be heard at all. Ingest compares this against the judgement beside the cache and
+	 * re-analyses on any difference, a map deleted included.
+	 */
+	handMap?: string;
+	/**
+	 * Bars where a new song starts, for a track that is several stitched together - SICKO
+	 * MODE's beat switch, Melanz's movements. Listener-marked, because both cheap automatic
+	 * signals were measured and refused: a local tempo step fires on a quarter of the library
+	 * including single-song tracks the room praised, and the spectral break at SICKO MODE's
+	 * real switch is ten times SMALLER than that track's own average moment.
+	 *
+	 * Empty or absent on a normal track, which is nearly all of them. Each entry is a bar
+	 * line by construction: a movement is a grid cut, so the bar table starts a new bar
+	 * exactly there.
+	 */
+	movements?: number[];
 	moments: Moment[];
 	/** Every tracked beat, seconds. Exact even where the constant grid is only a fit. */
 	beats: number[];

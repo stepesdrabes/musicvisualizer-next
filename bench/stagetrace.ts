@@ -197,6 +197,70 @@ const snapMoves =
 console.log('  snap moves:', snapMoves.map((m: { from: number; to: number }) => `${m.from}->${m.to}`).join(' ') || '(none)');
 segStage('snapToHooks', plan.segments);
 
+// Hook windows the snap could not reach, and what the material says about them. The
+// question package C turns on: a chorus-class section holding a hook window well inside it
+// is either a chorus whose own riff opens it (Blinding Lights - the map says the riff IS
+// the chorus, ten bars before the voice) or a chorus that starts late and dragged its
+// lead-in along (Snooze, six bars early by the owner's mark). The discriminator on offer is
+// whether the lead-in is the body's own material, so print the ratio and let the numbers say.
+if (lyricLines && lyricLines.length > 0) {
+	const windows: number[] = [];
+	let lastBar = -Infinity;
+	const barAt = (t: number) => {
+		let b = 0;
+		while (b < bars.count - 1 && bars.time[b + 1] <= t) b++;
+		return b;
+	};
+	for (const h of [...hookStarts(lyricLines)].sort((a, b) => a.t - b.t)) {
+		const b = barAt(h.t);
+		if (b - lastBar < 4) continue;
+		lastBar = b;
+		windows.push(b);
+	}
+	const mean = (rows: number[], cols: number[], skipDiagonal: boolean) => {
+		let acc = 0;
+		let n = 0;
+		for (const i of rows) {
+			for (const j of cols) {
+				if (skipDiagonal && i === j) continue;
+				acc += sim[i * bars.count + j];
+				n++;
+			}
+		}
+		return n > 0 ? acc / n : 0;
+	};
+	const range = (from: number, to: number) =>
+		Array.from({ length: Math.max(0, to - from) }, (_, i) => from + i);
+	console.log('');
+	console.log('hook placement candidates (window inside a chorus-class section):');
+	const starts = plan.segments.map((s: { startBar: number }) => s.startBar);
+	for (const w of windows) {
+		const s = plan.segments.find(
+			(x: { startBar: number; endBar: number }) => w > x.startBar && w < x.endBar
+		);
+		if (!s) continue;
+		if (s.kind !== 'chorus' && s.kind !== 'drop') continue;
+		const nearest = starts.reduce((a: number, b: number) =>
+			Math.abs(b - w) < Math.abs(a - w) ? b : a
+		);
+		const lead = range(s.startBar, w);
+		const body = range(w, Math.min(s.endBar, bars.count));
+		const self = mean(body, body, true);
+		const cross = mean(lead, body, false);
+		const avg = (bs: number[], col: Float64Array | Uint8Array | Float32Array) =>
+			bs.reduce((a, b) => a + col[b], 0) / Math.max(1, bs.length);
+		console.log(
+			`  window ${String(w).padStart(3)}  in ${s.kind}@${s.startBar}-${s.endBar}` +
+				`  nearest start ${nearest} (${Math.abs(nearest - w)} bars)` +
+				`  lead ${lead.length}b body ${body.length}b` +
+				`  ratio ${(self > 0 ? cross / self : 1).toFixed(3)}` +
+				`  energy ${avg(lead, plan.energy).toFixed(2)}/${avg(body, plan.energy).toFixed(2)}` +
+				`  vocal ${avg(lead, vocal).toFixed(2)}/${avg(body, vocal).toFixed(2)}` +
+				`  hookbars ${avg(lead, hooks).toFixed(2)}/${avg(body, hooks).toFixed(2)}`
+		);
+	}
+}
+
 consolidateSections(
 	plan.segments,
 	arrivals,

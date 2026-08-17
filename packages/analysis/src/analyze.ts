@@ -18,6 +18,7 @@ import { detectDrums, snapTimesToOnsets, type DrumStream } from './drums.ts';
 import { extractFeatures } from './features.ts';
 import { detectMeter, type Meter } from './downbeats.ts';
 import { barStartsAtCuts, deriveGridCuts } from './gridedits.ts';
+import { handMapFingerprint, handSectionBars, type HandSection } from './handSections.ts';
 import { applyHeadLabels, type SectionPosteriors } from './headLabels.ts';
 import { assessMetricalLevel } from './metricalLevel.ts';
 import { measureLoudness } from './loudness.ts';
@@ -128,6 +129,22 @@ export interface AnalyzeInput {
 	 * `gridCuts` win when both are given.
 	 */
 	sectionMapBoundaries?: readonly number[];
+	/**
+	 * A hand-drawn section map, adopted wholesale: its boundaries snap onto the grid and its
+	 * kinds are the section table, in place of the DP's own reading. See `handSections.ts`
+	 * for why a mapped track is decided by the listener and what still runs on it.
+	 */
+	handSections?: readonly HandSection[];
+	/**
+	 * Where a new song starts inside this one, seconds - a beat switch, a movement. Marked by
+	 * the listener for the reasons on `TrackAnalysis.movements`.
+	 *
+	 * Each becomes a grid cut, so the new song starts its bar count on its own downbeat
+	 * instead of inheriting the old song's phase; a section boundary that nothing may
+	 * consolidate away; and the edge of an energy-normalisation span, so a quiet movement is
+	 * levelled against itself rather than against the loud one next to it.
+	 */
+	movements?: readonly number[];
 }
 
 const TARGET_LUFS = -14;
@@ -212,12 +229,17 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		}
 		return best;
 	};
-	const cuts =
+	const mapCuts =
 		input.gridCuts && input.gridCuts.length > 0
 			? input.gridCuts.map((t) => grid.beats[beatAt(t)])
 			: input.sectionMapBoundaries && input.sectionMapBoundaries.length > 0
 				? deriveGridCuts(input.sectionMapBoundaries, grid.beats, meter.beatsPerBar, meter.phase)
 				: [];
+	// A new song does not inherit the old one's count of one. Marked movements are cuts for
+	// exactly the same reason listener-marked edits are, and through the same walk: the bar
+	// containing the switch is shortened so the switch itself lands on a bar line.
+	const movementCuts = (input.movements ?? []).map((t) => grid.beats[beatAt(t)]);
+	const cuts = [...new Set([...mapCuts, ...movementCuts])].sort((a, b) => a - b);
 	if (cuts.length > 0) {
 		bars = barSynchronousAt(
 			beatFeatures,
@@ -305,7 +327,32 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// The pinned arrivals know the track's phrase phase; boundaries that had only mush to
 	// stand on are re-read onto it. This is what was arriving a bar early at the top of a
 	// track whose own drop later proved where the phrases actually sit.
-	const bounds = rephaseToPins(rough, pinned, bars.count, tuning, movePinned);
+	// A drawn map replaces the whole chain above at its output: the boundaries become the
+	// owner's, and grouping then reads THEM against the same self-similarity, so repeats are
+	// still measured rather than guessed at from matching lengths.
+	const hand = input.handSections
+		? handSectionBars(input.handSections, bars.time, bars.count)
+		: null;
+	// The bar each marked movement starts on. Exact rather than nearest: the cut above made
+	// the switch a bar line, so a movement that does not land on one means the mark and the
+	// grid disagree, and the nearest bar is the only reading left.
+	const movementBars = (input.movements ?? [])
+		.map((t) => {
+			let best = 0;
+			for (let b = 1; b <= bars.count; b++) {
+				if (Math.abs(bars.time[b] - t) < Math.abs(bars.time[best] - t)) best = b;
+			}
+			return best;
+		})
+		.filter((b) => b > 0 && b < bars.count)
+		.sort((a, b) => a - b);
+	// A movement start is the hardest boundary in a track: it is where the record changes.
+	// Pinned so no phrase snap drags it, and forced into the table so the segmenter cannot
+	// miss it - on the DP path only, since a map has already said where every boundary goes.
+	for (const b of movementBars) pinned.add(b);
+	const dpBounds = rephaseToPins(rough, pinned, bars.count, tuning, movePinned);
+	const bounds =
+		hand?.bounds ?? [...new Set([...dpBounds, ...movementBars])].sort((a, b) => a - b);
 	const groups = groupSegments(sim, bars.count, bounds);
 	const barGroup = barGroups(bounds, groups.group, bars.count);
 
@@ -338,33 +385,54 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		snares,
 		pinned,
 		input.labels,
-		isClubFamily(input.context?.genreFamily ?? null)
+		isClubFamily(input.context?.genreFamily ?? null),
+		movementBars
 	);
+
+	// A mapped track takes its table from the map, here rather than instead of arrange():
+	// everything else arrange() measures - the level envelopes, the bands, the phrase anchor -
+	// is about the bars, and the bars are untouched by who drew the sections.
+	if (hand) {
+		plan.segments.length = 0;
+		for (let i = 0; i < hand.kinds.length; i++) {
+			plan.segments.push({
+				startBar: bounds[i],
+				endBar: bounds[i + 1],
+				kind: hand.kinds[i],
+				group: groups.group[i] ?? i
+			});
+		}
+	}
 
 	// The vocabulary is chosen per track, after labelling: the structural machinery only
 	// knows energy classes, and whether a loud repeated passage is a drop or a chorus is a
 	// fact about the genre, not about the waveform. Song-family tracks re-read drop/groove
 	// as chorus/verse, and synced lyrics then settle which loud section is THE chorus.
-	const club = speaksClub(
-		input.context?.genreFamily ?? null,
-		loudKickRate(kicks, plan.energy, meter.beatsPerBar)
-	);
-	if (input.sectionPosteriors) {
-		if (!club) toSongVocabulary(plan.segments);
-		applyHeadLabels(plan.segments, input.sectionPosteriors, bars.time, bars.count, club);
-	} else if (!club) {
-		toSongVocabulary(plan.segments);
-		const lyrics = input.context?.lyrics;
-		if (lyrics && lyrics.length > 0) {
-			const spans = chorusSpansFromLyrics(lyrics, duration);
-			const segEnergy = plan.segments.map((s) => {
-				let acc = 0;
-				for (let b = s.startBar; b < Math.min(s.endBar, bars.count); b++) acc += plan.energy[b];
-				return acc / Math.max(1, Math.min(s.endBar, bars.count) - s.startBar);
-			});
-			const barTime = (bar: number) => bars.time[Math.max(0, Math.min(bars.count, bar))];
-			promoteChorusesFromLyrics(plan.segments, segEnergy, barTime, spans);
-			demoteVersesFromLyrics(plan.segments, barTime, spans);
+	//
+	// None of it runs on a map: the words are the owner's, already in the vocabulary they
+	// heard the track in, and every pass here exists to decide what the map has decided.
+	if (!hand) {
+		const club = speaksClub(
+			input.context?.genreFamily ?? null,
+			loudKickRate(kicks, plan.energy, meter.beatsPerBar)
+		);
+		if (input.sectionPosteriors) {
+			if (!club) toSongVocabulary(plan.segments);
+			applyHeadLabels(plan.segments, input.sectionPosteriors, bars.time, bars.count, club);
+		} else if (!club) {
+			toSongVocabulary(plan.segments);
+			const lyrics = input.context?.lyrics;
+			if (lyrics && lyrics.length > 0) {
+				const spans = chorusSpansFromLyrics(lyrics, duration);
+				const segEnergy = plan.segments.map((s) => {
+					let acc = 0;
+					for (let b = s.startBar; b < Math.min(s.endBar, bars.count); b++) acc += plan.energy[b];
+					return acc / Math.max(1, Math.min(s.endBar, bars.count) - s.startBar);
+				});
+				const barTime = (bar: number) => bars.time[Math.max(0, Math.min(bars.count, bar))];
+				promoteChorusesFromLyrics(plan.segments, segEnergy, barTime, spans);
+				demoteVersesFromLyrics(plan.segments, barTime, spans);
+			}
 		}
 	}
 
@@ -378,7 +446,7 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// the very thing under adjudication, and with it in the score a hook bar can never read
 	// as "nothing arrives here" - which is exactly what a pickup sung over silence is.
 	const snapMoves =
-		lyricLines && lyricLines.length > 0
+		!hand && lyricLines && lyricLines.length > 0
 			? snapToHooks(plan.segments, hookStarts(lyricLines), bars.time, bars.count, 2, physical)
 			: [];
 	// The last structural word: seams between same-kind sections that nothing arrives on
@@ -386,17 +454,23 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 	// arrival. Read with the same evidence the refiner uses, after every pass that can
 	// move or rename a boundary has had its say - and forbidden from undoing any of them:
 	// the pinned arrivals and the bars the hook snap just placed are not up for review.
+	//
+	// A drawn seam is not an artefact, whatever arrives on it: Ponyboy's map puts two drop
+	// blocks back to back, which is the shape the room asked for and precisely what this
+	// pass would fuse.
 	const rawSectionCount = plan.segments.length;
 	const preConsolidation = plan.segments.map((s) => ({ ...s }));
-	consolidateSections(
-		plan.segments,
-		arrivals,
-		sim,
-		bars.count,
-		tuning.consolidateFloor,
-		plan.energy,
-		new Set([...pinned, ...snapMoves.map((m) => m.to)])
-	);
+	if (!hand) {
+		consolidateSections(
+			plan.segments,
+			arrivals,
+			sim,
+			bars.count,
+			tuning.consolidateFloor,
+			plan.energy,
+			new Set([...pinned, ...movementBars, ...snapMoves.map((m) => m.to)])
+		);
+	}
 	placeEvents(plan.segments, plan.bands, kicks, snares, bars.count, plan.events);
 
 	// One array decides where every bar is. `bars[].t` is written from it below rather than
@@ -579,6 +653,11 @@ export function analyzeTrack(input: AnalyzeInput): TrackAnalysis {
 		bars: barRows,
 		sections,
 		rawSectionCount,
+		// Stamped from the map that was READ, not the table that was adopted: a map too
+		// degenerate to adopt has still been seen, and a stamp that only recorded successes
+		// would have ingest re-analysing that track on every play, forever.
+		handMap: input.handSections ? handMapFingerprint(input.handSections) : undefined,
+		movements: movementBars.length > 0 ? movementBars : undefined,
 		moments: buildMoments(barRows, sections),
 		beats: Array.from(grid.beats, round3),
 		envelopes: {

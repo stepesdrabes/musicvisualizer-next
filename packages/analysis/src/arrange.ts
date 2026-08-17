@@ -94,12 +94,42 @@ function barEnergy(bandsN: Float32Array, count: number, loudN: Float32Array): Fl
 	return energy;
 }
 
-/** Short-term loudness resampled onto a time grid, then normalised across the track. */
+/**
+ * The bar ranges a level is measured within: one per movement, or the whole track when it is
+ * one song like nearly everything is.
+ *
+ * A movement shorter than two phrases is not given its own span. Normalising against a
+ * handful of bars turns their own noise into full scale, and there is no arrangement in
+ * eight bars to be levelled against anyway.
+ */
+const MIN_MOVEMENT_BARS = 8;
+function spansFor(movements: readonly number[], count: number): number[] {
+	const starts = [0];
+	for (const m of movements) {
+		if (m - starts[starts.length - 1] >= MIN_MOVEMENT_BARS && count - m >= MIN_MOVEMENT_BARS) {
+			starts.push(m);
+		}
+	}
+	starts.push(count);
+	return starts;
+}
+
+/** `normalise`, but each movement against its own distribution. */
+function normaliseWithin(a: Float32Array, starts: readonly number[]): Float32Array {
+	const out = new Float32Array(a.length);
+	for (let i = 0; i + 1 < starts.length; i++) {
+		out.set(normalise(a.subarray(starts[i], starts[i + 1]), 0.02, 0.98), starts[i]);
+	}
+	return out;
+}
+
+/** Short-term loudness resampled onto a time grid, then normalised within each movement. */
 function loudnessOn(
 	shortTerm: Float32Array,
 	fps: number,
 	time: Float64Array,
-	count: number
+	count: number,
+	starts: readonly number[]
 ): Float32Array {
 	const out = new Float32Array(count);
 	for (let b = 0; b < count; b++) {
@@ -115,7 +145,7 @@ function loudnessOn(
 		}
 		out[b] = n > 0 ? acc / n : -70;
 	}
-	return normalise(out, 0.02, 0.98);
+	return normaliseWithin(out, starts);
 }
 
 /**
@@ -238,26 +268,34 @@ const MAX_VOID_BARS = 2;
 const SILENT_RATIO = 0.03;
 
 /**
- * Band levels and overall energy on a time grid, both 0..1 across the track.
+ * Band levels and overall energy on a time grid, both 0..1 within each movement.
  *
  * Each band is normalised against its own distribution, so "sub is high" means high for this
- * track's sub rather than high compared with its mids.
+ * track's sub rather than high compared with its mids - and on a track that is several songs
+ * stitched together, high for THIS song rather than for the loudest of them. Without that, a
+ * quiet opening movement reads as one long intro to the loud one after it, and the loud one
+ * reads as drop from end to end.
  */
 export function levelEnvelopes(
 	bandsDb: Float32Array,
 	shortTerm: Float32Array,
 	shortTermFps: number,
 	time: Float64Array,
-	count: number
+	count: number,
+	movements: readonly number[] = []
 ): { energy: Float32Array; bands: Float32Array } {
+	const starts = spansFor(movements, count);
 	const bands = new Float32Array(count * NUM_BANDS);
 	for (let k = 0; k < NUM_BANDS; k++) {
 		const slice = new Float32Array(count);
 		for (let b = 0; b < count; b++) slice[b] = bandsDb[b * NUM_BANDS + k];
-		const n = normalise(slice, 0.02, 0.98);
+		const n = normaliseWithin(slice, starts);
 		for (let b = 0; b < count; b++) bands[b * NUM_BANDS + k] = n[b];
 	}
-	return { energy: barEnergy(bands, count, loudnessOn(shortTerm, shortTermFps, time, count)), bands };
+	return {
+		energy: barEnergy(bands, count, loudnessOn(shortTerm, shortTermFps, time, count, starts)),
+		bands
+	};
 }
 
 /**
@@ -321,7 +359,9 @@ export function arrange(
 	pinned: ReadonlySet<number> = new Set(),
 	label: LabelTuning = DEFAULT_LABEL_TUNING,
 	/** Genre family is club-side; arms the pounding form of `hasDrops`. */
-	clubFamily = false
+	clubFamily = false,
+	/** Bars where a new song starts, so each is levelled against itself. */
+	movements: readonly number[] = []
 ): Arrangement {
 	const count = bars.count;
 
@@ -330,7 +370,8 @@ export function arrange(
 		shortTerm,
 		shortTermFps,
 		bars.time,
-		count
+		count,
+		movements
 	);
 	const events: EventTag[][] = Array.from({ length: count }, () => []);
 
@@ -598,7 +639,7 @@ export function arrange(
 
 	// --- phrase grid ---------------------------------------------------------------------
 	const anchor = fitAnchor(segments.map((s) => s.startBar), count);
-	snapToPhrases(segments, count, anchor, pinned);
+	snapToPhrases(segments, count, anchor, pinned, new Set(movements));
 
 	// --- the void ------------------------------------------------------------------------
 	// Carved out of the bar before a drop rather than detected on its own, because that is
@@ -819,7 +860,9 @@ export function snapToPhrases(
 	segments: Segment[],
 	barCount: number,
 	anchor: number,
-	pinned: ReadonlySet<number>
+	pinned: ReadonlySet<number>,
+	/** Seams that are never merged away, whatever the material says: movement starts. */
+	keep: ReadonlySet<number> = new Set()
 ): void {
 	for (let i = 1; i < segments.length; i++) {
 		// A void's edges are where the sound stopped and started, which is a measurement rather
@@ -870,6 +913,12 @@ export function snapToPhrases(
 	for (let i = segments.length - 1; i > 0; i--) {
 		if (segments[i].kind !== segments[i - 1].kind) continue;
 		if (segments[i].group !== segments[i - 1].group) continue;
+		// Two songs are never one passage saying itself twice, however alike the material
+		// measures across the join. Without this the whole movement machinery is inert: the
+		// seam was reaching the table and being merged out again one pass later.
+		if (keep.has(segments[i].startBar)) continue;
+
+
 		// And never past this here: this early merge runs before the vocabulary settles, so
 		// it only reunites confident repeat-group halves. The consolidation pass at the end
 		// of the pipeline is the one allowed to read a longer run as one section, because it
