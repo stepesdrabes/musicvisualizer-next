@@ -171,7 +171,12 @@ export interface JudgedSection {
 	endTime: number;
 	startBar: number;
 	endBar: number;
+	/** Placed between bar lines on purpose, by the editor's fine drag. */
+	offGrid?: boolean;
 }
+
+/** A judgement write carries only the fields its writer owns; the server merges the rest. */
+export type JudgementPatch = Partial<Judgement> & { trackId: string };
 
 /** Mirrors $lib/server/judge Judgement. */
 export interface Judgement {
@@ -182,6 +187,8 @@ export interface Judgement {
 	notes: MomentNote[];
 	comment: string;
 	sections?: JudgedSection[] | null;
+	/** Seconds where a new song starts inside this one. */
+	movements?: number[] | null;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;

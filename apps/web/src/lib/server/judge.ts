@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { CACHE_DIR } from '@mv/analysis';
@@ -38,6 +38,16 @@ export interface JudgedSection {
 	/** Fractional bars on the pinned grid - a hand mark is allowed to sit mid-bar. */
 	startBar: number;
 	endBar: number;
+	/**
+	 * This section's start was placed BETWEEN bar lines on purpose (the editor's fine drag).
+	 *
+	 * It is the difference between "the ear says the change is here" and "the drag landed
+	 * near here": the grid moves to a deliberate mark, and rounds an incidental one. Absent
+	 * on every map drawn before the editor snapped to bars, which is why it is a flag rather
+	 * than something inferred from the times - those maps are full of beat-snapped boundaries
+	 * nobody meant as metrical statements.
+	 */
+	offGrid?: boolean;
 }
 
 /**
@@ -58,6 +68,13 @@ export interface Judgement {
 	comment: string;
 	/** The hand-drawn section map, when the owner has adjusted one; absent otherwise. */
 	sections?: JudgedSection[] | null;
+	/**
+	 * Seconds where a new song starts inside this one, for a track that is several stitched
+	 * together. Marked by hand because both automatic signals were measured and refused - a
+	 * local tempo step fires on a quarter of the library, and the spectral break at SICKO
+	 * MODE's own switch is smaller than that track's average moment.
+	 */
+	movements?: number[] | null;
 	analysisHash: string | null;
 	showSeed: number | null;
 	authoredBy: string | null;
@@ -85,10 +102,89 @@ export async function readJudgements(): Promise<Judgement[]> {
 	return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export async function writeJudgement(judgement: Judgement): Promise<void> {
-	await mkdir(JUDGE_DIR, { recursive: true });
-	const path = join(JUDGE_DIR, `${safeId(judgement.trackId)}.json`);
-	await writeFile(path, JSON.stringify({ ...judgement, updatedAt: Date.now() }, null, '\t'));
+/**
+ * A judgement written over what is already on disk, without erasing what the writer did not
+ * carry.
+ *
+ * Three writers share one file - the panel (rating, tags, notes, movements), the section
+ * editor (the map) and the mining scripts - and each sends a whole judgement built from
+ * whatever it happened to know. A field that simply is not there must therefore mean "leave
+ * it", never "delete it": a hand-drawn map is an hour of listening, and it was possible to
+ * lose one by pressing a star. Only an explicit `null` erases, which is what the discard
+ * button sends.
+ */
+/** A judgement write carries only the fields its writer owns; everything else is a patch. */
+export type JudgementPatch = Partial<Judgement> & { trackId: string };
+
+/**
+ * A patch written over what is already on disk.
+ *
+ * Three writers share one file - the judge panel (rating, tags, notes, comment, movements),
+ * the section editor (the map), and the mining scripts - and each knows only its own half.
+ * So the rule is PATCH, not replace: a field that is absent means "leave it", a value means
+ * "take it", and null means "erase it". An empty array is a value: it is how the panel says
+ * the last movement mark is gone.
+ *
+ * The rule an earlier version used - keep the held value whenever the incoming array was
+ * empty - looked equivalent and was not. It could not tell a writer that carried nothing
+ * from a writer that carried a STALE something, and the client is full of long-lived
+ * snapshots: a map redrawn in the editor was reverted by pressing a star, because the
+ * panel's draft still held the map as it had been when the panel opened. Writers now send
+ * only what they own, and this merge trusts absence rather than emptiness.
+ */
+export function mergeJudgement(patch: JudgementPatch, held: Partial<Judgement> | null): Judgement {
+	const base: Partial<Judgement> = held ?? {};
+	const merged: Partial<Judgement> = { ...base };
+	for (const [key, value] of Object.entries(patch)) {
+		if (value !== undefined) (merged as Record<string, unknown>)[key] = value;
+	}
+	return {
+		trackId: patch.trackId,
+		title: merged.title ?? '',
+		rating: merged.rating ?? null,
+		tags: merged.tags ?? [],
+		notes: merged.notes ?? [],
+		comment: merged.comment ?? '',
+		sections: merged.sections ?? null,
+		movements: merged.movements ?? null,
+		analysisHash: merged.analysisHash ?? null,
+		showSeed: merged.showSeed ?? null,
+		authoredBy: merged.authoredBy ?? null,
+		updatedAt: merged.updatedAt ?? 0
+	};
+}
+
+/**
+ * One write at a time per track, and never in place.
+ *
+ * The write is read-modify-write, so two requests racing lose one of the two edits - twenty
+ * concurrent note adds left one note on disk when this was unguarded. And truncating the
+ * real file means a crash mid-write leaves a torn one, which reads as no judgement at all
+ * and invites the next save to write a blank over an evening's listening. A per-track queue
+ * serialises, and a temp file renamed into place makes the swap atomic.
+ */
+const writing = new Map<string, Promise<void>>();
+
+export async function writeJudgement(patch: JudgementPatch): Promise<void> {
+	const id = safeId(patch.trackId);
+	const queued = (writing.get(id) ?? Promise.resolve()).then(async () => {
+		await mkdir(JUDGE_DIR, { recursive: true });
+		const path = join(JUDGE_DIR, `${id}.json`);
+		let held: Partial<Judgement> | null = null;
+		try {
+			held = JSON.parse(await readFile(path, 'utf8')) as Partial<Judgement>;
+		} catch {
+			// Nothing written yet, or unreadable: there is nothing to preserve.
+		}
+		const merged = { ...mergeJudgement(patch, held), updatedAt: Date.now() };
+		const temp = `${path}.${process.pid}.tmp`;
+		await writeFile(temp, JSON.stringify(merged, null, '\t'));
+		await rename(temp, path);
+	});
+	// The queue holds the settled promise either way, so one failed write cannot wedge the
+	// track's writes forever.
+	writing.set(id, queued.catch(() => {}));
+	await queued;
 }
 
 export async function clearJudgement(trackId: string): Promise<void> {

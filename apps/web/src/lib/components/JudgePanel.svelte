@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Judgement, MomentNote } from '$lib/types.ts';
+	import type { Judgement, JudgementPatch, MomentNote } from '$lib/types.ts';
 	import Button from '$lib/ui/Button.svelte';
 	import Icon from '$lib/ui/Icon.svelte';
 
@@ -40,7 +40,7 @@
 		editingSections?: boolean;
 		/** Whether the room is playing the show composed from the hand-drawn map. */
 		previewingArrangement?: boolean;
-		onsave: (j: Judgement) => void;
+		onsave: (j: JudgementPatch) => void;
 		onnext: () => void;
 		onseek: (t: number) => void;
 		oneditsections?: (on: boolean) => void;
@@ -86,27 +86,56 @@
 	let draft = $state<Judgement>(fresh());
 	let loadedFor = $state<string | null>(null);
 
-	// Re-seat the draft when the track changes; edits for the old track were saved as they
-	// were made, so nothing is flushed here.
+	// Re-seat the draft when the track changes - after flushing anything still waiting on the
+	// debounce, which belongs to the track being left. Without the flush a rating given in
+	// the last half second of a song was written against the NEXT song, or lost: the timer
+	// fired after the draft had already been replaced, and auto-advance makes that routine.
 	$effect(() => {
 		if (trackId === loadedFor) return;
+		flushSave();
 		loadedFor = trackId;
 		draft = judgement ? { ...judgement, notes: judgement.notes.map((n) => ({ ...n })) } : fresh();
 	});
 
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * What the panel owns, and nothing else.
+	 *
+	 * The map belongs to the section editor. The panel used to send its whole draft, which
+	 * carried whatever `sections` the judgement had when the panel opened - so a map redrawn
+	 * afterwards was reverted by the next star, and a discard was undone by a debounce still
+	 * in flight. Absent means "leave it" to the merge on the other side.
+	 */
+	function panelPatch(): JudgementPatch {
+		const d = $state.snapshot(draft) as Judgement;
+		return {
+			trackId: trackId!,
+			title,
+			rating: d.rating,
+			tags: d.tags,
+			notes: d.notes,
+			comment: d.comment,
+			movements: d.movements ?? [],
+			analysisHash,
+			showSeed,
+			authoredBy
+		};
+	}
+
+	function flushSave() {
+		if (!saveTimer) return;
+		clearTimeout(saveTimer);
+		saveTimer = null;
+		if (loadedFor) onsave({ ...panelPatch(), trackId: loadedFor });
+	}
+
 	function queueSave() {
 		if (!trackId) return;
-		// The artifacts the verdict is about are whatever is loaded NOW, not at first paint.
-		draft.trackId = trackId;
-		draft.title = title;
-		draft.analysisHash = analysisHash;
-		draft.showSeed = showSeed;
-		draft.authoredBy = authoredBy;
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = setTimeout(() => {
 			saveTimer = null;
-			onsave($state.snapshot(draft) as Judgement);
+			onsave(panelPatch());
 		}, 500);
 	}
 
@@ -144,6 +173,25 @@
 
 	function removeNote(index: number) {
 		draft.notes = draft.notes.filter((_, i) => i !== index);
+		queueSave();
+	}
+
+	/**
+	 * Where a new song starts inside this one. The analysis gives what follows its own
+	 * downbeat, its own levels and its own look, which is why this is a mark of its own
+	 * rather than a note: it changes the show rather than describing it.
+	 */
+	function markMovement() {
+		const t = Math.round(position * 10) / 10;
+		const have = draft.movements ?? [];
+		// Two marks within half a second are one mark pressed twice.
+		if (have.some((x) => Math.abs(x - t) < 0.5)) return;
+		draft.movements = [...have, t].sort((a, b) => a - b);
+		queueSave();
+	}
+
+	function removeMovement(index: number) {
+		draft.movements = (draft.movements ?? []).filter((_, i) => i !== index);
 		queueSave();
 	}
 
@@ -214,8 +262,12 @@
 						<Icon name="bands" size={13} />
 						{editingSections ? 'Done adjusting' : 'Adjust sections'}
 					</Button>
-					{#if judgement?.sections?.length}
+					{#if editingSections}
+						<span class="hint">bars · shift drags beats</span>
+					{:else if judgement?.sections?.length}
 						<span class="hint">{judgement.sections.length} hand-drawn</span>
+					{/if}
+					{#if judgement?.sections?.length}
 						<button
 							class="ghost"
 							onclick={ondiscardsections}
@@ -252,7 +304,23 @@
 							{h.label}
 						</button>
 					{/each}
+					<button class="hitmark" onclick={markMovement}>
+						<span class="glyph">‖</span>
+						New song starts here
+					</button>
 				</div>
+				{#if (draft.movements ?? []).length > 0}
+					<div class="hitrow">
+						{#each draft.movements ?? [] as t, i (i)}
+							<span class="movement">
+								<button class="at mono" onclick={() => onseek(t)}>‖ {clock(t)}</button>
+								<button class="ghost" onclick={() => removeMovement(i)} aria-label="Remove this mark">
+									<Icon name="x" size={12} />
+								</button>
+							</span>
+						{/each}
+					</div>
+				{/if}
 				{#each draft.notes as note, i (i)}
 					<div class="note">
 						<button class="at mono" onclick={() => onseek(note.t)}>
@@ -399,8 +467,16 @@
 	}
 	.hitrow {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 6px;
 		margin-top: 8px;
+	}
+	.movement {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		border-radius: var(--radius-sm);
+		background: var(--muted);
 	}
 	.hitmark {
 		display: inline-flex;

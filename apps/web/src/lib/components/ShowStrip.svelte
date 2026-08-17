@@ -135,14 +135,33 @@
 	let drag = $state<{ boundary: number; t: number } | null>(null);
 	let picker = $state<{ index: number; x: number } | null>(null);
 
-	/** Snap to the beat grid: hand marks land on beats, never on wrong-bar rounding. */
-	function snapT(t: number): number {
+	/**
+	 * Snap to BAR lines, which is the only coordinate a section has.
+	 *
+	 * This used to snap to beats, on the reasoning that a hand mark should land where the
+	 * hand put it. But every consumer addresses sections by whole bars - the adoption, the
+	 * preview, every cue - so a boundary drawn between two bar lines is one the engine
+	 * cannot keep: it rounds, and the arrangement then disagrees with the map on screen by
+	 * up to half a bar. Sixteen boundaries on one judged track, six of them off a bar line,
+	 * one by two whole bars. Snapping here is what makes the drawn line the heard line.
+	 */
+	function snapT(t: number, fine = false): number {
 		const tempo = analysis?.tempo;
 		if (!tempo) return t;
-		const beats = Math.round(barAtTime(tempo, t) * tempo.beatsPerBar);
-		return barTimeAt(tempo, beats / tempo.beatsPerBar);
+		const bars = barAtTime(tempo, t);
+		// Shift drops to the beat grid, for the case bars cannot express: the ear hears the
+		// change between two bar lines, which is a statement about the GRID rather than about
+		// the section. The mark is kept where it was put; the adoption still rounds it onto a
+		// bar, and the durable answer to a grid that disagrees with the ear is a movement mark
+		// or a listener cut, both of which move the bar lines themselves.
+		if (fine) return barTimeAt(tempo, Math.round(bars * tempo.beatsPerBar) / tempo.beatsPerBar);
+		return barTimeAt(tempo, Math.round(bars));
 	}
 
+	/** A section cannot be shorter than the bar it is addressed in. */
+	const barLen = $derived(
+		analysis ? analysis.tempo.beatPeriod * analysis.tempo.beatsPerBar : 1
+	);
 	const beatLen = $derived(analysis ? analysis.tempo.beatPeriod : 0.25);
 
 	function timeFrom(e: { clientX: number }): number {
@@ -151,8 +170,21 @@
 
 	function withBars(s: JudgedSection): JudgedSection {
 		const tempo = analysis?.tempo;
-		const bar = (t: number) => (tempo ? Math.round(barAtTime(tempo, t) * 100) / 100 : 0);
-		return { ...s, startBar: bar(s.startTime), endBar: bar(s.endTime) };
+		// Fractional, because a shift-drag is allowed to sit between bar lines and the stored
+		// bar is what a mining session reads. Rounding it here would report a boundary as
+		// being on a bar line it was deliberately placed off.
+		const bar = (t: number) => (tempo ? Math.round(barAtTime(tempo, t) * 1000) / 1000 : 0);
+		// The plain drag snaps to bar lines, so a start that is off one was placed there with
+		// the fine drag - a statement that the bar line belongs at the mark. Recorded here
+		// rather than inferred later, because maps drawn before the editor snapped to bars are
+		// full of beat-snapped boundaries that meant no such thing.
+		const offBar = tempo ? Math.abs(bar(s.startTime) - Math.round(bar(s.startTime))) > 0.001 : false;
+		return {
+			...s,
+			startBar: bar(s.startTime),
+			endBar: bar(s.endTime),
+			...(offBar ? { offGrid: true } : {})
+		};
 	}
 
 	function commit(next: JudgedSection[]) {
@@ -176,9 +208,13 @@
 
 	function handleMove(e: PointerEvent) {
 		if (!drag || !sections) return;
-		const lo = sections[drag.boundary - 1].startTime + beatLen;
-		const hi = sections[drag.boundary].endTime - beatLen;
-		drag = { boundary: drag.boundary, t: Math.max(lo, Math.min(hi, snapT(timeFrom(e)))) };
+		const step = e.shiftKey ? beatLen : barLen;
+		const lo = sections[drag.boundary - 1].startTime + step;
+		const hi = sections[drag.boundary].endTime - step;
+		// Snapped AFTER the clamp: clamping a snapped value pushes it back off the grid, by
+		// however much the local bar differs from the median one.
+		const t = snapT(Math.max(lo, Math.min(hi, timeFrom(e))), e.shiftKey);
+		drag = { boundary: drag.boundary, t };
 	}
 
 	function handleUp(e: PointerEvent) {
@@ -195,8 +231,9 @@
 		if (!sections) return;
 		e.stopPropagation();
 		const s = sections[index];
-		const t = snapT(timeFrom(e));
-		if (t < s.startTime + beatLen || t > s.endTime - beatLen) return;
+		const t = snapT(timeFrom(e), e.shiftKey);
+		const step = e.shiftKey ? beatLen : barLen;
+		if (t < s.startTime + step || t > s.endTime - step) return;
 		const next = sections.map((x) => ({ ...x }));
 		next.splice(index + 1, 0, { ...next[index], startTime: t });
 		next[index] = { ...next[index], endTime: t };

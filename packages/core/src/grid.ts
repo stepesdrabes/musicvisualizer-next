@@ -94,6 +94,48 @@ export function barAtTime(tempo: TempoGrid, t: number): number {
 }
 
 /**
+ * The bar a hand-placed moment belongs to: nearest bar line, ties to the EARLIER bar.
+ *
+ * One function because a hand map is read twice - once by the preview and once by the
+ * analysis that adopts it - and the two must land on the same bar or the room plays an
+ * arrangement the preview never showed. They did not: one rounded a fractional bar with
+ * `Math.round` (ties up) while the other walked the bar table keeping the first nearest
+ * (ties down), and a boundary drawn on beat 3 of a 4/4 bar sits at EXACTLY bar + 0.5 by
+ * construction, so the editor produced that tie constantly. On one judged track the two
+ * consumers put the same drawn boundary four seconds apart.
+ *
+ * Ties go to the earlier bar because that is what the adoption already did, and the adopted
+ * table is what the room has been playing and what the owner has confirmed by ear.
+ */
+export function nearestBar(tempo: TempoGrid, t: number): number {
+	return tieToEarlier(barAtTime(tempo, t));
+}
+
+/**
+ * The same rule for a caller holding only the bar table - the analysis while it is still
+ * building one, which has no `TempoGrid` to hand yet.
+ */
+export function nearestBarIn(barTimes: ArrayLike<number>, t: number, barCount: number): number {
+	const last = Math.max(0, Math.min(barCount, barTimes.length - 1));
+	if (last < 1 || t <= barTimes[0]) return 0;
+	if (t >= barTimes[last]) return last;
+	let lo = 0;
+	let hi = last;
+	while (hi - lo > 1) {
+		const mid = (lo + hi) >> 1;
+		if (barTimes[mid] <= t) lo = mid;
+		else hi = mid;
+	}
+	const span = barTimes[lo + 1] - barTimes[lo];
+	return span > 1e-6 ? tieToEarlier(lo + (t - barTimes[lo]) / span) : lo;
+}
+
+function tieToEarlier(bars: number): number {
+	const floor = Math.floor(bars);
+	return bars - floor > 0.5 ? floor + 1 : floor;
+}
+
+/**
  * How long a hit lasts, in seconds, read off the bar table.
  *
  * The one place this arithmetic lives, because the planner and the linter have to agree on it

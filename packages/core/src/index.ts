@@ -81,6 +81,8 @@ export {
 	barDurationAt,
 	barTimeAt,
 	hitSeconds,
+	nearestBar,
+	nearestBarIn,
 	nearestPhraseBar,
 	onPhraseGrid,
 	phraseOffset

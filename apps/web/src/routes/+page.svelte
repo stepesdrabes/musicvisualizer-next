@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Show, TrackAnalysis, TrackContext } from '@mv/core';
+	import { barAtTime, barTimeAt } from '@mv/core';
 	import { Viz, type Readout } from '$lib/viz.svelte.ts';
 	import { QueueClient } from '$lib/queue.svelte.ts';
 	import { HardwareClient } from '$lib/hardware.svelte.ts';
@@ -14,6 +15,7 @@
 		AuthorEvent,
 		JudgedSection,
 		Judgement,
+		JudgementPatch,
 		LibraryEntry,
 		LoadState,
 		SearchResult,
@@ -111,6 +113,8 @@
 	let previewShow = $state<Show | null>(null);
 	/** Where the real show waits while the preview is on stage. Not reactive: only restore reads it. */
 	let shelvedShow: Show | null = null;
+	/** And the real analysis, whose section table the preview replaces for as long as it runs. */
+	let shelvedAnalysis: TrackAnalysis | null = null;
 	let previewFetching = false;
 
 	// Read once: the shell injects it before any of this runs and never changes it.
@@ -302,23 +306,37 @@
 		if (open) await loadJudgements();
 	}
 
-	async function saveJudgement(j: Judgement) {
-		// Two writers share the file: the panel never carries `sections`, the section editor
-		// carries only it. Merging through the map keeps either from erasing the other's
-		// field - which requires the map to actually hold what is on disk, so a save racing
-		// the first load waits for it rather than merging against nothing.
-		await loadJudgements();
-		const prev = judgements[j.trackId];
-		const merged: Judgement = { ...j, sections: j.sections !== undefined ? j.sections : (prev?.sections ?? null) };
-		judgements = { ...judgements, [j.trackId]: merged };
-		await fetch('/api/judge', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ judgement: merged })
-		});
+	async function saveJudgement(j: JudgementPatch) {
+		// A PATCH: whatever this writer owns, and nothing else. The server merges it over the
+		// file. The client used to merge instead, against a `judgements` map loaded once per
+		// page - which is how a redrawn map was reverted by a later star, and how a section
+		// save could blank a rating given in another tab.
+		judgements = {
+			...judgements,
+			[j.trackId]: { ...(judgements[j.trackId] ?? ({} as Judgement)), ...j }
+		};
+		try {
+			const res = await fetch('/api/judge', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ judgement: j })
+			});
+			// A save that failed silently leaves the panel showing a verdict nothing stored.
+			if (!res.ok) note(`ERROR the judgement did not save: ${res.status} ${await res.text()}`);
+		} catch (e) {
+			note(`ERROR the judgement did not save: ${(e as Error).message}`);
+		}
 	}
 
-	/** The draft the editor starts from: the saved hand-drawn map, else the analysis as-is. */
+	/**
+	 * The draft the editor starts from: the saved hand-drawn map, else the analysis as-is.
+	 *
+	 * Taken exactly as saved. An earlier version snapped it onto bar lines on the way in, so
+	 * that the lane matched what the engine would round to - which silently destroyed every
+	 * boundary the owner had placed between bar lines on purpose, the moment the editor was
+	 * re-armed. A hand map is a record of what was heard; it is the arrangement's job to
+	 * round, not the editor's job to forget.
+	 */
 	function seedSections(): JudgedSection[] | null {
 		const saved = trackId ? judgements[trackId]?.sections : null;
 		if (saved?.length) return saved.map((s) => ({ ...s }));
@@ -341,19 +359,15 @@
 	function saveSections(list: JudgedSection[]) {
 		if (!trackId) return;
 		sectionDraft = list;
-		const prev = judgements[trackId];
+		// The map and the grid it was drawn against; the panel's fields are none of the
+		// editor's business and are left to the file.
 		void saveJudgement({
 			trackId,
-			title: meta?.title ?? prev?.title ?? '',
-			rating: prev?.rating ?? null,
-			tags: prev?.tags ?? [],
-			notes: prev?.notes ?? [],
-			comment: prev?.comment ?? '',
+			title: meta?.title ?? judgements[trackId]?.title ?? '',
 			sections: list,
-			analysisHash: analysis?.hash ?? prev?.analysisHash ?? null,
-			showSeed: show?.seed ?? prev?.showSeed ?? null,
-			authoredBy: show?.authoredBy ?? prev?.authoredBy ?? null,
-			updatedAt: 0
+			analysisHash: analysis?.hash ?? null,
+			showSeed: show?.seed ?? null,
+			authoredBy: show?.authoredBy ?? null
 		});
 	}
 
@@ -362,8 +376,7 @@
 		// The preview's toggle lives on the hand-drawn row, which a discard removes; left
 		// armed it would play a show whose map no longer exists, with no way back.
 		void togglePreview(false);
-		const prev = judgements[trackId];
-		if (prev) void saveJudgement({ ...prev, sections: null });
+		if (judgements[trackId]) void saveJudgement({ trackId, sections: null });
 		sectionDraft = sectionEditing ? seedFromAnalysis() : null;
 	}
 
@@ -392,24 +405,58 @@
 			// shelved one back when the preview is still the one on stage.
 			if (show === previewShow) {
 				show = shelvedShow;
+				if (shelvedAnalysis) analysis = shelvedAnalysis;
 				if (show && analysis) viz.loadShow(analysis, show);
 				else viz.clearShow();
 			}
 			previewShow = null;
 			shelvedShow = null;
+			shelvedAnalysis = null;
 			return;
 		}
 		if (!trackId || !analysis || previewShow || previewFetching) return;
 		previewFetching = true;
 		try {
-			const res = await fetch(`/api/track/${trackId}/preview-arrangement`);
+			const res = await fetch(`/api/track/${trackId}/preview-arrangement`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				// The draft while the editor is armed, so pressing this hears the edit that is
+				// on screen rather than the last one saved. Without a draft the server falls
+				// back to the saved map.
+				body: JSON.stringify({ sections: sectionDraft ?? undefined })
+			});
 			if (!res.ok) throw new Error((await res.text()).slice(0, 300));
-			const data = (await res.json()) as { show: Show };
+			const data = (await res.json()) as { show: Show; analysis: TrackAnalysis };
 			shelvedShow = show;
+			shelvedAnalysis = analysis;
 			previewShow = data.show;
 			show = data.show;
-			viz.loadShow(analysis, data.show);
-			note(`previewing the hand-drawn arrangement: ${data.show.cues.length} cues`);
+			// The map's own section table goes on stage with it, so the strip, the scrubber
+			// and the inspector describe the arrangement being previewed rather than the one
+			// it replaced. Restored intact when the preview comes off.
+			analysis = data.analysis;
+			viz.loadShow(data.analysis, data.show);
+			// A section starts on a bar line or not at all, so a boundary placed between two
+			// of them is rounded onto the nearer one. Say so, with the worst offender: silent
+			// rounding is what made the preview look like it was ignoring the map.
+			const drawn = sectionDraft ?? judgements[trackId]?.sections ?? [];
+			let moved = 0;
+			let worst = 0;
+			for (let i = 0; i < Math.min(drawn.length, data.analysis.sections.length); i++) {
+				const by = Math.abs(data.analysis.sections[i].startTime - drawn[i].startTime);
+				if (by > 0.05) {
+					moved++;
+					worst = Math.max(worst, by);
+				}
+			}
+			note(
+				`previewing the hand-drawn arrangement: ${data.show.cues.length} cues, ` +
+					`${data.analysis.sections.length} sections` +
+					(moved > 0
+						? ` - ${moved} boundary${moved === 1 ? '' : 's'} rounded onto a bar line, ` +
+							`up to ${worst.toFixed(2)}s`
+						: '')
+			);
 		} catch (e) {
 			note(`ERROR ${(e as Error).message}`);
 		} finally {
@@ -426,6 +473,9 @@
 		sectionDraft = null;
 		previewShow = null;
 		shelvedShow = null;
+		// The incoming track's own analysis is already being loaded; dropping the shelf here
+		// only stops a later toggle-off restoring the previous track's table over it.
+		shelvedAnalysis = null;
 	});
 
 	/**
