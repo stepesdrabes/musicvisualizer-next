@@ -562,3 +562,40 @@ group as kin, a grouping-question ledger entry; decline steps on the five
 fade-class tracks), 36/36 + cache114 lint-clean, showprobe 0/0/100% with the two
 ledger dark bars, contrast 2.76 / hue jumps 2585 (softened by the leaving pass;
 coverage holds). Committed b5c3fbc..49bf891 plus this record.
+
+## Round-6 room verdict (2026-08-16): the wave confirmed, five hand maps landed
+
+Ratings: Vitej 5*, Kisses 4*, Praha 4*, Safir 4*, Someone You Loved 4*, Az na
+mesic 4*, Blinding Lights 3*, Titi 3*, Ponyboy 2*. "Overall good/great"
+across the board in prose; no regressions reported. HAND MAPS drawn on five
+tracks (Safir 9 sections, Blinding Lights 11, Praha 10, Az na mesic 12 - a
+bonus track - and Ponyboy re-saved): 5 of the 15 needed to freeze the model
+eval. Blinding Lights' map IS package C's ground truth (choruses at 39.4,
+61.9, 95.6, 118.0, 162.9 with the verses and builds drawn between).
+
+Three findings for the next session, in priority order:
+
+1. **The map->cuts derivation is wrong for maps drawn on a PIECEWISE grid.**
+   Safir's map (drawn on the staged cut grid) derives cuts 54.20/67.40/106.80
+   where the confirmed grid needs 53.80/106.80 - the residue walk measures
+   against the uniform grid, but the map's boundaries carry piecewise
+   positions. No immediate loss (the blob is current and will not re-derive
+   until the next ANALYSIS_VERSION bump), but the next bump would corrupt
+   Safir's grid. Fix shape: the judgement pins analysisHash - when the pinned
+   analysis' own barTimes are non-uniform, carry ITS cut positions forward
+   instead of re-deriving from residues (a map drawn on a correct piecewise
+   grid confirms it; only a map drawn on a UNIFORM grid can imply new cuts).
+2. **Ponyboy 2*: the map-adoption gap.** The owner's map wants drops 37-108
+   and 144-180; the analyser's single drop@72-80 is a fraction of it, and the
+   room still reads flat. The cuts loop honours a map's GRID but not its
+   SECTIONS. Design: when a judgement carries a hand map, the analysis adopts
+   the map's kinds and boundaries wholesale (snapped to the grid, spans
+   rebuilt from bars) - the owner's truth outranks the DP on mapped tracks.
+   apps/web/src/lib/server/previewArrangement.ts (applyHandSections) is the
+   reference implementation of the rebuild; it belongs analysis-side, driven
+   from the same judgement read ingest already does.
+3. **Someone You Loved wears genreFamily "house"** (the owner: "described as
+   house for some reason") - a piano ballad. CONTEXT_VERSION 2 re-enriched it
+   on today's play, so the fresh METADATA vote itself says house - inspect its
+   context genres and mapGenres' vote; likely a metadata-vote bug, now clean
+   of the effnet echo.

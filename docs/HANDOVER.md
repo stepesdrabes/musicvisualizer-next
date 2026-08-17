@@ -407,20 +407,35 @@ this call and it shipped at v15).
    the cuts path, the killed detector's postmortem, the settle negative, the
    engine round, the gates). The campaign's finishing wave is SHIPPED and
    COMMITTED; one package remains.
-2. Mine cache-C/judge FIRST: hand-drawn section maps (`sections` on judgements,
-   authoritative times) are ground truth - run `MV_CACHE_DIR=<cache-C> node
-   bench/mapscore.ts` and `bench/judgemap.ts` on whatever accumulated. A new map
-   re-grids its track automatically on the next analysis (the cuts loop). If the
-   owner drew SAFIR's map, its staged blob becomes permanent - until then the
-   staging survives only while ANALYSIS_VERSION stays 22.
-3. THE REMAINING PACKAGE - C, lyric-assertive chorus placement: strong hook
-   windows may PLACE chorus starts on song-family tracks (Snooze 17 -> 23 needs
-   six bars only lyrics can justify; Blinding Lights needs demotion loosened
-   where a better-overlapping sibling exists). Sentinels that gate it: Hannah,
-   KITN, Praha, Le Freak - all lyric-good today. Instrument: hookcheck (in the
-   round dir's history) + earlybars + the lyric sentinels. Own ANALYSIS_VERSION
-   bump, full battery, adversary before ship.
-4. Smaller open threads, in value order: Self Aware kit precision (win condition
+2. THE ROUND-6 VERDICTS ARE ALREADY MINED (record tail): the wave is
+   room-confirmed across the board, and FIVE HAND MAPS exist in cache-C/judge
+   (Safir, Blinding Lights, Praha, Az na mesic, Ponyboy) - 5 of the 15 that
+   freeze the model eval. Run mapscore/judgemap for the current numbers, and
+   mine ANY newer saves first.
+3. FIX FIRST, before any ANALYSIS_VERSION bump: **the map->cuts derivation is
+   wrong for maps drawn on a piecewise grid** (record tail, finding 1). Safir's
+   own map derives cuts 54.20/67.40/106.80 where the confirmed grid needs
+   53.80/106.80 - the residue walk assumes a uniform drawing surface. The
+   judgement pins analysisHash: when the pinned analysis' barTimes are
+   non-uniform, carry ITS cut positions forward instead of re-deriving. Until
+   this lands, a version bump would corrupt Safir's grid on its next play.
+   Prove it with a test on Safir's real map, then the battery.
+4. NEXT: **map adoption** (record tail, finding 2 - Ponyboy sits at 2* because
+   of exactly this): when a judgement carries a hand map, the analysis adopts
+   its kinds AND boundaries wholesale - snapped to the grid, spans rebuilt from
+   bars. applyHandSections in apps/web/src/lib/server/previewArrangement.ts is
+   the reference rebuild; it belongs analysis-side, driven from the judgement
+   read ingest already does. This makes every map immediately real in the room.
+5. THEN package C - lyric-assertive chorus placement (Snooze 17 -> 23, Blinding
+   Lights) - NOW WITH GROUND TRUTH: the owner's Blinding Lights map gives the
+   true choruses (39.4 / 61.9 / 95.6 / 118.0 / 162.9). Sentinels: Hannah, KITN,
+   Praha, Le Freak. Instrument: mapscore against the map + hookcheck +
+   earlybars. Own bump, full battery, adversary. NOTE: map adoption (step 4)
+   may partly supersede C on MAPPED tracks - C is for the unmapped library.
+6. Also on file: Someone You Loved wears genreFamily "house" (a piano ballad;
+   context freshly re-enriched at v2, so the METADATA vote itself is wrong -
+   inspect its context genres and mapGenres).
+7. Smaller open threads, in value order: Self Aware kit precision (win condition
    = raising the SOPHIE fixture's 0.4 precision floor in drums.test.ts);
    EARFQUAKE's grouping (its choruses do not group as kin, so the group-final
    peak cannot reach the last one - a groupSegments question); the remaining
@@ -429,17 +444,18 @@ this call and it shipped at v15).
    gated-settle negative is the map of what does not work); An Ending's phantom
    share (listening-flagged); Praha's restart edge at 0.63 vs the 0.6 floor
    (flap risk); Back In Black double-time (parked, owner ground truth on file).
-5. The model loop runs alongside: maps accumulate -> at ~15 freeze bench/maps-eval
+8. The model loop runs alongside: maps accumulate -> at ~15 freeze bench/maps-eval
    (never train on them), at ~30 adaptation starts (the protocol memo lives
    OUTSIDE this repo by the owner's hand - ask them for it; mapscore is its
    instrument and the P6 history its warning).
-6. Floors and gates, current: earlybars 20 hit / 0 worse of 28 (MV_CACHE_DIR must
+9. Floors and gates, current: earlybars 20 hit / 0 worse of 28 (MV_CACHE_DIR must
    point at a cache with Kisses/WTSA audio - cache-C); suite 778; structscore
    raveform 0.394/0.540, harmonix 0.202/0.532; showprobe 0/0/100%, dark 2,
    contrast 2.76, hue jumps 2585 (the leaving pass softened both - drift from
    THESE numbers is signal). stagetrace names any moved stage (trust only its
    FINAL analyzeTrack line). Land edits BETWEEN background runs - the
    contamination incident in the record is what skipping that costs.
-7. App C = v22/16 with everything; A and B are the older references. Rebuild via
+10. App C = v22/16 with everything (rebuilt 2026-08-16 including the owner's
+   preview3d refactor and the enrich audioGenres fix, 56031d7); A and B are the older references. Rebuild via
    `npm run bundle -w @mv/desktop` then `npx tauri build --bundles app`, rm -rf
    the target before copying (the nesting trap).
