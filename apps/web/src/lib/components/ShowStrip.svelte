@@ -27,7 +27,10 @@
 		onseek,
 		editing = false,
 		sections = null,
-		onsections = () => {}
+		onsections = () => {},
+		movements = [],
+		onmovements = () => {},
+		onundo = () => {}
 	}: {
 		analysis: TrackAnalysis | null;
 		show: Show | null;
@@ -41,6 +44,11 @@
 		/** The hand-drawn draft being edited; owned by the page, committed via onsections. */
 		sections?: JudgedSection[] | null;
 		onsections?: (s: JudgedSection[]) => void;
+		/** Seconds where a new song starts inside this one; drawn as dividers while editing. */
+		movements?: number[];
+		onmovements?: (m: number[]) => void;
+		/** One step back through the page's edit stack. */
+		onundo?: () => void;
 	} = $props();
 
 	let host: HTMLDivElement | undefined = $state();
@@ -134,8 +142,12 @@
 	// The draft is owned by the page; a gesture works on local state for smoothness and
 	// commits once on release, so each drag is one save rather than a stream of them.
 
-	let drag = $state<{ boundary: number; t: number } | null>(null);
-	let picker = $state<{ index: number; x: number } | null>(null);
+	/** `live` separates a pointer drag from a keyboard nudge waiting on its commit timer. */
+	let drag = $state<{ boundary: number; t: number; live: boolean } | null>(null);
+	let picker = $state<{ index: number; x: number; cursor: number } | null>(null);
+	let pickerEl: HTMLDivElement | undefined = $state();
+	/** The boundary the arrow keys move. Follows focus, so escape and a click away clear it. */
+	let selected = $state<number | null>(null);
 
 	/**
 	 * Snap to BAR lines, which is the only coordinate a section has.
@@ -181,8 +193,12 @@
 		// rather than inferred later, because maps drawn before the editor snapped to bars are
 		// full of beat-snapped boundaries that meant no such thing.
 		const offBar = tempo ? Math.abs(bar(s.startTime) - Math.round(bar(s.startTime))) > 0.001 : false;
+		// Recomputed from where the boundary IS, not merged onto where it was. Spreading the
+		// old flag left a boundary nudged off the grid and back still claiming a deliberate
+		// off-grid placement - and a keyboard nudge makes that round trip two keystrokes.
+		const { offGrid: _was, ...rest } = s;
 		return {
-			...s,
+			...rest,
 			startBar: bar(s.startTime),
 			endBar: bar(s.endTime),
 			...(offBar ? { offGrid: true } : {})
@@ -196,42 +212,124 @@
 	function handleDown(e: PointerEvent, boundary: number) {
 		if (!sections) return;
 		e.stopPropagation();
+		flushNudge();
 		if (e.altKey) {
 			// Merge: the seam disappears and the left section absorbs the right one's span.
 			const next = sections.map((s) => ({ ...s }));
 			next[boundary - 1].endTime = next[boundary].endTime;
 			next.splice(boundary, 1);
+			selected = null;
 			commit(next);
 			return;
 		}
-		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-		drag = { boundary, t: sections[boundary].startTime };
+		const el = e.currentTarget as HTMLElement;
+		el.setPointerCapture(e.pointerId);
+		// Explicit, because a button is not focused by a press on every platform, and the
+		// selection the arrow keys read is this element's focus.
+		el.focus();
+		drag = { boundary, t: sections[boundary].startTime, live: true };
 	}
 
 	function handleMove(e: PointerEvent) {
-		if (!drag || !sections) return;
+		if (!drag?.live || !sections) return;
 		const step = e.shiftKey ? beatLen : barLen;
 		const lo = sections[drag.boundary - 1].startTime + step;
 		const hi = sections[drag.boundary].endTime - step;
 		// Snapped AFTER the clamp: clamping a snapped value pushes it back off the grid, by
 		// however much the local bar differs from the median one.
 		const t = snapT(Math.max(lo, Math.min(hi, timeFrom(e))), e.shiftKey);
-		drag = { boundary: drag.boundary, t };
+		drag = { boundary: drag.boundary, t, live: true };
 	}
 
 	function handleUp(e: PointerEvent) {
-		if (!drag || !sections) return;
+		if (!drag?.live || !sections) return;
 		(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-		const next = sections.map((s) => ({ ...s }));
-		next[drag.boundary - 1].endTime = drag.t;
-		next[drag.boundary].startTime = drag.t;
+		const { boundary, t } = drag;
 		drag = null;
+		// A press that only selects the handle is not an edit, and a save per press is a step
+		// the undo has to be walked back through for nothing.
+		if (t === sections[boundary].startTime) return;
+		const next = sections.map((s) => ({ ...s }));
+		next[boundary - 1].endTime = t;
+		next[boundary].startTime = t;
 		commit(next);
+	}
+
+	// ---- Keyboard nudge -------------------------------------------------------------------
+	// The drag's own two steps, one press at a time. This is what makes a boundary placeable:
+	// a bar is a couple of pixels wide at full zoom, and the hand cannot hit it.
+
+	/** The nudged map waiting on its timer. Held whole, so a disarm cannot drop the edit. */
+	let pending: JudgedSection[] | null = null;
+	let commitTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * One grid step from `t`, on the same grids `snapT` snaps to.
+	 *
+	 * Stepping to the next line in the direction of travel rather than from `round + dir`, so a
+	 * boundary deliberately left between two bar lines moves onto the nearer one instead of
+	 * jumping across it. The epsilon is for a bar line whose own number reads back as 9.999999.
+	 */
+	function stepT(t: number, dir: number, fine: boolean): number {
+		const tempo = analysis?.tempo;
+		if (!tempo) return t;
+		const unit = fine ? tempo.beatsPerBar : 1;
+		const u = barAtTime(tempo, t) * unit;
+		return barTimeAt(tempo, (dir > 0 ? Math.floor(u + 1e-6) + 1 : Math.ceil(u - 1e-6) - 1) / unit);
+	}
+
+	function nudge(boundary: number, dir: number, fine: boolean) {
+		const base = pending ?? sections;
+		if (!base || boundary <= 0 || boundary >= base.length) return;
+		const t = stepT(base[boundary].startTime, dir, fine);
+		// The real constraint, rather than the drag's one-step margin: a step onto the grid is
+		// as narrow as a section is allowed to get, and a margin in median bars would refuse it
+		// wherever the local bar is longer.
+		if (t <= base[boundary - 1].startTime || t >= base[boundary].endTime) return;
+		const next = base.map((s) => ({ ...s }));
+		next[boundary - 1].endTime = t;
+		next[boundary].startTime = t;
+		pending = next;
+		drag = { boundary, t, live: false };
+		if (commitTimer) clearTimeout(commitTimer);
+		commitTimer = setTimeout(flushNudge, 220);
+	}
+
+	/** Held presses are one gesture, so they are one save - the drag's bargain with release. */
+	function flushNudge() {
+		if (commitTimer) clearTimeout(commitTimer);
+		commitTimer = null;
+		const next = pending;
+		pending = null;
+		if (!next) return;
+		if (drag && !drag.live) drag = null;
+		commit(next);
+	}
+
+	// A nudge still on its timer when the lane goes away is an edit the owner made and cannot
+	// see was lost, so it is written rather than dropped.
+	$effect(() => () => flushNudge());
+
+	function handleKey(e: KeyboardEvent, boundary: number) {
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		if (e.key === 'Escape') {
+			e.stopPropagation();
+			flushNudge();
+			(e.currentTarget as HTMLElement).blur();
+			return;
+		}
+		const dir = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+		if (dir === 0) return;
+		// Consumed here, or the window's own arrow binding seeks the track underneath the edit.
+		e.preventDefault();
+		e.stopPropagation();
+		nudge(boundary, dir, e.shiftKey);
 	}
 
 	function split(e: MouseEvent, index: number) {
 		if (!sections) return;
 		e.stopPropagation();
+		flushNudge();
 		const s = sections[index];
 		const t = snapT(timeFrom(e), e.shiftKey);
 		const step = e.shiftKey ? beatLen : barLen;
@@ -239,6 +337,7 @@
 		const next = sections.map((x) => ({ ...x }));
 		next.splice(index + 1, 0, { ...next[index], startTime: t });
 		next[index] = { ...next[index], endTime: t };
+		picker = null;
 		commit(next);
 	}
 
@@ -247,6 +346,56 @@
 		const next = sections.map((s, i) => (i === index ? { ...s, kind } : { ...s }));
 		picker = null;
 		commit(next);
+	}
+
+	function openPicker(index: number, clientX: number) {
+		flushNudge();
+		const at = SECTION_KINDS.findIndex((k) => k === sections?.[index]?.kind);
+		const x = clientX - (host?.getBoundingClientRect().left ?? 0);
+		picker = { index, x, cursor: at < 0 ? 0 : at };
+	}
+
+	function pickerKey(e: KeyboardEvent) {
+		if (!picker) return;
+		// The popup has the keyboard while it is open, so nothing it does not use reaches the
+		// bindings underneath it.
+		e.stopPropagation();
+		if (e.key === 'Escape') {
+			picker = null;
+			return;
+		}
+		const dir = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+		if (dir !== 0) {
+			e.preventDefault();
+			const n = SECTION_KINDS.length;
+			picker = { ...picker, cursor: (picker.cursor + dir + n) % n };
+			return;
+		}
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			pickKind(picker.index, SECTION_KINDS[picker.cursor]);
+		}
+	}
+
+	$effect(() => {
+		if (picker) pickerEl?.focus({ preventScroll: true });
+	});
+
+	/** A movement mark is the panel's to add and either surface's to take back. */
+	function removeMovement(index: number) {
+		onmovements(movements.filter((_, i) => i !== index));
+	}
+
+	function onWindowKey(e: KeyboardEvent) {
+		if (!editing) return;
+		if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+		const el = e.target;
+		if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+		e.preventDefault();
+		// Flushed first, or the step being undone is one the stack has not been told about.
+		flushNudge();
+		picker = null;
+		onundo();
 	}
 
 	/** The seam positions being rendered: the dragged one follows the pointer. */
@@ -325,6 +474,8 @@
 	});
 </script>
 
+<svelte:window onkeydown={onWindowKey} />
+
 <div class="strip" class:empty={!show}>
 	<div
 		class="lanes"
@@ -357,25 +508,52 @@
 						onpointerdown={(e) => e.stopPropagation()}
 						onclick={(e) => {
 							e.stopPropagation();
-							picker = picker?.index === i ? null : { index: i, x: e.clientX - (host?.getBoundingClientRect().left ?? 0) };
+							if (picker?.index === i) picker = null;
+							else openPicker(i, e.clientX);
 						}}
 						ondblclick={(e) => split(e, i)}
 						role="presentation">
 						<span class="label">{titleCase(s.kind)}</span>
 					</div>
 				{/each}
+				<!-- Where a new song starts: the same mark the panel lists, drawn where it falls.
+				     Under the handles, because a movement often lands on a seam and the seam has
+				     to stay draggable; its glyph sits clear of the line for the same reason. -->
+				{#each movements as t, i (i)}
+					<div class="movement" style:left={`${pct(t)}%`}>
+						<button
+							class="mark"
+							type="button"
+							title="A new song starts here. Click to hear it, alt-click to take the mark back."
+							aria-label={`New song at ${clock(t)}`}
+							onpointerdown={(e) => e.stopPropagation()}
+							onclick={(e) => {
+								e.stopPropagation();
+								if (e.altKey) removeMovement(i);
+								else onseek(t);
+							}}>‖</button>
+					</div>
+				{/each}
 				{#each sections as s, i (i)}
 					{#if i > 0}
-						<div
+						<button
 							class="handle"
 							class:held={drag?.boundary === i}
+							class:selected={selected === i}
+							type="button"
 							style:left={`${pct(boundaryTime(i))}%`}
-							title="Drag to move the boundary. Alt-click merges the two sections."
+							title="Drag to move the boundary, or click it and use the arrow keys. Alt-click merges the two sections."
+							aria-label={`Boundary before ${titleCase(s.kind)}`}
 							onpointerdown={(e) => handleDown(e, i)}
 							onpointermove={handleMove}
 							onpointerup={handleUp}
-							role="presentation">
-						</div>
+							onkeydown={(e) => handleKey(e, i)}
+							onfocus={() => (selected = i)}
+							onblur={() => {
+								if (selected === i) selected = null;
+								flushNudge();
+							}}>
+						</button>
 					{/if}
 				{/each}
 			</div>
@@ -448,12 +626,20 @@
 				class="picker"
 				style:left={`${picker.x}px`}
 				class:flip={width > 0 && picker.x > width - 180}
+				bind:this={pickerEl}
+				tabindex="-1"
+				role="menu"
+				aria-label="Section kind"
 				onpointerdown={(e) => e.stopPropagation()}
-				role="presentation">
-				{#each SECTION_KINDS as kind (kind)}
+				onkeydown={pickerKey}>
+				{#each SECTION_KINDS as kind, k (kind)}
 					<button
 						class="kind"
 						class:on={sections[picker.index]?.kind === kind}
+						class:cursor={picker.cursor === k}
+						type="button"
+						role="menuitemradio"
+						aria-checked={sections[picker.index]?.kind === kind}
 						onclick={() => picker && pickKind(picker.index, kind)}>
 						<i class="swatch" style:background={`var(--sec-${kind})`}></i>
 						{titleCase(kind)}
@@ -465,7 +651,9 @@
 
 	<div class="legend subtle">
 		{#if editing}
-			<span>drag a boundary · double-click splits · alt-click a handle merges · click a section for its kind</span>
+			<span>click a boundary, then ← → nudges it a bar · shift for a beat · escape lets go</span>
+			<span>or drag it · double-click splits · alt-click a handle merges</span>
+			<span>click a section for its kind · alt-click ‖ takes the mark back · ⌘Z undoes</span>
 			<span class="sep">·</span>
 		{/if}
 		<span><i class="swatch kick"></i>Kick</span>
@@ -645,10 +833,12 @@
 	.sections.editing .sec {
 		cursor: pointer;
 	}
+	/* The grab area stops short of the lane's foot; the bar it draws does not. That bottom
+	   band belongs to the movement marks, which land on a seam more often than not. */
 	.handle {
 		position: absolute;
 		top: -3px;
-		bottom: -3px;
+		bottom: 9px;
 		width: 9px;
 		transform: translateX(-50%);
 		cursor: col-resize;
@@ -657,7 +847,7 @@
 	.handle::after {
 		content: '';
 		position: absolute;
-		inset: 0 3px;
+		inset: 0 3px -12px;
 		border-radius: 2px;
 		background: var(--foreground);
 		opacity: 0.55;
@@ -666,6 +856,54 @@
 	.handle.held::after {
 		opacity: 1;
 		box-shadow: 0 0 5px #ffffff80;
+	}
+	.handle:focus-visible {
+		outline: none;
+	}
+	/* The accent, because a selected handle is the one thing on this lane that is listening. */
+	.handle.selected::after {
+		opacity: 1;
+		background: var(--live);
+		box-shadow: 0 0 6px var(--live);
+	}
+
+	/* Heavier than a seam and taller than the lane, because it is a statement about the whole
+	   track rather than about the two sections it happens to fall between. Above the handles,
+	   but the line itself takes no pointer: a movement usually lands ON a boundary, and a
+	   3px rule that ate the drag would cost more than it is worth. */
+	.movement {
+		position: absolute;
+		top: -6px;
+		bottom: -6px;
+		width: 3px;
+		transform: translateX(-50%);
+		background: var(--foreground);
+		pointer-events: none;
+		z-index: 4;
+	}
+	/**
+	 * The glyph keeps to a band along the foot of the lane, which is the one strip no handle
+	 * claims. A mark on a seam is the ordinary case rather than the awkward one, so the two
+	 * cannot be allowed to fight over the same pixels: the handle owns the height above this
+	 * band at every x, and the mark owns the band.
+	 */
+	.movement .mark {
+		position: absolute;
+		left: 3px;
+		bottom: 6px;
+		display: flex;
+		align-items: center;
+		height: 9px;
+		padding: 0 4px;
+		font-size: 10px;
+		line-height: 1;
+		color: var(--foreground);
+		/* The glyph is the mark's only label, so it has to hold over any section colour. */
+		text-shadow: 0 0 3px #000;
+		pointer-events: auto;
+	}
+	.movement .mark:hover {
+		color: var(--live);
 	}
 
 	.picker {
@@ -685,6 +923,9 @@
 	.picker.flip {
 		transform: translateX(calc(-100% + 6px));
 	}
+	.picker:focus {
+		outline: none;
+	}
 	.kind {
 		display: flex;
 		align-items: center;
@@ -695,13 +936,23 @@
 		color: var(--muted-foreground);
 		text-align: left;
 	}
-	.kind:hover {
+	.kind:hover,
+	.kind.cursor {
 		background: var(--hover);
 		color: var(--foreground);
 	}
+	/* The kind this section already is, which the keyboard cursor moves over rather than
+	   replaces: one says where you are, the other says where you started. */
 	.kind.on {
 		color: var(--foreground);
 		background: var(--muted);
+	}
+	.kind.on::after {
+		content: '✓';
+		margin-left: auto;
+		padding-left: 10px;
+		font-size: 10px;
+		color: var(--subtle-foreground);
 	}
 	.kind .swatch {
 		width: 9px;
@@ -741,8 +992,9 @@
 
 	.legend {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
-		gap: 12px;
+		gap: 6px 12px;
 		margin-top: 10px;
 		font-size: 11.5px;
 	}

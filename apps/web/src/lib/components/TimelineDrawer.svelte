@@ -16,7 +16,10 @@
 		onseek,
 		editing = false,
 		sections = null,
-		onsections = () => {}
+		onsections = () => {},
+		movements = [],
+		onmovements = () => {},
+		onundo = () => {}
 	}: {
 		viz: Viz | null;
 		analysis: TrackAnalysis | null;
@@ -28,6 +31,9 @@
 		editing?: boolean;
 		sections?: JudgedSection[] | null;
 		onsections?: (s: JudgedSection[]) => void;
+		movements?: number[];
+		onmovements?: (m: number[]) => void;
+		onundo?: () => void;
 	} = $props();
 </script>
 
@@ -35,7 +41,19 @@
 	<!-- The bands are the strips themselves, so their axis is the room rather than the track;
 	     only the lanes below have a time window to zoom. -->
 	<LedBands {viz} />
-	<ShowStrip {analysis} {show} {position} {duration} bind:view {onseek} {editing} {sections} {onsections} />
+	<ShowStrip
+		{analysis}
+		{show}
+		{position}
+		{duration}
+		bind:view
+		{onseek}
+		{editing}
+		{sections}
+		{onsections}
+		{movements}
+		{onmovements}
+		{onundo} />
 </div>
 
 <style>

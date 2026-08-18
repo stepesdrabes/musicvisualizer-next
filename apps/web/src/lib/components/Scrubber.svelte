@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { barTimeAt, type Show, type TrackAnalysis, barAtTime } from '@mv/core';
+	import { barTimeAt, bpmAt, type Show, type TrackAnalysis, barAtTime } from '@mv/core';
 	import { clock, titleCase } from '$lib/format.ts';
 	import { FULL_WINDOW, isFullWindow, type TimeWindow } from '$lib/timeline.ts';
 
@@ -21,8 +21,13 @@
 	} = $props();
 
 	let el: HTMLDivElement | undefined = $state();
+	let namesEl: HTMLDivElement | undefined = $state();
+	let width = $state(0);
 	let dragging = $state(false);
 	let hoverAt = $state<number | null>(null);
+
+	/** The gap after a boundary plus air before the next one, so a name never touches a rule. */
+	const NAME_ROOM = 10;
 
 	const played = $derived(duration > 0 ? Math.min(1, position / duration) : 0);
 
@@ -67,6 +72,79 @@
 		const w = Math.max(0.15, Math.min(100 - l, ((b - a) / duration) * 100));
 		return { left: `${l.toFixed(3)}%`, width: `${w.toFixed(3)}%` };
 	}
+
+	/** Built once, from the row's own font, so what is measured is what will be drawn. */
+	let ruler: CanvasRenderingContext2D | null = null;
+
+	/**
+	 * Whether a name fits inside `px` whole.
+	 *
+	 * Measured rather than estimated, because the alternative to a fit test is a truncated
+	 * name, and a section reading "Break..." says less than an unlabelled one.
+	 */
+	function fits(text: string, px: number): boolean {
+		if (!ruler) {
+			const host = namesEl;
+			const ctx = document.createElement('canvas').getContext('2d');
+			if (!host || !ctx) return false;
+			const style = getComputedStyle(host);
+			ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			ruler = ctx;
+		}
+		return px >= ruler.measureText(text).width + NAME_ROOM;
+	}
+
+	/** The name row: a boundary per section, and the name where the section can hold it. */
+	const marks = $derived.by(() => {
+		const sections = analysis?.sections;
+		if (!sections || duration <= 0 || width <= 0) return [];
+		return sections.map((s) => {
+			const name = titleCase(s.kind);
+			const px = ((s.endTime - s.startTime) / duration) * width;
+			return { index: s.index, ...span(s.startTime, s.endTime), label: fits(name, px) ? name : '' };
+		});
+	});
+
+	/** Which section is sounding now, so the map can say where in itself the room is. */
+	const liveIndex = $derived(
+		analysis?.sections.find((s) => position >= s.startTime && position < s.endTime)?.index ?? -1
+	);
+
+	/**
+	 * Where a new song starts inside this one. Absent on nearly every track, which is why it is
+	 * drawn as the exception rather than as another lane.
+	 */
+	const cuts = $derived.by(() => {
+		const a = analysis;
+		if (!a || duration <= 0) return [];
+		return (a.movements ?? [])
+			.map((bar) => barTimeAt(a.tempo, bar))
+			.filter((t) => t > 0 && t < duration)
+			.map((t) => ({ t, left: `${((t / duration) * 100).toFixed(3)}%` }));
+	});
+
+	const hover = $derived.by(() => {
+		if (hoverAt === null || duration <= 0) return null;
+		const bar = barAt(hoverAt);
+		return {
+			left: `${((hoverAt / duration) * 100).toFixed(3)}%`,
+			at: clock(hoverAt),
+			kind: sectionAt(hoverAt),
+			bar,
+			// The tempo HERE. On a track assembled from several, the median is a tempo nothing
+			// in it is played at.
+			bpm: analysis ? bpmAt(analysis.tempo, bar).toFixed(0) : ''
+		};
+	});
+
+	$effect(() => {
+		const host = el;
+		if (!host) return;
+		const observer = new ResizeObserver(([entry]) => (width = entry.contentRect.width));
+		observer.observe(host);
+		width = host.getBoundingClientRect().width;
+		return () => observer.disconnect();
+	});
 </script>
 
 <div class="scrubber" class:active={dragging}>
@@ -89,46 +167,67 @@
 			if (e.key === 'ArrowLeft') onseek(Math.max(0, position - 5));
 			if (e.key === 'ArrowRight') onseek(Math.min(duration, position + 5));
 		}}>
-		<!-- The sections ARE the progress bar. There is no separate timeline to consult. -->
-		<div class="sections">
-			{#each analysis?.sections ?? [] as s (s.index)}
-				{@const g = span(s.startTime, s.endTime)}
-				<div
-					class="sec"
-					style:left={g.left}
-					style:width={g.width}
-					style:background={`var(--sec-${s.kind})`}></div>
+		<!-- Names above the ribbon rather than in it: the ribbon is five pixels tall, which is
+		     no place for a word. -->
+		<div class="names" bind:this={namesEl}>
+			{#each marks as m (m.index)}
+				<div class="name" style:left={m.left} style:width={m.width}>
+					{#if m.label}
+						<span class:live={m.index === liveIndex}>{m.label}</span>
+					{/if}
+				</div>
 			{/each}
 		</div>
 
-		{#each show?.hits ?? [] as h, i (i)}
-			{@const t = analysis ? barTimeAt(analysis.tempo, h.bar) : 0}
-			<div
-				class="hit {h.kind}"
-				style:left={`${duration > 0 ? ((t / duration) * 100).toFixed(3) : 0}%`}
-				title={`${h.kind} at bar ${h.bar}`}></div>
+		<div class="rail">
+			<!-- The sections ARE the progress bar. There is no separate timeline to consult. -->
+			<div class="sections">
+				{#each analysis?.sections ?? [] as s (s.index)}
+					{@const g = span(s.startTime, s.endTime)}
+					<div
+						class="sec"
+						style:left={g.left}
+						style:width={g.width}
+						style:background={`var(--sec-${s.kind})`}></div>
+				{/each}
+			</div>
+
+			{#each show?.hits ?? [] as h, i (i)}
+				{@const t = analysis ? barTimeAt(analysis.tempo, h.bar) : 0}
+				<div
+					class="hit {h.kind}"
+					style:left={`${duration > 0 ? ((t / duration) * 100).toFixed(3) : 0}%`}
+					title={`${h.kind} at bar ${h.bar}`}></div>
+			{/each}
+
+			<div class="veil" style:left={`${(played * 100).toFixed(3)}%`}></div>
+
+			<!-- Which slice the lanes below are showing. The scrubber itself stays whole: it is how
+			     you get anywhere in the track, and a zoomed seek bar cannot reach the rest of it. -->
+			{#if !isFullWindow(view)}
+				<div
+					class="window"
+					style:left={`${(view.start * 100).toFixed(3)}%`}
+					style:width={`${((view.end - view.start) * 100).toFixed(3)}%`}></div>
+			{/if}
+
+			<div class="knob" style:left={`${(played * 100).toFixed(3)}%`}></div>
+		</div>
+
+		{#each cuts as c (c.t)}
+			<div class="cut" style:left={c.left}></div>
 		{/each}
 
-		<div class="veil" style:left={`${(played * 100).toFixed(3)}%`}></div>
-
-		<!-- Which slice the lanes below are showing. The scrubber itself stays whole: it is how
-		     you get anywhere in the track, and a zoomed seek bar cannot reach the rest of it. -->
-		{#if !isFullWindow(view)}
-			<div
-				class="window"
-				style:left={`${(view.start * 100).toFixed(3)}%`}
-				style:width={`${((view.end - view.start) * 100).toFixed(3)}%`}></div>
-		{/if}
-
-		<div class="knob" style:left={`${(played * 100).toFixed(3)}%`}></div>
-
-		{#if hoverAt !== null && duration > 0}
-			<div
-				class="tip"
-				style:left={`${((hoverAt / duration) * 100).toFixed(3)}%`}>
-				<span class="mono">{clock(hoverAt)}</span>
+		{#if hover}
+			<div class="tip" style:left={hover.left}>
+				<span class="mono">{hover.at}</span>
+				{#if hover.kind}
+					<span class="sub">{titleCase(hover.kind)}</span>
+				{/if}
 				{#if analysis}
-					<span class="sub subtle">bar {barAt(hoverAt)} · {titleCase(sectionAt(hoverAt))}</span>
+					<span class="sub subtle">
+						bar <span class="mono">{hover.bar}</span> · <span class="mono">{hover.bpm}</span> bpm
+					</span>
 				{/if}
 			</div>
 		{/if}
@@ -155,11 +254,43 @@
 	.track {
 		position: relative;
 		flex: 1;
-		height: 18px;
 		display: flex;
-		align-items: center;
+		flex-direction: column;
 		cursor: pointer;
 		touch-action: none;
+	}
+	.names {
+		position: relative;
+		flex: none;
+		height: 13px;
+		font-size: 10.5px;
+	}
+	.name {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		display: flex;
+		align-items: center;
+		padding-left: 5px;
+		/* A hairline where the section starts, aligned with the seam in the ribbon below. No
+		   overflow rule: a name is only drawn once it has been measured to fit. */
+		border-left: 1px solid var(--border);
+		line-height: 1;
+		color: var(--muted-foreground);
+		white-space: nowrap;
+	}
+	/* The start of the track is not a boundary, so it gets no rule. */
+	.name:first-child {
+		border-left: none;
+	}
+	/* Only the section actually sounding is at full brightness; the rest are a map. */
+	.name .live {
+		color: var(--foreground);
+	}
+	.rail {
+		position: relative;
+		flex: none;
+		height: 18px;
 	}
 	.sections {
 		position: absolute;
@@ -181,6 +312,11 @@
 		top: 0;
 		bottom: 0;
 	}
+	/* Two verses in a row are one colour, so without a seam they are one section. The rule is
+	   the background rather than a line over the ribbon: a gap reads at five pixels tall. */
+	.sec:not(:last-child) {
+		border-right: 1px solid var(--background);
+	}
 	/* Dim what has not played yet, rather than drawing a fill over what has: the section
 	   colours stay legible ahead of the playhead, which is the point of showing them. */
 	.veil {
@@ -201,6 +337,18 @@
 		height: 15px;
 		border: 1px solid #ffffff59;
 		border-radius: 3px;
+		pointer-events: none;
+	}
+	/* A new song inside the track: the biggest break there is, so it is the heaviest rule and
+	   the only one crossing the whole scrubber. Weight and reach rather than a colour, because
+	   every hue on this bar already belongs to a section. */
+	.cut {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 2px;
+		translate: -1px 0;
+		background: var(--muted-foreground);
 		pointer-events: none;
 	}
 	.knob {
@@ -244,7 +392,7 @@
 	}
 	.tip {
 		position: absolute;
-		bottom: 24px;
+		bottom: calc(100% + 6px);
 		translate: -50% 0;
 		display: flex;
 		flex-direction: column;
@@ -260,5 +408,9 @@
 	}
 	.tip .sub {
 		font-size: 11.5px;
+	}
+	/* `.mono` carries its own size, which would make the digits the tallest thing in the tip. */
+	.tip .sub .mono {
+		font-size: inherit;
 	}
 </style>

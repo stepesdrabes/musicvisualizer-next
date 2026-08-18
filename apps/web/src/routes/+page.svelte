@@ -115,9 +115,25 @@
 		analysis ? tempoSegments(analysis.tempo).slice(1).map((s) => Math.round(s.start * 10) / 10) : []
 	);
 
+	/**
+	 * Where a new song starts inside this one, read straight off the saved judgement.
+	 *
+	 * Two surfaces edit this list - the panel's chips and the section lane's dividers - so it
+	 * is held in one place and derived rather than drafted. A local copy per surface is how a
+	 * mark removed in the lane comes back from the panel's next save.
+	 */
+	const movements = $derived(trackId ? (judgements[trackId]?.movements ?? []) : []);
+
 	/** Hand-drawn section editing: the drawer's section lane grows handles while armed. */
 	let sectionEditing = $state(false);
 	let sectionDraft = $state<JudgedSection[] | null>(null);
+	/**
+	 * One step back through the hand map, held here because the page owns the draft: the lane
+	 * asks for it and this decides what the step was. Section edits and movement marks share
+	 * the stack, so undo walks back through the gestures in the order they were made.
+	 */
+	type MapEdit = { sections: JudgedSection[] } | { movements: number[] };
+	let undoStack: MapEdit[] = [];
 	/** The show composed from the hand-drawn map while previewing it; null otherwise. */
 	let previewShow = $state<Show | null>(null);
 	/** Where the real show waits while the preview is on stage. Not reactive: only restore reads it. */
@@ -353,6 +369,7 @@
 	}
 
 	async function armSectionEdit(on: boolean) {
+		undoStack = [];
 		if (!on) {
 			sectionEditing = false;
 			sectionDraft = null;
@@ -365,7 +382,7 @@
 		timelineOpen = true;
 	}
 
-	function saveSections(list: JudgedSection[]) {
+	function applySections(list: JudgedSection[]) {
 		if (!trackId) return;
 		sectionDraft = list;
 		// The map and the grid it was drawn against; the panel's fields are none of the
@@ -378,6 +395,36 @@
 			showSeed: show?.seed ?? null,
 			authoredBy: show?.authoredBy ?? null
 		});
+	}
+
+	function saveSections(list: JudgedSection[]) {
+		if (sectionDraft) {
+			undoStack = [...undoStack.slice(-49), { sections: $state.snapshot(sectionDraft) }];
+		}
+		applySections(list);
+	}
+
+	/** Movement marks, written by whichever surface the owner reached for. */
+	function applyMovements(list: number[]) {
+		if (!trackId) return;
+		void saveJudgement({
+			trackId,
+			title: meta?.title ?? judgements[trackId]?.title ?? '',
+			movements: list
+		});
+	}
+
+	function saveMovements(list: number[]) {
+		undoStack = [...undoStack.slice(-49), { movements: [...movements] }];
+		applyMovements(list);
+	}
+
+	function undoMapEdit() {
+		const last = undoStack.at(-1);
+		if (!last) return;
+		undoStack = undoStack.slice(0, -1);
+		if ('sections' in last) applySections(last.sections);
+		else applyMovements(last.movements);
 	}
 
 	function discardSections() {
@@ -480,6 +527,7 @@
 		void trackId;
 		sectionEditing = false;
 		sectionDraft = null;
+		undoStack = [];
 		previewShow = null;
 		shelvedShow = null;
 		// The incoming track's own analysis is already being loaded; dropping the shelf here
@@ -1146,11 +1194,13 @@
 				judgement={trackId ? (judgements[trackId] ?? null) : null}
 				judged={Object.keys(judgements).length}
 				total={library.filter((e) => e.analysed).length}
+				{movements}
 				editingSections={sectionEditing}
 				previewingArrangement={previewShow !== null}
 				onsave={(j) => void saveJudgement(j)}
 				onnext={nextUnjudged}
 				onseek={(t) => viz?.seek(t)}
+				onmovements={saveMovements}
 				oneditsections={(on) => void armSectionEdit(on)}
 				ondiscardsections={discardSections}
 				onpreviewarrangement={(on) => void togglePreview(on)}
@@ -1208,7 +1258,10 @@
 			onseek={(t) => viz?.seek(t)}
 			editing={sectionEditing}
 			sections={sectionDraft}
-			onsections={saveSections} />
+			{movements}
+			onsections={saveSections}
+			onmovements={saveMovements}
+			onundo={undoMapEdit} />
 	{/if}
 </div>
 

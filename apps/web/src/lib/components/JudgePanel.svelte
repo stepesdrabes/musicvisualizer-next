@@ -15,11 +15,13 @@
 		judgement = null,
 		judged = 0,
 		total = 0,
+		movements = [],
 		editingSections = false,
 		previewingArrangement = false,
 		onsave,
 		onnext,
 		onseek,
+		onmovements = () => {},
 		oneditsections = () => {},
 		ondiscardsections = () => {},
 		onpreviewarrangement = () => {},
@@ -39,6 +41,12 @@
 		judgement?: Judgement | null;
 		judged?: number;
 		total?: number;
+		/**
+		 * Where a new song starts inside this one. Held by the page rather than in the draft
+		 * below, because the section lane draws and removes the same marks: two drafts of one
+		 * list is how a chip removed in one place comes back from a debounce in the other.
+		 */
+		movements?: number[];
 		/** Whether the drawer's section lane is in hand-adjust mode right now. */
 		editingSections?: boolean;
 		/** Whether the room is playing the show composed from the hand-drawn map. */
@@ -46,6 +54,7 @@
 		onsave: (j: JudgementPatch) => void;
 		onnext: () => void;
 		onseek: (t: number) => void;
+		onmovements?: (m: number[]) => void;
 		oneditsections?: (on: boolean) => void;
 		ondiscardsections?: () => void;
 		onpreviewarrangement?: (on: boolean) => void;
@@ -97,7 +106,14 @@
 		if (trackId === loadedFor) return;
 		flushSave();
 		loadedFor = trackId;
-		draft = judgement ? { ...judgement, notes: judgement.notes.map((n) => ({ ...n })) } : fresh();
+		// Over a fresh one, because what arrives here is the page's optimistic merge of the
+		// patches written so far, and a patch carries only its writer's own fields. A track
+		// whose first write was a movement mark or a map has no `notes` at all, and reading
+		// through the hole threw out of the effect - which left the panel seated on the track
+		// it was leaving.
+		draft = judgement
+			? { ...fresh(), ...judgement, notes: (judgement.notes ?? []).map((n) => ({ ...n })) }
+			: fresh();
 	});
 
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,10 +121,11 @@
 	/**
 	 * What the panel owns, and nothing else.
 	 *
-	 * The map belongs to the section editor. The panel used to send its whole draft, which
-	 * carried whatever `sections` the judgement had when the panel opened - so a map redrawn
-	 * afterwards was reverted by the next star, and a discard was undone by a debounce still
-	 * in flight. Absent means "leave it" to the merge on the other side.
+	 * The map belongs to the section editor and the movement marks to the page, since the lane
+	 * edits those too. The panel used to send its whole draft, which carried whatever
+	 * `sections` the judgement had when the panel opened - so a map redrawn afterwards was
+	 * reverted by the next star, and a discard was undone by a debounce still in flight.
+	 * Absent means "leave it" to the merge on the other side.
 	 */
 	function panelPatch(): JudgementPatch {
 		const d = $state.snapshot(draft) as Judgement;
@@ -119,7 +136,6 @@
 			tags: d.tags,
 			notes: d.notes,
 			comment: d.comment,
-			movements: d.movements ?? [],
 			analysisHash,
 			showSeed,
 			authoredBy
@@ -186,16 +202,13 @@
 	 */
 	function markMovement() {
 		const t = Math.round(position * 10) / 10;
-		const have = draft.movements ?? [];
 		// Two marks within half a second are one mark pressed twice.
-		if (have.some((x) => Math.abs(x - t) < 0.5)) return;
-		draft.movements = [...have, t].sort((a, b) => a - b);
-		queueSave();
+		if (movements.some((x) => Math.abs(x - t) < 0.5)) return;
+		onmovements([...movements, t].sort((a, b) => a - b));
 	}
 
 	function removeMovement(index: number) {
-		draft.movements = (draft.movements ?? []).filter((_, i) => i !== index);
-		queueSave();
+		onmovements(movements.filter((_, i) => i !== index));
 	}
 
 	/**
@@ -204,14 +217,12 @@
 	 * what it cannot know is whether a tempo change is a NEW SONG or the same one breathing,
 	 * and that is the listener's call. An ordinary track produces none of these.
 	 */
-	const candidates = $derived.by(() => {
-		const marked = draft.movements ?? [];
-		return tempoChanges.filter((t) => !marked.some((m) => Math.abs(m - t) < 2));
-	});
+	const candidates = $derived(
+		tempoChanges.filter((t) => !movements.some((m) => Math.abs(m - t) < 2))
+	);
 
 	function acceptCandidate(t: number) {
-		draft.movements = [...(draft.movements ?? []), t].sort((a, b) => a - b);
-		queueSave();
+		onmovements([...movements, t].sort((a, b) => a - b));
 	}
 
 	function clock(t: number): string {
@@ -339,9 +350,9 @@
 						{/each}
 					</div>
 				{/if}
-				{#if (draft.movements ?? []).length > 0}
+				{#if movements.length > 0}
 					<div class="hitrow">
-						{#each draft.movements ?? [] as t, i (i)}
+						{#each movements as t, i (i)}
 							<span class="movement">
 								<button class="at mono" onclick={() => onseek(t)}>‖ {clock(t)}</button>
 								<button class="ghost" onclick={() => removeMovement(i)} aria-label="Remove this mark">
